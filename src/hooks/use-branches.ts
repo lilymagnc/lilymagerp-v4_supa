@@ -1,8 +1,8 @@
-
 "use client";
 import { useState, useEffect, useCallback } from 'react';
 import { collection, getDocs, doc, setDoc, deleteDoc, addDoc, writeBatch, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useToast } from './use-toast';
 import type { BranchFormValues } from '@/app/dashboard/branches/components/branch-form';
 export interface DeliveryFee {
@@ -138,6 +138,29 @@ export function useBranches() {
   const fetchBranches = useCallback(async () => {
     try {
       setLoading(true);
+
+      // [Supabase 우선 조회]
+      const { data: supabaseBranches, error: supabaseError } = await supabase
+        .from('branches')
+        .select('*')
+        .order('name');
+
+      if (!supabaseError && supabaseBranches && supabaseBranches.length > 0) {
+        // Supabase 데이터 매핑 (snake_case -> camelCase)
+        const mappedBranches = supabaseBranches.map(b => ({
+          ...b,
+          businessNumber: b.business_number,
+          employeeCount: b.employee_count,
+          deliveryFees: b.delivery_fees,
+          surcharges: b.surcharges,
+        })) as Branch[];
+
+        setBranches(mappedBranches);
+        setLoading(false);
+        return;
+      }
+
+      // Supabase 오류 발생 시 또는 데이터가 없을 시 Firebase로 Fallback
       const branchesCollection = collection(db, 'branches');
       const querySnapshot = await getDocs(branchesCollection);
 
@@ -153,12 +176,28 @@ export function useBranches() {
 
         const batch = writeBatch(db);
 
-        missingBranches.forEach(branchData => {
+        for (const branchData of missingBranches) {
           const docRef = doc(collection(db, "branches"));
           batch.set(docRef, branchData);
           // 로컬 상태에도 즉시 반영하여 UI 갱신
           branchesData.push({ id: docRef.id, ...branchData } as Branch);
-        });
+
+          // [이중 저장: Supabase]
+          await supabase.from('branches').insert([{
+            id: docRef.id,
+            name: branchData.name,
+            type: branchData.type,
+            address: branchData.address,
+            phone: branchData.phone,
+            manager: branchData.manager,
+            business_number: branchData.businessNumber,
+            employee_count: branchData.employeeCount,
+            account: branchData.account,
+            delivery_fees: (branchData as any).deliveryFees,
+            surcharges: (branchData as any).surcharges,
+            created_at: new Date().toISOString()
+          }]);
+        }
 
         // 초기화 마커가 없는 경우 생성 (최초 실행 시)
         if (querySnapshot.size === 0) {
@@ -168,10 +207,10 @@ export function useBranches() {
 
         await batch.commit();
 
-        toast({
-          title: '지점 정보 업데이트',
-          description: `누락된 지점(${missingBranches.length}개)이 복구되었습니다.`,
-        });
+        // toast({
+        //   title: '지점 정보 업데이트',
+        //   description: `누락된 지점(${missingBranches.length}개)이 복구되었습니다.`,
+        // });
       }
 
       // 이름 중복 제거 (이름이 같은 지점이 여러 개일 경우 첫 번째 항목만 유지)
@@ -205,8 +244,28 @@ export function useBranches() {
   const addBranch = async (branch: BranchFormValues) => {
     try {
       setLoading(true);
+
+      // [이중 저장: Firebase]
       const branchesCollection = collection(db, 'branches');
-      await addDoc(branchesCollection, branch);
+      const branchDocRef = await addDoc(branchesCollection, branch);
+
+      // [이중 저장: Supabase]
+      const { error: supabaseError } = await supabase.from('branches').insert([{
+        id: branchDocRef.id,
+        name: branch.name,
+        type: branch.type,
+        address: branch.address,
+        phone: branch.phone,
+        manager: branch.manager,
+        business_number: branch.businessNumber,
+        employee_count: branch.employeeCount,
+        account: branch.account,
+        delivery_fees: (branch as any).deliveryFees,
+        surcharges: (branch as any).surcharges,
+      }]);
+
+      if (supabaseError) console.error('Supabase Sync Error:', supabaseError);
+
       toast({
         title: '성공',
         description: '새 지점이 성공적으로 추가되었습니다.',
@@ -225,8 +284,27 @@ export function useBranches() {
   const updateBranch = async (branchId: string, branch: BranchFormValues) => {
     try {
       setLoading(true);
+
+      // [이중 저장: Firebase]
       const branchDoc = doc(db, 'branches', branchId);
       await setDoc(branchDoc, branch, { merge: true });
+
+      // [이중 저장: Supabase]
+      const { error: supabaseError } = await supabase.from('branches').update({
+        name: branch.name,
+        type: branch.type,
+        address: branch.address,
+        phone: branch.phone,
+        manager: branch.manager,
+        business_number: branch.businessNumber,
+        employee_count: branch.employeeCount,
+        account: branch.account,
+        delivery_fees: (branch as any).deliveryFees,
+        surcharges: (branch as any).surcharges,
+      }).eq('id', branchId);
+
+      if (supabaseError) console.error('Supabase Sync Error:', supabaseError);
+
       toast({
         title: '성공',
         description: '지점 정보가 성공적으로 수정되었습니다.',
@@ -245,8 +323,16 @@ export function useBranches() {
   const deleteBranch = async (branchId: string) => {
     try {
       setLoading(true);
+
+      // [이중 저장: Firebase]
       const branchDoc = doc(db, 'branches', branchId);
       await deleteDoc(branchDoc);
+
+      // [이중 저장: Supabase]
+      const { error: supabaseError } = await supabase.from('branches').delete().eq('id', branchId);
+
+      if (supabaseError) console.error('Supabase Sync Error:', supabaseError);
+
       toast({
         title: '성공',
         description: '지점이 성공적으로 삭제되었습니다.',

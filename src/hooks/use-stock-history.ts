@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useToast } from './use-toast';
 export interface StockHistory {
   id: string;
@@ -24,34 +25,82 @@ export function useStockHistory() {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   useEffect(() => {
-    setLoading(true);
-    const q = query(collection(db, "stockHistory"), orderBy("date", "desc"));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const historyData: StockHistory[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        historyData.push({
-          id: doc.id,
-          ...data,
-          date: data.date?.toDate ? data.date.toDate().toISOString() : new Date().toISOString(),
-        } as StockHistory);
+    const fetchHistory = async () => {
+      try {
+        setLoading(true);
+
+        // [Supabase 우선 조회]
+        const { data: supabaseItems, error: supabaseError } = await supabase
+          .from('stock_history')
+          .select('*')
+          .order('date', { ascending: false });
+
+        if (!supabaseError && supabaseItems && supabaseItems.length > 0) {
+          const mappedData = supabaseItems.map(item => ({
+            id: item.id,
+            date: item.date,
+            type: item.type as any,
+            itemType: item.item_type as any,
+            itemName: item.item_name,
+            quantity: item.quantity,
+            fromStock: item.from_stock,
+            toStock: item.to_stock,
+            resultingStock: item.resulting_stock,
+            branch: item.branch,
+            operator: item.operator,
+            supplier: item.supplier,
+            price: item.price,
+            totalAmount: item.total_amount
+          } as StockHistory));
+
+          setHistory(mappedData);
+          setLoading(false);
+          return;
+        }
+
+        const q = query(collection(db, "stockHistory"), orderBy("date", "desc"));
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+          const historyData: StockHistory[] = [];
+          querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            historyData.push({
+              id: doc.id,
+              ...data,
+              date: data.date?.toDate ? data.date.toDate().toISOString() : new Date().toISOString(),
+            } as StockHistory);
+          });
+          setHistory(historyData);
+          setLoading(false);
+        }, (error) => {
+          console.error("Error fetching stock history:", error);
+          toast({
+            variant: "destructive",
+            title: "오류",
+            description: "재고 기록을 불러오는 중 오류가 발생했습니다."
+          });
+          setLoading(false);
+        });
+        return unsubscribe;
+      } catch (error) {
+        console.error("Error in stock history effect:", error);
+        setLoading(false);
+      }
+    };
+
+    const cleanupPromise = fetchHistory();
+    return () => {
+      cleanupPromise.then(unsubscribe => {
+        if (typeof unsubscribe === 'function') unsubscribe();
       });
-      setHistory(historyData);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching stock history:", error);
-      toast({
-        variant: "destructive",
-        title: "오류",
-        description: "재고 기록을 불러오는 중 오류가 발생했습니다."
-      });
-      setLoading(false);
-    });
-    return () => unsubscribe();
+    };
   }, [toast]);
   const deleteHistoryRecord = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'stockHistory', id));
+
+      // [이중 저장: Supabase]
+      await supabase.from('stock_history').delete().eq('id', id);
+
       toast({
         title: "성공",
         description: "재고 변동 기록이 삭제되었습니다."

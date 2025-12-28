@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { collection, getDocs, query, where, orderBy, Timestamp, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 export interface Recipient {
   id: string;
   name: string;
@@ -23,9 +24,44 @@ export function useRecipients() {
   const fetchRecipients = useCallback(async (branchName?: string) => {
     setLoading(true);
     try {
+      // [Supabase 우선 조회]
+      let queryBuilder = supabase
+        .from('recipients')
+        .select('*')
+        .order('last_order_date', { ascending: false });
+
+      if (branchName) {
+        queryBuilder = queryBuilder.eq('branch_name', branchName);
+      }
+
+      const { data: supabaseItems, error: supabaseError } = await queryBuilder;
+
+      if (!supabaseError && supabaseItems) {
+        const recipientsData = supabaseItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          contact: item.contact,
+          address: item.address,
+          district: item.district,
+          branchName: item.branch_name,
+          orderCount: item.order_count,
+          lastOrderDate: item.last_order_date ? Timestamp.fromDate(new Date(item.last_order_date)) : undefined,
+          email: item.email,
+          marketingConsent: item.marketing_consent,
+          source: item.source,
+          createdAt: item.created_at ? Timestamp.fromDate(new Date(item.created_at)) : undefined,
+          updatedAt: item.updated_at ? Timestamp.fromDate(new Date(item.updated_at)) : undefined
+        } as Recipient));
+
+        setRecipients(recipientsData);
+        setLoading(false);
+        return;
+      }
+
       let recipientsQuery = query(
         collection(db, 'recipients')
       );
+      // 이하 기존 Firebase 로직...
       if (branchName) {
         recipientsQuery = query(
           collection(db, 'recipients'),
@@ -82,6 +118,22 @@ export function useRecipients() {
         ...updatedData,
         updatedAt: serverTimestamp()
       });
+
+      // [이중 저장: Supabase]
+      const supabaseUpdateData: any = {};
+      if (updatedData.name) supabaseUpdateData.name = updatedData.name;
+      if (updatedData.contact) supabaseUpdateData.contact = updatedData.contact;
+      if (updatedData.address) supabaseUpdateData.address = updatedData.address;
+      if (updatedData.district) supabaseUpdateData.district = updatedData.district;
+      if (updatedData.branchName) supabaseUpdateData.branch_name = updatedData.branchName;
+      if (updatedData.orderCount !== undefined) supabaseUpdateData.order_count = updatedData.orderCount;
+      if (updatedData.lastOrderDate) supabaseUpdateData.last_order_date = updatedData.lastOrderDate.toDate().toISOString();
+      if (updatedData.email !== undefined) supabaseUpdateData.email = updatedData.email;
+      if (updatedData.marketingConsent !== undefined) supabaseUpdateData.marketing_consent = updatedData.marketingConsent;
+      if (updatedData.source) supabaseUpdateData.source = updatedData.source;
+      supabaseUpdateData.updated_at = new Date().toISOString();
+
+      await supabase.from('recipients').update(supabaseUpdateData).eq('id', recipientId);
       await fetchRecipients(); // 목록 새로고침
     } catch (error) {
       console.error('Error updating recipient:', error);
@@ -94,6 +146,9 @@ export function useRecipients() {
     try {
       const recipientRef = doc(db, 'recipients', recipientId);
       await deleteDoc(recipientRef);
+
+      // [이중 저장: Supabase]
+      await supabase.from('recipients').delete().eq('id', recipientId);
       await fetchRecipients(); // 목록 새로고침
     } catch (error) {
       console.error('Error deleting recipient:', error);

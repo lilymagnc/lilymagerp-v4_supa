@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { OrderTransferSettings } from '@/types/order-transfer';
 
 export interface SystemSettings {
@@ -184,19 +185,19 @@ export const defaultSettings: SystemSettings = {
   autoDeleteDeliveryPhotos: false,
   deliveryPhotoRetentionDays: 90, // 90일 보관
 
-          // 주문 이관 설정
-        orderTransferSettings: {
-          defaultTransferSplit: {
-            orderBranch: 100, // 발주지점 100%
-            processBranch: 0, // 수주지점 0%
-          },
-          transferRules: {
-            'store': { orderBranch: 100, processBranch: 0 },
-            'phone': { orderBranch: 100, processBranch: 0 },
-            'naver': { orderBranch: 100, processBranch: 0 },
-            'kakao': { orderBranch: 100, processBranch: 0 },
-            'etc': { orderBranch: 100, processBranch: 0 },
-          },
+  // 주문 이관 설정
+  orderTransferSettings: {
+    defaultTransferSplit: {
+      orderBranch: 100, // 발주지점 100%
+      processBranch: 0, // 수주지점 0%
+    },
+    transferRules: {
+      'store': { orderBranch: 100, processBranch: 0 },
+      'phone': { orderBranch: 100, processBranch: 0 },
+      'naver': { orderBranch: 100, processBranch: 0 },
+      'kakao': { orderBranch: 100, processBranch: 0 },
+      'etc': { orderBranch: 100, processBranch: 0 },
+    },
     autoNotification: true,
     notificationTemplate: "{발주지점}지점으로부터 주문이 이관되었습니다.",
 
@@ -220,6 +221,13 @@ export function useSettings() {
         updatedAt: serverTimestamp()
       });
 
+      // [이중 저장: Supabase]
+      await supabase.from('system_settings').upsert({
+        id: 'settings',
+        data: newSettings,
+        updated_at: new Date().toISOString()
+      });
+
       setSettings(newSettings);
       return true;
     } catch (err) {
@@ -239,12 +247,32 @@ export function useSettings() {
         setLoading(true);
         setError(null);
 
+        // [Supabase 우선 조회]
+        const { data: supabaseData, error: supabaseError } = await supabase
+          .from('system_settings')
+          .select('data')
+          .eq('id', 'settings')
+          .single();
+
+        if (!supabaseError && supabaseData) {
+          setSettings({ ...defaultSettings, ...supabaseData.data });
+          setLoading(false);
+          return;
+        }
+
         const settingsDoc = doc(db, 'system', 'settings');
         const settingsSnapshot = await getDoc(settingsDoc);
 
         if (settingsSnapshot.exists()) {
           const data = settingsSnapshot.data();
           setSettings({ ...defaultSettings, ...data });
+
+          // [Fallback 시점에 Supabase 동화]
+          await supabase.from('system_settings').upsert({
+            id: 'settings',
+            data: data,
+            updated_at: new Date().toISOString()
+          });
         } else {
           // 기본 설정으로 초기화
           await setDoc(settingsDoc, {
@@ -252,6 +280,14 @@ export function useSettings() {
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp()
           });
+
+          // [이중 저장: Supabase]
+          await supabase.from('system_settings').upsert({
+            id: 'settings',
+            data: defaultSettings,
+            updated_at: new Date().toISOString()
+          });
+
           setSettings(defaultSettings);
         }
       } catch (err) {

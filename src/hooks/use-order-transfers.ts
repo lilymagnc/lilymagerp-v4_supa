@@ -17,6 +17,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useAuth } from '@/hooks/use-auth';
 import { useBranches } from '@/hooks/use-branches';
 import { useSettings } from '@/hooks/use-settings';
@@ -82,8 +83,79 @@ export function useOrderTransfers() {
       setLoading(true);
       setError(null);
 
+      // [Supabase 우선 조회]
+      let queryBuilder = supabase
+        .from('order_transfers')
+        .select('*')
+        .order('transfer_date', { ascending: false });
+
+      if (filter?.status) {
+        queryBuilder = queryBuilder.eq('status', filter.status);
+      }
+      if (filter?.startDate) {
+        queryBuilder = queryBuilder.gte('transfer_date', filter.startDate.toISOString());
+      }
+      if (filter?.endDate) {
+        queryBuilder = queryBuilder.lte('transfer_date', filter.endDate.toISOString());
+      }
+
+      // 지점 권한 필터링
+      if (user?.franchise && user?.role !== '본사 관리자') {
+        queryBuilder = queryBuilder.or(`order_branch_name.eq."${user.franchise}",process_branch_name.eq."${user.franchise}"`);
+      }
+
+      // 페이지네이션 (lastDoc 대신 offset 사용 - 여기서는 단순화하여 첫 페이지만 또는 누적 처리 필요 시 수정)
+      // 현재 hook 구조가 lastDoc 기반이므로 supabase에서는 range 사용 가능
+      let from = 0;
+      if (lastDoc && typeof lastDoc === 'number') {
+        from = lastDoc;
+      }
+      queryBuilder = queryBuilder.range(from, from + pageSize - 1);
+
+      const { data: supabaseItems, error: supabaseError } = await queryBuilder;
+
+      if (!supabaseError && supabaseItems && supabaseItems.length > 0) {
+        const mappedData = supabaseItems.map(item => ({
+          id: item.id,
+          originalOrderId: item.original_order_id,
+          orderBranchId: item.order_branch_id,
+          orderBranchName: item.order_branch_name,
+          processBranchId: item.process_branch_id,
+          processBranchName: item.process_branch_name,
+          transferDate: item.transfer_date ? Timestamp.fromDate(new Date(item.transfer_date)) : undefined,
+          transferReason: item.transfer_reason,
+          transferBy: item.transfer_by,
+          transferByUser: item.transfer_by_user,
+          status: item.status as any,
+          amountSplit: item.amount_split,
+          originalOrderAmount: Number(item.original_order_amount),
+          notes: item.notes,
+          acceptedAt: item.accepted_at ? Timestamp.fromDate(new Date(item.accepted_at)) : undefined,
+          acceptedBy: item.accepted_by,
+          rejectedAt: item.rejected_at ? Timestamp.fromDate(new Date(item.rejected_at)) : undefined,
+          rejectedBy: item.rejected_by,
+          completedAt: item.completed_at ? Timestamp.fromDate(new Date(item.completed_at)) : undefined,
+          completedBy: item.completed_by,
+          cancelledAt: item.cancelled_at ? Timestamp.fromDate(new Date(item.cancelled_at)) : undefined,
+          cancelledBy: item.cancelled_by,
+          createdAt: item.created_at ? Timestamp.fromDate(new Date(item.created_at)) : undefined,
+          updatedAt: item.updated_at ? Timestamp.fromDate(new Date(item.updated_at)) : undefined
+        } as unknown as OrderTransfer));
+
+        if (supabaseItems.length < pageSize) {
+          setHasMore(false);
+        } else {
+          setLastDoc(from + supabaseItems.length);
+        }
+
+        setTransfers(prev => lastDoc ? [...prev, ...mappedData] : mappedData);
+        setLoading(false);
+        return;
+      }
+
       const transfersRef = collection(db, 'order_transfers');
       let q = query(transfersRef);
+      // 이하 기존 Firebase 로직...
 
       // 권한에 따른 필터링
       const permissions = getTransferPermissions();
@@ -213,24 +285,65 @@ export function useOrderTransfers() {
       });
 
       // 원본 주문에 이관 정보 추가
+      const firebaseTransferInfo = {
+        isTransferred: true,
+        transferId: transferRef.id,
+        originalBranchId: orderData.branchId,
+        originalBranchName: orderBranch.name,
+        processBranchId: transferForm.processBranchId,
+        processBranchName: processBranch.name,
+        transferDate: serverTimestamp(),
+        transferReason: transferForm.transferReason,
+        transferBy: user?.uid || '',
+        transferByUser: user?.email || '',
+        status: 'pending',
+        amountSplit: transferForm.amountSplit,
+        notes: transferForm.notes,
+        transferredAt: serverTimestamp()
+      };
       await updateDoc(doc(db, 'orders', orderId), {
-        transferInfo: {
-          isTransferred: true,
-          transferId: transferRef.id,
-          originalBranchId: orderData.branchId,
-          originalBranchName: orderBranch.name,
-          processBranchId: transferForm.processBranchId,
-          processBranchName: processBranch.name,
-          transferDate: serverTimestamp(),
-          transferReason: transferForm.transferReason,
-          transferBy: user?.uid || '',
-          transferByUser: user?.email || '',
-          status: 'pending',
-          amountSplit: transferForm.amountSplit,
-          notes: transferForm.notes,
-          transferredAt: serverTimestamp()
-        }
+        transferInfo: firebaseTransferInfo
       });
+
+      // [이중 저장: Supabase orders 테이블 업데이트]
+      await supabase.from('orders').update({
+        transfer_info: {
+          is_transferred: true,
+          transfer_id: transferRef.id,
+          original_branch_id: orderData.branchId,
+          original_branch_name: orderBranch.name,
+          process_branch_id: transferForm.processBranchId,
+          process_branch_name: processBranch.name,
+          transfer_date: new Date().toISOString(),
+          transfer_reason: transferForm.transferReason,
+          transfer_by: user?.uid || '',
+          transfer_by_user: user?.email || '',
+          status: 'pending',
+          amount_split: transferForm.amountSplit,
+          notes: transferForm.notes,
+          transferred_at: new Date().toISOString()
+        }
+      }).eq('id', orderId);
+
+      // [이중 저장: Supabase order_transfers 테이블 저장]
+      await supabase.from('order_transfers').insert([{
+        id: transferRef.id,
+        original_order_id: orderId,
+        order_branch_id: orderData.branchId,
+        order_branch_name: orderBranch.name,
+        process_branch_id: transferForm.processBranchId,
+        process_branch_name: processBranch.name,
+        transfer_date: new Date().toISOString(),
+        transfer_reason: transferForm.transferReason,
+        transfer_by: user?.uid || '',
+        transfer_by_user: user?.email || '',
+        status: 'pending',
+        amount_split: transferForm.amountSplit,
+        original_order_amount: orderData.summary?.total || 0,
+        notes: transferForm.notes,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]);
 
       // 알림 생성
       await createOrderTransferNotification(
@@ -323,6 +436,19 @@ export function useOrderTransfers() {
             'transferInfo.rejectedAt': serverTimestamp(),
             'transferInfo.rejectedBy': user?.uid
           });
+
+          // [이중 저장: Supabase orders 테이블 업데이트 (거절)]
+          const { data: order } = await supabase.from('orders').select('transfer_info').eq('id', transferData.originalOrderId).single();
+          if (order && order.transfer_info) {
+            await supabase.from('orders').update({
+              transfer_info: {
+                ...order.transfer_info,
+                status: 'rejected',
+                rejected_at: new Date().toISOString(),
+                rejected_by: user?.uid
+              }
+            }).eq('id', transferData.originalOrderId);
+          }
         }
       } else if (statusUpdate.status === 'completed') {
         updateData.completedAt = serverTimestamp();
@@ -351,7 +477,6 @@ export function useOrderTransfers() {
           const processBranch = branches.find(b => b.id === transferData.processBranchId);
 
           if (processBranch) {
-            // 원본 주문 업데이트 - branchId는 유지하고 이관 정보만 업데이트
             await updateDoc(doc(db, 'orders', transferData.originalOrderId), {
               // branchId와 branchName은 발주지점 그대로 유지
               // 대신 이관 정보를 업데이트
@@ -370,6 +495,18 @@ export function useOrderTransfers() {
               'transferInfo.amountSplit': transferData.amountSplit,
               'transferInfo.notes': transferData.notes
             });
+
+            // [이중 저장: Supabase orders 테이블 업데이트 (수락)]
+            const { data: order } = await supabase.from('orders').select('transfer_info').eq('id', transferData.originalOrderId).single();
+            if (order && order.transfer_info) {
+              await supabase.from('orders').update({
+                transfer_info: {
+                  ...order.transfer_info,
+                  status: 'accepted',
+                  accepted_at: new Date().toISOString()
+                }
+              }).eq('id', transferData.originalOrderId);
+            }
 
             // 원본 주문 정보 조회하여 전광판에 표시
             try {
@@ -494,6 +631,21 @@ export function useOrderTransfers() {
         transferInfo: null
       });
 
+      // [이중 저장: Supabase orders 테이블 업데이트 (취소 시 이관 정보 초기화)]
+      await supabase.from('orders').update({
+        transfer_info: null,
+        updated_at: new Date().toISOString()
+      }).eq('id', transferData.originalOrderId);
+
+      // [이중 저장: Supabase order_transfers 테이블 업데이트 (취소)]
+      await supabase.from('order_transfers').update({
+        status: 'cancelled',
+        cancelled_at: new Date().toISOString(),
+        cancelled_by: user?.uid,
+        updated_at: new Date().toISOString(),
+        ...(cancelReason ? { cancel_reason: cancelReason } : {})
+      }).eq('id', transferId);
+
       // 취소 알림 생성
       await createOrderTransferCancelNotification(
         transferData.orderBranchName,
@@ -562,6 +714,15 @@ export function useOrderTransfers() {
 
       // 이관 기록 삭제
       await deleteDoc(transferRef);
+
+      // [이중 저장: Supabase orders 테이블 업데이트 (삭제 시 이관 정보 초기바)]
+      await supabase.from('orders').update({
+        transfer_info: null,
+        updated_at: new Date().toISOString()
+      }).eq('id', transferData.originalOrderId);
+
+      // [이중 저장: Supabase order_transfers 테이블 삭제]
+      await supabase.from('order_transfers').delete().eq('id', transferId);
 
       toast({
         title: "이관 기록 삭제 완료",

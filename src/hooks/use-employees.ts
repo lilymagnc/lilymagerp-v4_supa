@@ -1,19 +1,20 @@
 
 "use client";
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  collection, 
-  getDocs, 
-  doc, 
-  setDoc, 
-  addDoc, 
-  serverTimestamp, 
-  query, 
+import {
+  collection,
+  getDocs,
+  doc,
+  setDoc,
+  addDoc,
+  serverTimestamp,
+  query,
   where,
-  deleteDoc, 
-  Timestamp 
+  deleteDoc,
+  Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useToast } from './use-toast';
 import { EmployeeFormValues } from '@/app/dashboard/hr/components/employee-form';
 export interface Employee extends EmployeeFormValues {
@@ -27,6 +28,32 @@ export function useEmployees() {
   const fetchEmployees = useCallback(async () => {
     try {
       setLoading(true);
+
+      // [Supabase 우선 조회]
+      const { data: supabaseItems, error: supabaseError } = await supabase
+        .from('employees')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (!supabaseError && supabaseItems && supabaseItems.length > 0) {
+        const mappedData = supabaseItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          email: item.email,
+          position: item.position,
+          department: item.department,
+          contact: item.contact,
+          address: item.address,
+          hireDate: item.hire_date ? new Date(item.hire_date) : undefined,
+          birthDate: item.birth_date ? new Date(item.birth_date) : undefined,
+          createdAt: item.created_at ? Timestamp.fromDate(new Date(item.created_at)) : undefined
+        } as unknown as Employee));
+
+        setEmployees(mappedData);
+        setLoading(false);
+        return;
+      }
+
       const employeesCollection = collection(db, 'employees');
       const q = query(employeesCollection);
       const employeesData = (await getDocs(q)).docs.map(doc => {
@@ -61,7 +88,23 @@ export function useEmployees() {
         ...data,
         createdAt: serverTimestamp(),
       };
-      await addDoc(collection(db, 'employees'), employeeWithTimestamp);
+      const docRef = await addDoc(collection(db, 'employees'), employeeWithTimestamp);
+
+      // [이중 저장: Supabase]
+      await supabase.from('employees').insert([{
+        id: docRef.id,
+        name: data.name,
+        email: data.email,
+        position: data.position,
+        department: data.department,
+        contact: data.contact,
+        address: data.address,
+        hire_date: data.hireDate instanceof Date ? data.hireDate.toISOString() : (data.hireDate as any),
+        birth_date: data.birthDate instanceof Date ? data.birthDate.toISOString() : (data.birthDate as any),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]);
+
       toast({ title: "성공", description: "새 직원이 추가되었습니다." });
       await fetchEmployees();
     } catch (error) {
@@ -76,6 +119,20 @@ export function useEmployees() {
     try {
       const employeeDocRef = doc(db, 'employees', id);
       await setDoc(employeeDocRef, data, { merge: true });
+
+      // [이중 저장: Supabase]
+      await supabase.from('employees').update({
+        name: data.name,
+        email: data.email,
+        position: data.position,
+        department: data.department,
+        contact: data.contact,
+        address: data.address,
+        hire_date: data.hireDate instanceof Date ? data.hireDate.toISOString() : (data.hireDate as any),
+        birth_date: data.birthDate instanceof Date ? data.birthDate.toISOString() : (data.birthDate as any),
+        updated_at: new Date().toISOString()
+      }).eq('id', id);
+
       toast({ title: "성공", description: "직원 정보가 수정되었습니다." });
       await fetchEmployees();
     } catch (error) {
@@ -89,6 +146,10 @@ export function useEmployees() {
     setLoading(true);
     try {
       await deleteDoc(doc(db, 'employees', id));
+
+      // [이중 저장: Supabase]
+      await supabase.from('employees').delete().eq('id', id);
+
       toast({ title: "성공", description: "직원 정보가 삭제되었습니다." });
       await fetchEmployees();
     } catch (error) {
@@ -121,9 +182,38 @@ export function useEmployees() {
         if (!querySnapshot.empty) {
           const docRef = querySnapshot.docs[0].ref;
           await setDoc(docRef, employeeData, { merge: true });
+
+          // [이중 저장: Supabase 업데이트]
+          await supabase.from('employees').update({
+            name: employeeData.name,
+            position: employeeData.position,
+            department: employeeData.department,
+            contact: employeeData.contact,
+            address: employeeData.address,
+            hire_date: employeeData.hireDate.toISOString(),
+            birth_date: employeeData.birthDate.toISOString(),
+            updated_at: new Date().toISOString()
+          }).eq('id', docRef.id);
+
           updateCount++;
         } else {
-          await addDoc(collection(db, "employees"), { ...employeeData, createdAt: serverTimestamp() });
+          const docRef = await addDoc(collection(db, "employees"), { ...employeeData, createdAt: serverTimestamp() });
+
+          // [이중 저장: Supabase 추가]
+          await supabase.from('employees').insert([{
+            id: docRef.id,
+            name: employeeData.name,
+            email: employeeData.email,
+            position: employeeData.position,
+            department: employeeData.department,
+            contact: employeeData.contact,
+            address: employeeData.address,
+            hire_date: employeeData.hireDate.toISOString(),
+            birth_date: employeeData.birthDate.toISOString(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }]);
+
           newCount++;
         }
       } catch (error) {
@@ -133,24 +223,24 @@ export function useEmployees() {
     }));
     setLoading(false);
     if (errorCount > 0) {
-      toast({ 
-        variant: 'destructive', 
-        title: '일부 처리 오류', 
-        description: `${errorCount}개 항목 처리 중 오류가 발생했습니다.` 
+      toast({
+        variant: 'destructive',
+        title: '일부 처리 오류',
+        description: `${errorCount}개 항목 처리 중 오류가 발생했습니다.`
       });
     }
-    toast({ 
-      title: '처리 완료', 
+    toast({
+      title: '처리 완료',
       description: `성공: 신규 직원 ${newCount}명 추가, ${updateCount}명 업데이트 완료.`
     });
     await fetchEmployees();
   };
-  return { 
-    employees, 
-    loading, 
-    addEmployee, 
-    updateEmployee, 
-    deleteEmployee, 
-    bulkAddEmployees 
+  return {
+    employees,
+    loading,
+    addEmployee,
+    updateEmployee,
+    deleteEmployee,
+    bulkAddEmployees
   };
 }

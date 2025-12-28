@@ -1,20 +1,21 @@
 "use client";
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  collection, 
-  doc, 
-  getDocs, 
-  addDoc, 
+import {
+  collection,
+  doc,
+  getDocs,
+  addDoc,
   updateDoc,
-  query, 
-  where, 
-  orderBy, 
+  query,
+  where,
+  orderBy,
   limit,
   serverTimestamp,
   onSnapshot,
   Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useToast } from './use-toast';
 export interface Notification {
   id: string;
@@ -68,6 +69,51 @@ export function useNotifications() {
   const fetchNotifications = useCallback(async (userId?: string, limit_count = 50) => {
     try {
       setLoading(true);
+
+      // [Supabase 우선 조회]
+      let queryBuilder = supabase
+        .from('notifications')
+        .select('*')
+        .eq('is_archived', false)
+        .order('created_at', { ascending: false })
+        .limit(limit_count);
+
+      if (userId) {
+        queryBuilder = queryBuilder.eq('user_id', userId);
+      }
+
+      const { data: supabaseItems, error: supabaseError } = await queryBuilder;
+
+      if (!supabaseError && supabaseItems && supabaseItems.length > 0) {
+        const mappedData = supabaseItems.map(item => ({
+          id: item.id,
+          type: item.type as any,
+          subType: item.sub_type,
+          title: item.title,
+          message: item.message,
+          severity: item.severity as any,
+          userId: item.user_id,
+          userRole: item.user_role,
+          branchId: item.branch_id,
+          departmentId: item.department_id,
+          relatedId: item.related_id,
+          relatedType: item.related_type,
+          actionUrl: item.action_url,
+          isRead: item.is_read,
+          readAt: item.read_at ? Timestamp.fromDate(new Date(item.read_at)) : undefined,
+          isArchived: item.is_archived,
+          autoExpire: item.auto_expire,
+          expiresAt: item.expires_at ? Timestamp.fromDate(new Date(item.expires_at)) : undefined,
+          createdAt: item.created_at ? Timestamp.fromDate(new Date(item.created_at)) : undefined,
+          updatedAt: item.updated_at ? Timestamp.fromDate(new Date(item.updated_at)) : undefined
+        } as unknown as Notification));
+
+        setNotifications(mappedData);
+        setUnreadCount(mappedData.filter(n => !n.isRead).length);
+        setLoading(false);
+        return;
+      }
+
       let notificationQuery = query(
         collection(db, 'notifications'),
         orderBy('createdAt', 'desc'),
@@ -121,7 +167,7 @@ export function useNotifications() {
     return unsubscribe;
   }, []);
   // 알림 생성
-  const createNotification = useCallback(async (data: Omit<Notification, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const createNotification = useCallback(async (data: Omit<Notification, 'id' | 'createdAt' | 'updatedAt' | 'isRead' | 'isArchived'>) => {
     try {
       const notification: Omit<Notification, 'id'> = {
         ...data,
@@ -130,7 +176,30 @@ export function useNotifications() {
         createdAt: serverTimestamp() as Timestamp,
         updatedAt: serverTimestamp() as Timestamp
       };
-      await addDoc(collection(db, 'notifications'), notification);
+      const docRef = await addDoc(collection(db, 'notifications'), notification);
+
+      // [이중 저장: Supabase]
+      await supabase.from('notifications').insert([{
+        id: docRef.id,
+        type: data.type,
+        sub_type: data.subType,
+        title: data.title,
+        message: data.message,
+        severity: data.severity,
+        user_id: data.userId,
+        user_role: data.userRole,
+        branch_id: data.branchId,
+        department_id: data.departmentId,
+        related_id: data.relatedId,
+        related_type: data.relatedType,
+        action_url: data.actionUrl,
+        is_read: false,
+        is_archived: false,
+        auto_expire: data.autoExpire,
+        expires_at: data.expiresAt instanceof Date ? data.expiresAt.toISOString() : (data.expiresAt as any),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]);
     } catch (error) {
       console.error('Error creating notification:', error);
       throw error;
@@ -143,7 +212,7 @@ export function useNotifications() {
     usage: number,
     severity: Notification['severity'] = 'medium'
   ) => {
-    const message = usage >= 100 
+    const message = usage >= 100
       ? `${budgetName}이 예산을 ${(usage - 100).toFixed(1)}% 초과했습니다.`
       : `${budgetName}의 예산 사용률이 ${usage.toFixed(1)}%에 도달했습니다.`;
     await createNotification({
@@ -213,10 +282,17 @@ export function useNotifications() {
         readAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+
+      // [이중 저장: Supabase]
+      await supabase.from('notifications').update({
+        is_read: true,
+        read_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }).eq('id', notificationId);
       // 로컬 상태 업데이트
-      setNotifications(prev => 
-        prev.map(n => 
-          n.id === notificationId 
+      setNotifications(prev =>
+        prev.map(n =>
+          n.id === notificationId
             ? { ...n, isRead: true, readAt: new Date() as any }
             : n
         )
@@ -239,8 +315,24 @@ export function useNotifications() {
         });
       });
       await Promise.all(updatePromises);
+
+      // [이중 저장: Supabase 일괄 업데이트]
+      if (unreadNotifications.length > 0) {
+        let query = supabase.from('notifications').update({
+          is_read: true,
+          read_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+
+        if (userId) {
+          query = query.eq('user_id', userId);
+        } else {
+          query = query.in('id', unreadNotifications.map(n => n.id));
+        }
+        await query;
+      }
       // 로컬 상태 업데이트
-      setNotifications(prev => 
+      setNotifications(prev =>
         prev.map(n => ({ ...n, isRead: true, readAt: new Date() as any }))
       );
       setUnreadCount(0);
@@ -265,6 +357,12 @@ export function useNotifications() {
         isArchived: true,
         updatedAt: serverTimestamp()
       });
+
+      // [이중 저장: Supabase]
+      await supabase.from('notifications').update({
+        is_archived: true,
+        updated_at: new Date().toISOString()
+      }).eq('id', notificationId);
       // 로컬 상태에서 제거
       setNotifications(prev => prev.filter(n => n.id !== notificationId));
     } catch (error) {
@@ -289,6 +387,16 @@ export function useNotifications() {
         });
       });
       await Promise.all(updatePromises);
+
+      // [이중 저장: Supabase 일괄 정리]
+      if (!snapshot.empty) {
+        await supabase.from('notifications').update({
+          is_archived: true,
+          updated_at: new Date().toISOString()
+        })
+          .eq('auto_expire', true)
+          .lte('expires_at', now.toISOString());
+      }
     } catch (error) {
       console.error('Error cleaning up expired notifications:', error);
     }

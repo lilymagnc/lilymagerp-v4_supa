@@ -1,22 +1,23 @@
 "use client";
 import { useState, useCallback } from 'react';
-import { 
-  collection, 
-  getDocs, 
-  query, 
-  where, 
+import {
+  collection,
+  getDocs,
+  query,
+  where,
   orderBy,
   Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useToast } from './use-toast';
-import type { 
+import type {
   ExpenseRequest,
   Budget,
   MaterialRequest,
-  ExpenseCategory,
-  EXPENSE_CATEGORY_LABELS 
+  ExpenseCategory
 } from '@/types';
+import { EXPENSE_CATEGORY_LABELS } from '@/types/expense';
 export interface ReportFilter {
   dateFrom: Date;
   dateTo: Date;
@@ -149,23 +150,56 @@ export function useReports() {
   const generateExpenseReport = useCallback(async (filter: ReportFilter): Promise<ExpenseReport> => {
     try {
       setLoading(true);
-      // 비용 신청 데이터 조회
-      let expenseQuery = query(
-        collection(db, 'expenseRequests'),
-        where('createdAt', '>=', filter.dateFrom),
-        where('createdAt', '<=', filter.dateTo),
-        orderBy('createdAt', 'desc')
-      );
-      const expenseSnapshot = await getDocs(expenseQuery);
-      let expenses = expenseSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as ExpenseRequest[];
+
+      let expenses: ExpenseRequest[] = [];
+
+      // [Supabase 우선 조회]
+      const { data: supabaseExpenses, error: supabaseError } = await supabase
+        .from('expense_requests')
+        .select('*')
+        .gte('created_at', filter.dateFrom.toISOString())
+        .lte('created_at', filter.dateTo.toISOString())
+        .order('created_at', { ascending: false });
+
+      if (!supabaseError && supabaseExpenses) {
+        expenses = supabaseExpenses.map(e => ({
+          id: e.id,
+          branchId: e.branch_id,
+          branchName: e.branch_name,
+          departmentId: e.department_id,
+          departmentName: e.department_name,
+          userId: e.user_id,
+          userName: e.user_name,
+          totalAmount: e.total_amount,
+          status: e.status as any,
+          items: e.items as any,
+          reason: e.reason,
+          attachments: e.attachments as any,
+          rejectedReason: e.rejected_reason,
+          createdAt: Timestamp.fromDate(new Date(e.created_at)),
+          updatedAt: Timestamp.fromDate(new Date(e.updated_at)),
+          approvedAt: e.approved_at ? Timestamp.fromDate(new Date(e.approved_at)) : undefined,
+          paidAt: e.paid_at ? Timestamp.fromDate(new Date(e.paid_at)) : undefined
+        })) as unknown as ExpenseRequest[];
+      } else {
+        // Fallback: Firebase
+        let expenseQuery = query(
+          collection(db, 'expenseRequests'),
+          where('createdAt', '>=', filter.dateFrom),
+          where('createdAt', '<=', filter.dateTo),
+          orderBy('createdAt', 'desc')
+        );
+        const expenseSnapshot = await getDocs(expenseQuery);
+        expenses = expenseSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as ExpenseRequest[];
+      }
       if (filter.branchIds?.length) {
         expenses = expenses.filter(e => filter.branchIds!.includes(e.branchId));
       }
       if (filter.categories?.length) {
-        expenses = expenses.filter(e => 
+        expenses = expenses.filter(e =>
           e.items.some(item => filter.categories!.includes(item.category))
         );
       }
@@ -215,7 +249,9 @@ export function useReports() {
       })).sort((a, b) => b.amount - a.amount);
       // 월별 트렌드
       const monthlyData = expenses.reduce((acc, expense) => {
-        const date = expense.createdAt.toDate ? expense.createdAt.toDate() : new Date(expense.createdAt);
+        const date = (expense.createdAt && (expense.createdAt as any).toDate)
+          ? (expense.createdAt as any).toDate()
+          : new Date(expense.createdAt as any);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         if (!acc[monthKey]) {
           acc[monthKey] = { amount: 0, count: 0, approved: 0, rejected: 0 };
@@ -270,16 +306,47 @@ export function useReports() {
   const generateBudgetReport = useCallback(async (filter: ReportFilter): Promise<BudgetReport> => {
     try {
       setLoading(true);
-      // 예산 데이터 조회
-      const budgetQuery = query(
-        collection(db, 'budgets'),
-        where('isActive', '==', true)
-      );
-      const budgetSnapshot = await getDocs(budgetQuery);
-      let budgets = budgetSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Budget[];
+
+      let budgets: Budget[] = [];
+
+      // [Supabase 우선 조회]
+      const { data: supabaseBudgets, error: supabaseError } = await supabase
+        .from('budgets')
+        .select('*')
+        .eq('is_active', true);
+
+      if (!supabaseError && supabaseBudgets) {
+        budgets = supabaseBudgets.map(b => ({
+          id: b.id,
+          branchId: b.branch_id,
+          branchName: b.branch_name,
+          departmentId: b.department_id,
+          departmentName: b.department_name,
+          category: b.category as any,
+          name: b.name,
+          allocatedAmount: b.allocated_amount,
+          usedAmount: b.used_amount,
+          remainingAmount: b.remaining_amount,
+          period: {
+            from: Timestamp.fromDate(new Date(b.period_from)),
+            to: Timestamp.fromDate(new Date(b.period_to))
+          },
+          isActive: b.is_active,
+          createdAt: Timestamp.fromDate(new Date(b.created_at)),
+          updatedAt: Timestamp.fromDate(new Date(b.updated_at))
+        })) as unknown as Budget[];
+      } else {
+        // Fallback: Firebase
+        const budgetQuery = query(
+          collection(db, 'budgets'),
+          where('isActive', '==', true)
+        );
+        const budgetSnapshot = await getDocs(budgetQuery);
+        budgets = budgetSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Budget[];
+      }
       // 필터링
       if (filter.branchIds?.length) {
         budgets = budgets.filter(b => !b.branchId || filter.branchIds!.includes(b.branchId));
@@ -406,29 +473,52 @@ export function useReports() {
         generateExpenseReport(filter),
         generateBudgetReport(filter)
       ]);
-      // 구매 요청 데이터 (간단한 버전)
-      const purchaseQuery = query(
-        collection(db, 'materialRequests'),
-        where('createdAt', '>=', filter.dateFrom),
-        where('createdAt', '<=', filter.dateTo)
-      );
-      const purchaseSnapshot = await getDocs(purchaseQuery);
-      const purchases = purchaseSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as MaterialRequest[];
+      let purchases: MaterialRequest[] = [];
+
+      // [Supabase 우선 조회]
+      const { data: supabasePurchases, error: supabaseError } = await supabase
+        .from('material_requests')
+        .select('*')
+        .gte('created_at', filter.dateFrom.toISOString())
+        .lte('created_at', filter.dateTo.toISOString());
+
+      if (!supabaseError && supabasePurchases) {
+        purchases = supabasePurchases.map(p => ({
+          id: p.id,
+          branchId: p.branch_id,
+          branchName: p.branch_name,
+          status: p.status as any,
+          requestedItems: p.requested_items as any,
+          totalAmount: p.total_amount,
+          requestReason: p.request_reason,
+          createdAt: Timestamp.fromDate(new Date(p.created_at)),
+          updatedAt: Timestamp.fromDate(new Date(p.updated_at))
+        })) as unknown as MaterialRequest[];
+      } else {
+        // Fallback: Firebase
+        const purchaseQuery = query(
+          collection(db, 'materialRequests'),
+          where('createdAt', '>=', filter.dateFrom),
+          where('createdAt', '<=', filter.dateTo)
+        );
+        const purchaseSnapshot = await getDocs(purchaseQuery);
+        purchases = purchaseSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as MaterialRequest[];
+      }
       const purchaseReport: PurchaseReport = {
         summary: {
           totalRequests: purchases.length,
-          totalAmount: purchases.reduce((sum, p) => 
-            sum + p.requestedItems.reduce((itemSum, item) => 
+          totalAmount: purchases.reduce((sum, p) =>
+            sum + p.requestedItems.reduce((itemSum, item) =>
               itemSum + (item.requestedQuantity * item.estimatedPrice), 0
             ), 0
           ),
-          completionRate: purchases.length > 0 ? 
+          completionRate: purchases.length > 0 ?
             (purchases.filter(p => p.status === 'completed').length / purchases.length) * 100 : 0,
           averageProcessingTime: 0, // 계산 로직 필요
-          urgentRequests: purchases.filter(p => 
+          urgentRequests: purchases.filter(p =>
             p.requestedItems.some(item => item.urgency === 'urgent')
           ).length
         },
@@ -497,11 +587,11 @@ export function useReports() {
       const headers = Object.keys(data[0]);
       const csvContent = [
         headers.join(','),
-        ...data.map(row => 
+        ...data.map(row =>
           headers.map(header => {
             const value = row[header];
-            return typeof value === 'string' && value.includes(',') 
-              ? `"${value}"` 
+            return typeof value === 'string' && value.includes(',')
+              ? `"${value}"`
               : value;
           }).join(',')
         )

@@ -1,24 +1,27 @@
 "use client";
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  collection, 
-  doc, 
-  getDocs, 
-  addDoc, 
-  updateDoc, 
+import {
+  collection,
+  doc,
+  getDocs,
+  addDoc,
+  updateDoc,
   deleteDoc,
-  query, 
-  where, 
+  query,
+  where,
   orderBy,
   serverTimestamp,
   runTransaction,
   Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useToast } from './use-toast';
-import type { 
+import type {
   Budget,
   ExpenseCategory,
+} from '@/types/expense';
+import {
   calculateBudgetUsage,
   getBudgetStatus
 } from '@/types/expense';
@@ -67,6 +70,71 @@ export function useBudgets() {
   }) => {
     try {
       setLoading(true);
+
+      // [Supabase 우선 조회]
+      let queryBuilder = supabase
+        .from('budgets')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (filters?.fiscalYear) {
+        queryBuilder = queryBuilder.eq('fiscal_year', filters.fiscalYear);
+      }
+      if (filters?.category) {
+        queryBuilder = queryBuilder.eq('category', filters.category);
+      }
+      if (filters?.branchId) {
+        queryBuilder = queryBuilder.eq('branch_id', filters.branchId);
+      }
+      if (filters?.isActive !== undefined) {
+        queryBuilder = queryBuilder.eq('is_active', filters.isActive);
+      }
+
+      const { data: supabaseItems, error: supabaseError } = await queryBuilder;
+
+      if (!supabaseError && supabaseItems && supabaseItems.length > 0) {
+        const mappedData = supabaseItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          category: item.category as ExpenseCategory,
+          fiscalYear: item.fiscal_year,
+          fiscalMonth: item.fiscal_month,
+          allocatedAmount: Number(item.allocated_amount),
+          usedAmount: Number(item.used_amount),
+          remainingAmount: Number(item.remaining_amount),
+          branchId: item.branch_id,
+          branchName: item.branch_name,
+          departmentId: item.department_id,
+          departmentName: item.department_name,
+          approvalLimits: item.approval_limits,
+          isActive: item.is_active,
+          createdAt: item.created_at ? Timestamp.fromDate(new Date(item.created_at)) : undefined,
+          updatedAt: item.updated_at ? Timestamp.fromDate(new Date(item.updated_at)) : undefined
+        } as unknown as Budget));
+
+        setBudgets(mappedData);
+
+        // 통계 계산
+        const totalBudgets = mappedData.length;
+        const totalAllocated = mappedData.reduce((sum, budget) => sum + budget.allocatedAmount, 0);
+        const totalUsed = mappedData.reduce((sum, budget) => sum + budget.usedAmount, 0);
+        const totalRemaining = mappedData.reduce((sum, budget) => sum + budget.remainingAmount, 0);
+        const averageUsage = totalBudgets > 0 ? (totalUsed / totalAllocated) * 100 : 0;
+        const overBudgetCount = mappedData.filter(budget => budget.usedAmount > budget.allocatedAmount).length;
+
+        setStats({
+          totalBudgets,
+          totalAllocated,
+          totalUsed,
+          totalRemaining,
+          averageUsage,
+          overBudgetCount
+        });
+
+        setLoading(false);
+        return;
+      }
+
       let budgetQuery = query(
         collection(db, 'budgets'),
         orderBy('createdAt', 'desc')
@@ -127,6 +195,27 @@ export function useBudgets() {
         updatedAt: serverTimestamp() as Timestamp
       };
       const docRef = await addDoc(collection(db, 'budgets'), budget);
+
+      // [이중 저장: Supabase]
+      await supabase.from('budgets').insert([{
+        id: docRef.id,
+        name: data.name,
+        category: data.category,
+        fiscal_year: data.fiscalYear,
+        fiscal_month: data.fiscalMonth,
+        allocated_amount: data.allocatedAmount,
+        used_amount: 0,
+        remaining_amount: data.allocatedAmount,
+        branch_id: data.branchId,
+        branch_name: data.branchName,
+        department_id: data.departmentId,
+        department_name: data.departmentName,
+        approval_limits: data.approvalLimits,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]);
+
       toast({
         title: '예산 생성 완료',
         description: '새 예산이 성공적으로 생성되었습니다.'
@@ -145,7 +234,7 @@ export function useBudgets() {
   }, [toast, fetchBudgets]);
   // 예산 수정
   const updateBudget = useCallback(async (
-    budgetId: string, 
+    budgetId: string,
     data: Partial<CreateBudgetData>
   ) => {
     try {
@@ -162,6 +251,21 @@ export function useBudgets() {
         }
       }
       await updateDoc(docRef, updateData);
+
+      // [이중 저장: Supabase]
+      const supabaseUpdate: any = {
+        updated_at: new Date().toISOString()
+      };
+      if (data.name) supabaseUpdate.name = data.name;
+      if (data.category) supabaseUpdate.category = data.category;
+      if (data.allocatedAmount !== undefined) {
+        supabaseUpdate.allocated_amount = data.allocatedAmount;
+        supabaseUpdate.remaining_amount = updateData.remainingAmount;
+      }
+      if (data.approvalLimits) supabaseUpdate.approval_limits = data.approvalLimits;
+
+      await supabase.from('budgets').update(supabaseUpdate).eq('id', budgetId);
+
       toast({
         title: '예산 수정 완료',
         description: '예산이 성공적으로 수정되었습니다.'
@@ -180,6 +284,10 @@ export function useBudgets() {
   const deleteBudget = useCallback(async (budgetId: string) => {
     try {
       await deleteDoc(doc(db, 'budgets', budgetId));
+
+      // [이중 저장: Supabase]
+      await supabase.from('budgets').delete().eq('id', budgetId);
+
       toast({
         title: '예산 삭제 완료',
         description: '예산이 삭제되었습니다.'
@@ -208,7 +316,7 @@ export function useBudgets() {
           throw new Error('예산을 찾을 수 없습니다.');
         }
         const budget = budgetDoc.data() as Budget;
-        const newUsedAmount = operation === 'add' 
+        const newUsedAmount = operation === 'add'
           ? budget.usedAmount + usageAmount
           : budget.usedAmount - usageAmount;
         const newRemainingAmount = budget.allocatedAmount - newUsedAmount;
@@ -217,6 +325,13 @@ export function useBudgets() {
           remainingAmount: newRemainingAmount,
           updatedAt: serverTimestamp()
         });
+
+        // [이중 저장: Supabase]
+        await supabase.from('budgets').update({
+          used_amount: Math.max(0, newUsedAmount),
+          remaining_amount: newRemainingAmount,
+          updated_at: new Date().toISOString()
+        }).eq('id', budgetId);
       });
       await fetchBudgets();
     } catch (error) {
@@ -236,6 +351,13 @@ export function useBudgets() {
         isActive,
         updatedAt: serverTimestamp()
       });
+
+      // [이중 저장: Supabase]
+      await supabase.from('budgets').update({
+        is_active: isActive,
+        updated_at: new Date().toISOString()
+      }).eq('id', budgetId);
+
       toast({
         title: `예산 ${isActive ? '활성화' : '비활성화'} 완료`,
         description: `예산이 ${isActive ? '활성화' : '비활성화'}되었습니다.`

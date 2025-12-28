@@ -304,6 +304,17 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order }: OrderDetailDi
                       </div>
                       <p className="text-sm text-muted-foreground">{order.pickupInfo.pickerContact}</p>
                     </div>
+                    {order.pickupInfo.completedAt && (
+                      <div className="space-y-2 md:col-span-2">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-green-600" />
+                          <span className="text-sm font-medium text-green-600">픽업 완료 일시</span>
+                        </div>
+                        <p className="text-sm font-medium text-green-600">
+                          {format((order.pickupInfo.completedAt as Timestamp).toDate(), 'yyyy-MM-dd HH:mm')}
+                        </p>
+                      </div>
+                    )}
                   </>
                 )}
                 {order.deliveryInfo && (
@@ -329,6 +340,17 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order }: OrderDetailDi
                           <span className="text-sm font-medium">배송 주소</span>
                         </div>
                         <p className="text-sm text-muted-foreground">{order.deliveryInfo.address}</p>
+                      </div>
+                    )}
+                    {order.deliveryInfo.completedAt && (
+                      <div className="space-y-2 md:col-span-2">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-green-600" />
+                          <span className="text-sm font-medium text-green-600">배송 완료 일시</span>
+                        </div>
+                        <p className="text-sm font-medium text-green-600">
+                          {format((order.deliveryInfo.completedAt as Timestamp).toDate(), 'yyyy-MM-dd HH:mm')}
+                        </p>
                       </div>
                     )}
                   </>

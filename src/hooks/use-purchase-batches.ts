@@ -1,27 +1,28 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { 
-  collection, 
-  doc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  getDocs, 
+import {
+  collection,
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  getDocs,
   getDoc,
-  query, 
-  where, 
-  orderBy, 
+  query,
+  where,
+  orderBy,
   limit,
   Timestamp,
   writeBatch,
   runTransaction
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
-import type { 
-  PurchaseBatch, 
+import type {
+  PurchaseBatch,
   CreatePurchaseBatchData,
   ActualPurchaseInputData,
   DeliveryPlanItem,
@@ -49,6 +50,45 @@ export function usePurchaseBatches() {
     setError(null);
 
     try {
+      // [Supabase 우선 조회]
+      let queryBuilder = supabase
+        .from('purchase_batches')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (filters?.status) {
+        queryBuilder = queryBuilder.eq('status', filters.status);
+      }
+
+      if (filters?.limit) {
+        queryBuilder = queryBuilder.limit(filters.limit);
+      }
+
+      const { data: supabaseItems, error: supabaseError } = await queryBuilder;
+
+      if (!supabaseError && supabaseItems && supabaseItems.length > 0) {
+        const mappedData = supabaseItems.map(item => ({
+          id: item.id,
+          batchNumber: item.batch_number,
+          purchaseDate: new Date(item.purchase_date),
+          purchaserId: item.purchaser_id,
+          purchaserName: item.purchaser_name,
+          includedRequests: item.included_requests,
+          purchasedItems: item.purchased_items,
+          totalCost: item.total_cost,
+          deliveryPlan: item.delivery_plan,
+          status: item.status,
+          notes: item.notes,
+          createdAt: new Date(item.created_at),
+          updatedAt: new Date(item.updated_at)
+        } as unknown)) as PurchaseBatch[];
+
+        setBatches(mappedData);
+        setLoading(false);
+        return;
+      }
+
+      // Fallback: Firebase
       let q = query(
         collection(db, 'purchaseBatches'),
         orderBy('createdAt', 'desc')
@@ -118,6 +158,23 @@ export function usePurchaseBatches() {
 
       batch.set(batchRef, newBatch);
 
+      // [이중 저장: Supabase 배치 생성]
+      await supabase.from('purchase_batches').insert([{
+        id: batchRef.id,
+        batch_number: batchNumber,
+        purchase_date: new Date().toISOString(),
+        purchaser_id: data.purchaserId,
+        purchaser_name: data.purchaserName,
+        included_requests: data.includedRequests,
+        purchased_items: [],
+        total_cost: 0,
+        delivery_plan: deliveryPlan,
+        status: 'planning',
+        notes: data.notes || '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]);
+
       // 포함된 요청들의 상태를 'purchasing'으로 업데이트
       for (const requestId of data.includedRequests) {
         const requestRef = doc(db, 'materialRequests', requestId);
@@ -125,6 +182,12 @@ export function usePurchaseBatches() {
           status: 'purchasing',
           updatedAt: now
         });
+
+        // [이중 저장: Supabase 요청 상태 업데이트]
+        await supabase.from('material_requests').update({
+          status: 'purchasing',
+          updated_at: new Date().toISOString()
+        }).eq('id', requestId);
       }
 
       await batch.commit();
@@ -178,12 +241,12 @@ export function usePurchaseBatches() {
           if (item.status === 'purchased' || item.status === 'substituted') {
             const materialIdToUpdate = item.actualMaterialId || item.originalMaterialId;
             const materialQuery = query(
-              collection(db, "materials"), 
+              collection(db, "materials"),
               where("id", "==", materialIdToUpdate.split('-')[0])
             );
             const materialSnapshot = await getDocs(materialQuery);
             materialSnapshot.forEach(materialDoc => {
-              transaction.update(materialDoc.ref, { 
+              transaction.update(materialDoc.ref, {
                 price: item.actualPrice,
                 lastPurchasePrice: item.actualPrice,
                 lastPurchaseDate: now
@@ -201,13 +264,28 @@ export function usePurchaseBatches() {
           updatedAt: now
         });
 
+        // [이중 저장: Supabase 배치 업데이트]
+        await supabase.from('purchase_batches').update({
+          purchased_items: purchaseData.items,
+          total_cost: purchaseData.totalCost,
+          status: 'completed',
+          notes: purchaseData.notes,
+          updated_at: new Date().toISOString()
+        }).eq('id', batchId);
+
         // 3. 포함된 요청들의 상태를 'purchased'로 업데이트
         for (const requestId of batchData.includedRequests) {
           const requestRef = doc(db, 'materialRequests', requestId);
-          transaction.update(requestRef, { 
+          transaction.update(requestRef, {
             status: 'purchased',
             updatedAt: now
           });
+
+          // [이중 저장: Supabase 요청 상태 업데이트]
+          await supabase.from('material_requests').update({
+            status: 'purchased',
+            updated_at: new Date().toISOString()
+          }).eq('id', requestId);
         }
       });
 
@@ -256,6 +334,17 @@ export function usePurchaseBatches() {
             },
             updatedAt: now
           });
+
+          // [이중 저장: Supabase 요청 상태/배송 업데이트]
+          await supabase.from('material_requests').update({
+            status: 'shipping',
+            actual_delivery: {
+              shipping_date: new Date().toISOString(),
+              delivery_method: '직접배송',
+              delivery_status: 'shipped'
+            },
+            updated_at: new Date().toISOString()
+          }).eq('id', requestId);
         }
       } else {
         console.error('배치를 찾을 수 없음:', batchId);
@@ -308,6 +397,17 @@ export function usePurchaseBatches() {
         updatedAt: now
       });
 
+      // [이중 저장: Supabase 개별 요청 배송 업데이트]
+      await supabase.from('material_requests').update({
+        status: 'shipping',
+        actual_delivery: {
+          shipping_date: new Date().toISOString(),
+          delivery_method: '직접배송',
+          delivery_status: 'shipped'
+        },
+        updated_at: new Date().toISOString()
+      }).eq('id', requestId);
+
       toast({
         title: "배송 시작",
         description: "요청의 배송이 시작되었습니다.",
@@ -352,11 +452,20 @@ export function usePurchaseBatches() {
             status: 'reviewing',
             updatedAt: Timestamp.now()
           });
+
+          // [이중 저장: Supabase 요청 상태 복구]
+          await supabase.from('material_requests').update({
+            status: 'reviewing',
+            updated_at: new Date().toISOString()
+          }).eq('id', requestId);
         }
       }
 
       // 구매 배치 삭제
       batch.delete(batchRef);
+
+      // [이중 저장: Supabase 배치 삭제]
+      await supabase.from('purchase_batches').delete().eq('id', batchId);
 
       await batch.commit();
 
@@ -427,7 +536,7 @@ export function usePurchaseBatches() {
 
   // 실제 구매 완료 후 배송 계획 업데이트
   const updateDeliveryPlan = (
-    originalPlan: DeliveryPlanItem[], 
+    originalPlan: DeliveryPlanItem[],
     actualItems: ActualPurchaseItem[],
     requests: MaterialRequest[]
   ): DeliveryPlanItem[] => {
@@ -441,7 +550,7 @@ export function usePurchaseBatches() {
     actualItems.forEach(actualItem => {
       // 원래 자재 ID로 어느 지점에서 요청했는지 찾기
       const requestingBranches = requests.filter(request =>
-        request.requestedItems.some(item => 
+        request.requestedItems.some(item =>
           item.materialId === actualItem.originalMaterialId
         )
       );
@@ -455,9 +564,9 @@ export function usePurchaseBatches() {
           const branchPlan = updatedPlan.find(plan => plan.branchId === request.branchId);
           if (branchPlan) {
             // 요청 수량 비율에 따라 실제 구매 품목 배분
-            const requestRatio = originalRequestItem.requestedQuantity / 
+            const requestRatio = originalRequestItem.requestedQuantity /
               requestingBranches.reduce((sum, req) => {
-                const reqItem = req.requestedItems.find(item => 
+                const reqItem = req.requestedItems.find(item =>
                   item.materialId === actualItem.originalMaterialId
                 );
                 return sum + (reqItem?.requestedQuantity || 0);
@@ -491,8 +600,8 @@ export function usePurchaseBatches() {
       branchCount: batch.deliveryPlan.length,
       totalItems: batch.purchasedItems.length,
       totalCost: batch.totalCost,
-      completionRate: batch.status === 'completed' ? 100 : 
-                     batch.status === 'purchasing' ? 50 : 0
+      completionRate: batch.status === 'completed' ? 100 :
+        batch.status === 'purchasing' ? 50 : 0
     };
   };
 

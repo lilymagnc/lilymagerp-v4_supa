@@ -1,8 +1,8 @@
-
 "use client";
 import { useState, useEffect, useCallback } from 'react';
 import { collection, getDocs, doc, addDoc, writeBatch, Timestamp, query, orderBy, runTransaction, where, updateDoc, serverTimestamp, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useToast } from './use-toast';
 import { useAuth } from './use-auth';
 // Simplified version for the form
@@ -17,6 +17,7 @@ interface OrderItemForm {
 export interface OrderData {
   branchId: string;
   branchName: string;
+  orderNumber?: string; // 주문 번호/송장 번호
   orderDate: Date | Timestamp;
   status: 'processing' | 'completed' | 'canceled';
   items: OrderItemForm[];
@@ -57,6 +58,8 @@ export interface OrderData {
     time: string;
     pickerName: string;
     pickerContact: string;
+    completedAt?: Date | Timestamp;
+    completedBy?: string;
   } | null;
   deliveryInfo: {
     date: string;
@@ -123,6 +126,57 @@ export function useOrders() {
     try {
       setLoading(true);
 
+      // [Supabase 우선 조회]
+      const { data: supabaseOrders, error: supabaseError } = await supabase
+        .from('orders')
+        .select('*')
+        .order('order_date', { ascending: false });
+
+      if (!supabaseError && supabaseOrders) {
+        const mappedOrders = supabaseOrders.map(o => {
+          let receiptType = o.receipt_type;
+          if (receiptType === 'pickup') {
+            receiptType = 'pickup_reservation';
+          } else if (receiptType === 'delivery') {
+            receiptType = 'delivery_reservation';
+          }
+
+          return {
+            id: o.id,
+            branchId: o.branch_id,
+            branchName: o.branch_name,
+            orderNumber: o.order_number,
+            orderDate: Timestamp.fromDate(new Date(o.order_date)),
+            status: o.status,
+            items: o.items,
+            summary: o.summary,
+            orderer: o.orderer,
+            isAnonymous: o.is_anonymous,
+            registerCustomer: o.register_customer,
+            orderType: o.order_type,
+            receiptType,
+            payment: o.payment,
+            pickupInfo: o.pickup_info,
+            deliveryInfo: o.delivery_info,
+            actualDeliveryCost: o.actual_delivery_cost,
+            message: o.message,
+            request: o.request,
+            transferInfo: (o as any).transfer_info
+          } as Order;
+        });
+
+        // 지점 사용자의 경우 클라이언트 사이드 필터링 (필요 시)
+        let filteredOrders = mappedOrders;
+        if (user?.franchise && user?.role !== '본사 관리자') {
+          // 여기서 지점별 필터링 수행 가능
+        }
+
+        setOrders(filteredOrders);
+        setLoading(false);
+        return;
+      }
+
+      // Fallback: Firebase
       // Firebase 연결 상태 확인
       if (!db) {
         throw new Error('Firebase Firestore is not initialized');
@@ -138,13 +192,7 @@ export function useOrders() {
 
       }
 
-      // 타임아웃 설정을 더 길게 설정
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Request timeout')), 30000)
-      );
-
-      const queryPromise = getDocs(q);
-      const querySnapshot = await Promise.race([queryPromise, timeoutPromise]) as any;
+      const querySnapshot = await getDocs(q);
 
 
 
@@ -180,7 +228,7 @@ export function useOrders() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [user]);
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
@@ -191,31 +239,57 @@ export function useOrders() {
       const orderDate = (orderData.orderDate instanceof Timestamp)
         ? orderData.orderDate.toDate()
         : new Date(orderData.orderDate);
-      const orderPayload = {
-        ...orderData,
-        orderDate: Timestamp.fromDate(orderDate),
-      };
+
       // 매장픽업(즉시) 주문인지 확인
       const isImmediatePickup = orderData.receiptType === 'store_pickup';
 
       // 매장픽업(즉시) 주문인 경우 자동으로 완료 상태로 설정
-      const finalOrderPayload = isImmediatePickup
-        ? { ...orderPayload, status: 'completed' as const }
-        : orderPayload;
+      const status = isImmediatePickup
+        ? 'completed' as const
+        : orderData.status;
 
-      // 주문 추가
-      const orderDocRef = await addDoc(collection(db, 'orders'), finalOrderPayload);
+      // [이중 저장: Firebase]
+      const orderPayload = {
+        ...orderData,
+        orderDate: Timestamp.fromDate(orderDate),
+        status
+      };
+      const orderDocRef = await addDoc(collection(db, 'orders'), orderPayload);
 
-      // 엑셀 업로드 주문인지 확인
-      const isExcelUpload = orderData.source === 'excel_upload' ||
-        orderData.items.some(item => item.source === 'excel_upload');
+      // [이중 저장: Supabase]
+      const { error: supabaseError } = await supabase.from('orders').insert([{
+        id: orderDocRef.id,
+        branch_id: orderData.branchId,
+        branch_name: orderData.branchName,
+        order_number: orderData.orderNumber,
+        order_date: orderDate.toISOString(),
+        status: status,
+        items: orderData.items,
+        summary: orderData.summary,
+        orderer: orderData.orderer,
+        is_anonymous: orderData.isAnonymous,
+        register_customer: orderData.registerCustomer,
+        order_type: orderData.orderType,
+        receipt_type: orderData.receiptType,
+        payment: orderData.payment,
+        pickup_info: orderData.pickupInfo,
+        delivery_info: orderData.deliveryInfo,
+        actual_delivery_cost: orderData.actualDeliveryCost,
+        message: orderData.message, // jsonb
+        request: orderData.request,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        transfer_info: (orderData as any).transferInfo // jsonb
+      }]);
+
+      if (supabaseError) console.error('Supabase Sync Error:', supabaseError);
 
       // 고객 등록/업데이트 로직 (포인트 차감 포함)
       if (orderData.registerCustomer && !orderData.isAnonymous) {
         await registerCustomerFromOrder(orderData);
-      } else if (orderData.orderer.id && orderData.summary.pointsUsed > 0) {
+      } else if (orderData.orderer.id && (orderData.summary.pointsUsed || 0) > 0) {
         // 고객 등록을 하지 않지만 기존 고객이 포인트를 사용한 경우에만 별도 차감
-        await deductCustomerPoints(orderData.orderer.id, orderData.summary.pointsUsed);
+        await deductCustomerPoints(orderData.orderer.id, orderData.summary.pointsUsed || 0);
       }
 
       // 수령자 정보 별도 저장 (배송 예약인 경우)
@@ -225,14 +299,18 @@ export function useOrders() {
 
       const historyBatch = writeBatch(db);
 
-      // 엑셀 업로드 주문인 경우 재고 차감 제외
+      // 엑셀 업로드 주문인지 확인
+      const isExcelUpload = orderData.source === 'excel_upload' ||
+        orderData.items.some(item => item.source === 'excel_upload');
+
+      // 재고 차감 (Firebase 전용, 향후 Supabase로 전환 고려 가능)
       if (isExcelUpload) {
         // 엑셀 업로드 주문은 재고 차감 없이 히스토리만 기록
         for (const item of orderData.items) {
           if (!item.id || item.quantity <= 0) continue;
 
           const historyDocRef = doc(collection(db, "stockHistory"));
-          historyBatch.set(historyDocRef, {
+          const historyRecord = {
             date: Timestamp.fromDate(orderDate),
             type: "excel_upload",
             itemType: "excel_product",
@@ -244,7 +322,25 @@ export function useOrders() {
             price: item.price,
             totalAmount: item.price * item.quantity,
             note: "엑셀 업로드 주문 - 재고 차감 없음"
-          });
+          };
+          historyBatch.set(historyDocRef, historyRecord);
+
+          // [이중 저장: Supabase stock_history]
+          await supabase.from('stock_history').insert([{
+            id: historyDocRef.id,
+            date: orderDate.toISOString(),
+            type: "excel_upload",
+            item_type: "excel_product",
+            item_id: item.id,
+            item_name: item.name,
+            quantity: item.quantity,
+            branch: orderData.branchName,
+            operator: user?.email || "Excel Upload",
+            price: item.price,
+            total_amount: item.price * item.quantity,
+            note: "엑셀 업로드 주문 - 재고 차감 없음",
+            created_at: new Date().toISOString()
+          }]);
         }
       } else {
         // 일반 주문은 기존 재고 차감 로직 사용
@@ -271,8 +367,15 @@ export function useOrders() {
               throw new Error(`재고 부족: '${item.name}'의 재고가 부족하여 주문을 완료할 수 없습니다. (현재 재고: ${currentStock})`);
             }
             transaction.update(productDocRef, { stock: newStock });
+
+            // [이중 저장: Supabase 상품 재고 업데이트]
+            await supabase.from('products').update({
+              stock: newStock,
+              updated_at: new Date().toISOString()
+            }).eq('id', productSnapshot.docs[0].id);
+
             const historyDocRef = doc(collection(db, "stockHistory"));
-            historyBatch.set(historyDocRef, {
+            const historyRecord = {
               date: Timestamp.fromDate(orderDate),
               type: "out",
               itemType: "product",
@@ -286,7 +389,27 @@ export function useOrders() {
               operator: user?.email || "Unknown User",
               price: item.price,
               totalAmount: item.price * item.quantity,
-            });
+            };
+            historyBatch.set(historyDocRef, historyRecord);
+
+            // [이중 저장: Supabase stock_history]
+            await supabase.from('stock_history').insert([{
+              id: historyDocRef.id,
+              date: orderDate.toISOString(),
+              type: "out",
+              item_type: "product",
+              item_id: item.id,
+              item_name: item.name,
+              quantity: item.quantity,
+              from_stock: currentStock,
+              to_stock: newStock,
+              resulting_stock: newStock,
+              branch: orderData.branchName,
+              operator: user?.email || "Unknown User",
+              price: item.price,
+              total_amount: item.price * item.quantity,
+              created_at: new Date().toISOString()
+            }]);
           });
         }
       }
@@ -324,11 +447,72 @@ export function useOrders() {
   const updateOrderStatus = async (orderId: string, newStatus: 'processing' | 'completed' | 'canceled') => {
     try {
       const orderRef = doc(db, 'orders', orderId);
-      await updateDoc(orderRef, { status: newStatus });
+      const orderDoc = await getDoc(orderRef);
 
-      // 주문이 완료되면 해당하는 캘린더 이벤트 상태를 'completed'로 변경
+      if (!orderDoc.exists()) {
+        throw new Error('주문을 찾을 수 없습니다.');
+      }
+
+      const orderData = orderDoc.data() as Order;
+      const updateData: any = { status: newStatus, updatedAt: serverTimestamp() };
+
+      // 주문이 완료되면 해당하는 정보 업데이트
       if (newStatus === 'completed') {
+        // 배송 예약인 경우 deliveryInfo 업데이트
+        if (orderData.receiptType === 'delivery_reservation' && orderData.deliveryInfo) {
+          updateData.deliveryInfo = {
+            ...orderData.deliveryInfo,
+            completedAt: serverTimestamp(),
+            completedBy: user?.uid || 'system'
+          };
+
+          // 고객에게 배송완료 이메일 발송 (사진 없이 완료 처리된 경우)
+          if (orderData.orderer?.email) {
+            try {
+              const settings = {
+                autoEmailDeliveryComplete: true,
+                siteName: '릴리맥 플라워샵',
+                emailTemplateDeliveryComplete: `안녕하세요 {고객명}님!\n\n주문하신 상품이 성공적으로 배송 완료되었습니다.\n\n주문번호: {주문번호}\n배송일: {배송일}\n\n감사합니다.\n{회사명}`
+              };
+              const { sendDeliveryCompleteEmail } = await import('@/lib/email-service');
+              await sendDeliveryCompleteEmail(
+                orderData.orderer.email,
+                orderData.orderer.name,
+                orderId,
+                new Date().toLocaleDateString('ko-KR'),
+                settings as any
+              );
+            } catch (emailError) {
+              console.error('배송완료 이메일 발송 오류:', emailError);
+            }
+          }
+        }
+        // 픽업 예약인 경우 pickupInfo 업데이트
+        else if (orderData.receiptType === 'pickup_reservation' && orderData.pickupInfo) {
+          updateData.pickupInfo = {
+            ...orderData.pickupInfo,
+            completedAt: serverTimestamp(),
+            completedBy: user?.uid || 'system'
+          };
+        }
+
+        // 캘린더 이벤트 상태 변경
         try {
+          const { data: supabaseEvents, error: eventsError } = await supabase
+            .from('calendar_events')
+            .select('id')
+            .eq('related_id', orderId);
+
+          if (!eventsError && supabaseEvents) {
+            const eventIds = supabaseEvents.map(e => e.id);
+            if (eventIds.length > 0) {
+              await supabase
+                .from('calendar_events')
+                .update({ status: 'completed', updated_at: new Date().toISOString() })
+                .in('id', eventIds);
+            }
+          }
+
           const calendarEventsRef = collection(db, 'calendarEvents');
           const calendarQuery = query(
             calendarEventsRef,
@@ -336,7 +520,6 @@ export function useOrders() {
           );
           const calendarSnapshot = await getDocs(calendarQuery);
 
-          // 관련된 캘린더 이벤트 상태를 'completed'로 변경
           const updatePromises = calendarSnapshot.docs.map(doc =>
             updateDoc(doc.ref, {
               status: 'completed',
@@ -344,60 +527,84 @@ export function useOrders() {
             })
           );
           await Promise.all(updatePromises);
-
-
         } catch (calendarError) {
           console.error('캘린더 이벤트 상태 변경 중 오류:', calendarError);
-          // 캘린더 이벤트 상태 변경 실패는 주문 상태 변경을 막지 않음
         }
 
-        // 주문이 완료되면 이관 상태도 함께 업데이트
-        try {
-          const orderDoc = await getDoc(orderRef);
-          if (orderDoc.exists()) {
-            const orderData = orderDoc.data();
+        // 이관 상태 업데이트
+        if (orderData.transferInfo?.isTransferred && orderData.transferInfo?.transferId) {
+          try {
+            const transferRef = doc(db, 'order_transfers', orderData.transferInfo.transferId);
+            await updateDoc(transferRef, {
+              status: 'completed',
+              completedAt: serverTimestamp(),
+              completedBy: user?.uid,
+              updatedAt: serverTimestamp()
+            });
 
-            // 이관된 주문인지 확인
-            if (orderData.transferInfo?.isTransferred && orderData.transferInfo?.transferId) {
-              const transferRef = doc(db, 'order_transfers', orderData.transferInfo.transferId);
+            // [이중 저장: Supabase order_transfers]
+            await supabase.from('order_transfers').update({
+              status: 'completed',
+              completed_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }).eq('id', orderData.transferInfo.transferId);
 
-              // 이관 상태를 'completed'로 업데이트
-              await updateDoc(transferRef, {
-                status: 'completed',
-                completedAt: serverTimestamp(),
-                completedBy: user?.uid,
-                updatedAt: serverTimestamp()
-              });
+            // 발주지점의 원본 주문도 완료 상태로 업데이트
+            if (orderData.transferInfo.originalBranchId && orderData.transferInfo.originalBranchId !== orderData.branchId) {
+              const originalOrderQuery = query(
+                collection(db, 'orders'),
+                where('orderNumber', '==', orderData.orderNumber),
+                where('branchId', '==', orderData.transferInfo.originalBranchId)
+              );
+              const originalOrderSnapshot = await getDocs(originalOrderQuery);
 
-              // 발주지점의 원본 주문도 완료 상태로 업데이트
-              if (orderData.transferInfo.originalBranchId && orderData.transferInfo.originalBranchId !== orderData.branchId) {
-                // 원본 주문 조회
-                const originalOrderQuery = query(
-                  collection(db, 'orders'),
-                  where('orderNumber', '==', orderData.orderNumber),
-                  where('branchId', '==', orderData.transferInfo.originalBranchId)
-                );
-                const originalOrderSnapshot = await getDocs(originalOrderQuery);
+              if (!originalOrderSnapshot.empty) {
+                const originalOrderDoc = originalOrderSnapshot.docs[0];
+                const originalOrderRef = originalOrderDoc.ref;
+                await updateDoc(originalOrderRef, {
+                  status: 'completed',
+                  updatedAt: serverTimestamp()
+                });
 
-                if (!originalOrderSnapshot.empty) {
-                  const originalOrderRef = originalOrderSnapshot.docs[0].ref;
-                  await updateDoc(originalOrderRef, {
-                    status: 'completed',
-                    updatedAt: serverTimestamp()
-                  });
-
-
-                }
+                // [이중 저장: Supabase orders (원본 주문)]
+                await supabase.from('orders').update({
+                  status: 'completed',
+                  updated_at: new Date().toISOString()
+                }).eq('id', originalOrderDoc.id);
               }
-
-
             }
+          } catch (transferError) {
+            console.error('이관 상태 업데이트 중 오류:', transferError);
           }
-        } catch (transferError) {
-          console.error('이관 상태 업데이트 중 오류:', transferError);
-          // 이관 상태 업데이트 실패는 주문 상태 변경을 막지 않음
         }
       }
+
+      // [이중 저장: Firebase]
+      await updateDoc(orderRef, updateData);
+
+      // [이중 저장: Supabase]
+      const supabaseUpdates: any = {
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      };
+
+      if (updateData.deliveryInfo) {
+        // deliveryInfo 내의 Timestamp를 ISO string으로 변환하여 저장
+        supabaseUpdates.delivery_info = {
+          ...orderData.deliveryInfo,
+          completedAt: new Date().toISOString(),
+          completedBy: user?.uid || 'system'
+        };
+      }
+      if (updateData.pickupInfo) {
+        supabaseUpdates.pickup_info = {
+          ...orderData.pickupInfo,
+          completedAt: new Date().toISOString(),
+          completedBy: user?.uid || 'system'
+        };
+      }
+
+      await supabase.from('orders').update(supabaseUpdates).eq('id', orderId);
 
       toast({
         title: '상태 변경 성공',
@@ -405,6 +612,7 @@ export function useOrders() {
       });
       await fetchOrders();
     } catch (error) {
+      console.error('주문 상태 변경 오류:', error);
       toast({
         variant: 'destructive',
         title: '오류',
@@ -442,7 +650,16 @@ export function useOrders() {
 
       }
 
+      // [이중 저장: Firebase]
       await updateDoc(orderRef, updateData);
+
+      // [이중 저장: Supabase]
+      const updatedOrderDoc = await getDoc(orderRef); // Firebase에서 업데이트된 문서 다시 가져오기
+      const currentOrder = updatedOrderDoc.data();
+      await supabase.from('orders').update({
+        payment: currentOrder?.payment
+      }).eq('id', orderId);
+
       toast({
         title: '결제 상태 변경 성공',
         description: `결제 상태가 '${newStatus === 'paid' || newStatus === 'completed' ? '완결' : '미결'}'(으)로 변경되었습니다.`,
@@ -459,8 +676,30 @@ export function useOrders() {
   const updateOrder = async (orderId: string, data: Partial<OrderData>) => {
     setLoading(true);
     try {
+      // [이중 저장: Firebase]
       const orderDocRef = doc(db, 'orders', orderId);
       await setDoc(orderDocRef, data, { merge: true });
+
+      // [이중 저장: Supabase]
+      const orderDoc = await getDoc(orderDocRef); // Firebase에서 업데이트된 문서 다시 가져오기
+      const updatedOrderData = orderDoc.data();
+      if (updatedOrderData) {
+        await supabase.from('orders').update({
+          branch_name: updatedOrderData.branchName,
+          order_number: updatedOrderData.orderNumber,
+          status: updatedOrderData.status,
+          items: updatedOrderData.items,
+          summary: updatedOrderData.summary,
+          orderer: updatedOrderData.orderer,
+          payment: updatedOrderData.payment,
+          pickup_info: updatedOrderData.pickupInfo,
+          delivery_info: updatedOrderData.deliveryInfo,
+          actual_delivery_cost: updatedOrderData.actualDeliveryCost,
+          message: updatedOrderData.message,
+          request: updatedOrderData.request
+        }).eq('id', orderId);
+      }
+
       toast({ title: "성공", description: "주문 정보가 수정되었습니다." });
       await fetchOrders();
     } catch (error) {
@@ -532,7 +771,7 @@ export function useOrders() {
         }
       }
 
-      // 주문 상태를 취소로 변경하고 금액을 0으로 설정
+      // [이중 저장: Firebase]
       await updateDoc(orderRef, {
         status: 'canceled',
         summary: {
@@ -548,6 +787,23 @@ export function useOrders() {
         canceledAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+
+      // [이중 저장: Supabase]
+      await supabase.from('orders').update({
+        status: 'canceled',
+        summary: {
+          ...orderData.summary,
+          subtotal: 0,
+          discountAmount: 0,
+          deliveryFee: 0,
+          pointsUsed: 0,
+          pointsEarned: 0,
+          total: 0
+        },
+        cancel_reason: reason || '고객 요청으로 취소',
+        canceled_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }).eq('id', orderId);
 
       // 배송 예약 주문인 경우 수령자 정보도 처리 (주문 취소 시에는 수령자 정보는 유지하되 주문 횟수만 감소)
       if (orderData.receiptType === 'delivery_reservation' && orderData.deliveryInfo) {
@@ -665,10 +921,15 @@ export function useOrders() {
         });
         await batch.commit();
 
+        // [이중 저장: Supabase order_transfers 삭제]
+        await supabase.from('order_transfers').delete().eq('original_order_id', orderId);
       }
 
-      // 주문 삭제
+      // [이중 저장: Firebase]
       await deleteDoc(orderRef);
+
+      // [이중 저장: Supabase]
+      await supabase.from('orders').delete().eq('id', orderId);
 
       // 배송 예약 주문인 경우 수령자 정보 처리
       if (orderData.receiptType === 'delivery_reservation' && orderData.deliveryInfo) {
@@ -731,11 +992,25 @@ export function useOrders() {
         completedBy: completedBy || user?.uid || 'system'
       };
 
+      // [이중 저장: Firebase]
       await updateDoc(orderRef, {
         status: 'completed',
         deliveryInfo: updatedDeliveryInfo,
         updatedAt: serverTimestamp()
       });
+
+      // [이중 저장: Supabase]
+      const updatedDeliveryInfoForSupabase = {
+        ...orderData.deliveryInfo,
+        completionPhotoUrl,
+        completedAt: new Date().toISOString(), // Supabase는 ISO string 사용
+        completedBy: completedBy || user?.uid || 'system'
+      };
+      await supabase.from('orders').update({
+        status: 'completed',
+        delivery_info: updatedDeliveryInfoForSupabase,
+        updated_at: new Date().toISOString()
+      }).eq('id', orderId);
 
       // 고객에게 배송완료 이메일 발송 (사진 포함)
       if (orderData.orderer?.email) {
@@ -769,6 +1044,21 @@ export function useOrders() {
 
       // 주문이 완료되면 해당하는 캘린더 이벤트 상태를 'completed'로 변경
       try {
+        const { data: supabaseEvents, error: eventsError } = await supabase
+          .from('calendar_events')
+          .select('id')
+          .eq('related_id', orderId);
+
+        if (!eventsError && supabaseEvents) {
+          const eventIds = supabaseEvents.map(e => e.id);
+          if (eventIds.length > 0) {
+            await supabase
+              .from('calendar_events')
+              .update({ status: 'completed', updated_at: new Date().toISOString() })
+              .in('id', eventIds);
+          }
+        }
+
         const calendarEventsRef = collection(db, 'calendarEvents');
         const calendarQuery = query(
           calendarEventsRef,
@@ -784,11 +1074,8 @@ export function useOrders() {
           })
         );
         await Promise.all(updatePromises);
-
-
       } catch (calendarError) {
         console.error('캘린더 이벤트 상태 변경 중 오류:', calendarError);
-        // 캘린더 이벤트 상태 변경 실패는 배송완료 처리를 막지 않음
       }
 
       // 주문 목록 새로고침
@@ -812,7 +1099,7 @@ export function useOrders() {
 
   return { orders, loading, addOrder, fetchOrders, updateOrderStatus, updatePaymentStatus, updateOrder, cancelOrder, deleteOrder, completeDelivery };
 }
-// 주문자 정보로 고객 등록/업데이트 함수
+// 헬퍼 함수들도 이중 저장을 고려해야 함 (예: registerCustomerFromOrder, deductCustomerPoints 등)
 const registerCustomerFromOrder = async (orderData: OrderData) => {
   try {
     // 기존 고객 검색 (연락처 기준) - 전 지점 공유
@@ -862,6 +1149,28 @@ const registerCustomerFromOrder = async (orderData: OrderData) => {
         // 주 거래 지점 업데이트 (가장 최근 주문 지점)
         primaryBranch: currentBranch
       }, { merge: true });
+      // Supabase 동기화 (고객 정보 및 지점 정보 업데이트)
+      const { data: currentCustomer } = await supabase
+        .from('customers')
+        .select('branches')
+        .eq('id', customerDoc.id)
+        .maybeSingle();
+
+      const supabaseBranches = currentCustomer?.branches || {};
+      supabaseBranches[currentBranch] = {
+        registered_at: new Date().toISOString(),
+        grade: existingData.grade || '신규',
+        notes: `주문으로 자동 등록 - ${new Date().toLocaleDateString()}`
+      };
+
+      await supabase.from('customers').update({
+        total_spent: (existingData.totalSpent || 0) + orderData.summary.total,
+        order_count: (existingData.orderCount || 0) + 1,
+        points: (existingData.points || 0) - (orderData.summary.pointsUsed || 0) + Math.floor(orderData.summary.total * 0.02),
+        last_order_date: new Date().toISOString(),
+        primary_branch: currentBranch,
+        branches: supabaseBranches
+      }).eq('id', customerDoc.id);
     } else {
       // 신규 고객 등록 (통합 관리)
       const currentBranch = orderData.branchName;
@@ -877,7 +1186,32 @@ const registerCustomerFromOrder = async (orderData: OrderData) => {
         },
         primaryBranch: currentBranch
       };
-      await addDoc(collection(db, 'customers'), newCustomerData);
+      const newCustomerDocRef = await addDoc(collection(db, 'customers'), newCustomerData);
+      // Supabase 동기화 (신규 고객)
+      await supabase.from('customers').insert([{
+        id: newCustomerDocRef.id,
+        name: customerData.name,
+        contact: customerData.contact,
+        email: customerData.email,
+        company_name: customerData.companyName,
+        type: customerData.type,
+        branch: customerData.branch,
+        grade: customerData.grade,
+        total_spent: customerData.totalSpent,
+        order_count: customerData.orderCount,
+        points: customerData.points,
+        last_order_date: new Date().toISOString(),
+        is_deleted: customerData.isDeleted,
+        created_at: new Date().toISOString(),
+        primary_branch: currentBranch,
+        branches: {
+          [currentBranch]: {
+            registered_at: new Date().toISOString(),
+            grade: customerData.grade,
+            notes: `주문으로 자동 등록 - ${new Date().toLocaleDateString()}`
+          }
+        }
+      }]);
     }
   } catch (error) {
     // 고객 등록 실패해도 주문은 계속 진행
@@ -895,6 +1229,8 @@ const deductCustomerPoints = async (customerId: string, pointsToDeduct: number) 
         points: newPoints,
         lastUpdated: serverTimestamp(),
       }, { merge: true });
+      // Supabase 동기화 (placeholder)
+      await supabase.from('customers').update({ points: newPoints, last_updated: new Date().toISOString() }).eq('id', customerId);
     }
   } catch (error) {
     // 포인트 차감 실패해도 주문은 계속 진행
@@ -914,6 +1250,9 @@ const refundCustomerPoints = async (customerId: string, pointsToRefund: number) 
         points: newPoints,
         lastUpdated: serverTimestamp(),
       }, { merge: true });
+
+      // Supabase 동기화 (placeholder)
+      await supabase.from('customers').update({ points: newPoints, last_updated: new Date().toISOString() }).eq('id', customerId);
 
       console.log('포인트 환불 완료:', {
         customerId: customerId,
@@ -952,6 +1291,15 @@ const saveRecipientInfo = async (deliveryInfo: any, branchName: string, orderId:
         lastOrderDate: serverTimestamp(),
         updatedAt: serverTimestamp(),
       }, { merge: true });
+      // Supabase 동기화 (placeholder)
+      await supabase.from('recipients').update({
+        name: deliveryInfo.recipientName,
+        address: deliveryInfo.address,
+        district: deliveryInfo.district,
+        order_count: (existingData.orderCount || 0) + 1,
+        last_order_date: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }).eq('id', recipientDoc.id);
     } else {
       // 신규 수령자 등록
       const recipientData = {
@@ -968,7 +1316,22 @@ const saveRecipientInfo = async (deliveryInfo: any, branchName: string, orderId:
         marketingConsent: true, // 기본값 (나중에 UI에서 선택 가능하도록 수정)
         source: 'order', // 데이터 출처
       };
-      await addDoc(collection(db, 'recipients'), recipientData);
+      const newRecipientDocRef = await addDoc(collection(db, 'recipients'), recipientData);
+      // Supabase 동기화 (placeholder)
+      await supabase.from('recipients').insert([{
+        id: newRecipientDocRef.id,
+        name: deliveryInfo.recipientName,
+        contact: deliveryInfo.recipientContact,
+        address: deliveryInfo.address,
+        district: deliveryInfo.district,
+        branch_name: branchName,
+        order_count: 1,
+        last_order_date: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        email: '',
+        marketing_consent: true,
+        source: 'order'
+      }]);
     }
   } catch (error) {
     // 수령자 저장 실패해도 주문은 계속 진행
@@ -994,12 +1357,19 @@ const updateRecipientInfoOnOrderDelete = async (deliveryInfo: any, branchName: s
       if (newOrderCount === 0) {
         // 주문 횟수가 0이 되면 수령자 정보 삭제
         await deleteDoc(recipientDoc.ref);
+        // Supabase 동기화 (placeholder)
+        await supabase.from('recipients').delete().eq('id', recipientDoc.id);
       } else {
         // 주문 횟수만 감소시키고 최근 주문일은 유지 (다른 주문이 있을 수 있으므로)
         await setDoc(recipientDoc.ref, {
           orderCount: newOrderCount,
           updatedAt: serverTimestamp(),
         }, { merge: true });
+        // Supabase 동기화 (placeholder)
+        await supabase.from('recipients').update({
+          order_count: newOrderCount,
+          updated_at: new Date().toISOString()
+        }).eq('id', recipientDoc.id);
       }
     }
   } catch (error) {

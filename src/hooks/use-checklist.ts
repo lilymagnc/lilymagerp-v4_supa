@@ -1,30 +1,31 @@
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  collection, 
-  doc, 
-  getDocs, 
-  getDoc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where, 
-  orderBy, 
+import {
+  collection,
+  doc,
+  getDocs,
+  getDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
   limit,
   serverTimestamp,
-  Timestamp 
+  Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useAuth } from './use-auth';
 import { useUserRole } from './use-user-role';
-import { 
-  ChecklistTemplate, 
-  ChecklistRecord, 
-  ChecklistItem, 
+import {
+  ChecklistTemplate,
+  ChecklistRecord,
+  ChecklistItem,
   ChecklistItemRecord,
   Worker,
   ChecklistStats,
-  ChecklistFilter 
+  ChecklistFilter
 } from '@/types/checklist';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 
@@ -55,14 +56,14 @@ export const useChecklist = () => {
         { id: '12', order: 12, title: '12. 마감전 매장바닥 및 작업대청소', category: 'daily', required: true },
         { id: '13', order: 13, title: '13. 사용한걸레는 빨아서 널어둠', category: 'daily', required: true },
         { id: '14', order: 14, title: '14. 싱크대 및 싱크볼 청소 및 정리', category: 'daily', required: true },
-        
+
         // Weekly 항목들
         { id: '15', order: 15, title: '1. 주간 매출 정리', category: 'weekly', required: true },
         { id: '16', order: 16, title: '2. 재고 점검', category: 'weekly', required: true },
         { id: '17', order: 17, title: '3. 주간 업무 계획 수립', category: 'weekly', required: true },
         { id: '18', order: 18, title: '4. 직원 교육 및 훈련', category: 'weekly', required: false },
         { id: '19', order: 19, title: '5. 고객 피드백 검토', category: 'weekly', required: false },
-        
+
         // Monthly 항목들
         { id: '20', order: 20, title: '1. 월간 매출 분석', category: 'monthly', required: true },
         { id: '21', order: 21, title: '2. 월간 예산 검토', category: 'monthly', required: true },
@@ -80,6 +81,18 @@ export const useChecklist = () => {
       };
 
       const docRef = await addDoc(collection(db, 'checklistTemplates'), template);
+
+      // [이중 저장: Supabase]
+      await supabase.from('checklist_templates').insert([{
+        id: docRef.id,
+        name: template.name,
+        category: template.category,
+        items: template.items,
+        branch_id: branchId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]);
+
       return docRef.id;
     } catch (err) {
       console.error('Error creating default template:', err);
@@ -90,19 +103,38 @@ export const useChecklist = () => {
   // 템플릿 가져오기
   const getTemplate = useCallback(async (branchId: string): Promise<ChecklistTemplate | null> => {
     try {
+      // [Supabase 우선 조회]
+      const { data: supabaseTemplate, error: supabaseError } = await supabase
+        .from('checklist_templates')
+        .select('*')
+        .eq('branch_id', branchId)
+        .maybeSingle();
+
+      if (!supabaseError && supabaseTemplate) {
+        return {
+          id: supabaseTemplate.id,
+          name: supabaseTemplate.name,
+          category: supabaseTemplate.category as any,
+          items: supabaseTemplate.items as any,
+          branchId: supabaseTemplate.branch_id,
+          createdAt: Timestamp.fromDate(new Date(supabaseTemplate.created_at)),
+          updatedAt: Timestamp.fromDate(new Date(supabaseTemplate.updated_at))
+        } as ChecklistTemplate;
+      }
+
       const q = query(
         collection(db, 'checklistTemplates'),
         where('branchId', '==', branchId),
         limit(1)
       );
       const snapshot = await getDocs(q);
-      
+
       if (snapshot.empty) {
         // 템플릿이 없으면 기본 템플릿 생성
         const templateId = await createDefaultTemplate(branchId);
         const docRef = doc(db, 'checklistTemplates', templateId);
         const docSnap = await getDoc(docRef);
-        
+
         if (docSnap.exists()) {
           return { id: docSnap.id, ...docSnap.data() } as ChecklistTemplate;
         }
@@ -125,6 +157,12 @@ export const useChecklist = () => {
         items: template.items,
         updatedAt: serverTimestamp(),
       });
+
+      // [이중 저장: Supabase]
+      await supabase.from('checklist_templates').update({
+        items: template.items,
+        updated_at: new Date().toISOString()
+      }).eq('id', templateId);
     } catch (err) {
       console.error('Error updating template:', err);
       throw err;
@@ -191,6 +229,27 @@ export const useChecklist = () => {
       };
 
       const docRef = await addDoc(collection(db, 'checklists'), checklist);
+
+      // [이중 저장: Supabase]
+      await supabase.from('checklists').insert([{
+        id: docRef.id,
+        template_id: templateId,
+        branch_id: branchId,
+        branch_name: checklist.branchName,
+        record_date: date,
+        category: category,
+        status: 'pending',
+        open_worker: workerInfo.openWorker,
+        close_worker: workerInfo.closeWorker,
+        responsible_person: workerInfo.responsiblePerson,
+        items: items,
+        notes: metaInfo?.notes || '',
+        weather: metaInfo?.weather || '',
+        special_events: metaInfo?.specialEvents || '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]);
+
       return docRef.id;
     } catch (err) {
       console.error('Error creating checklist:', err);
@@ -201,9 +260,36 @@ export const useChecklist = () => {
   // 체크리스트 가져오기
   const getChecklist = useCallback(async (id: string): Promise<ChecklistRecord | null> => {
     try {
+      // [Supabase 우선 조회]
+      const { data: supabaseRecord, error: supabaseError } = await supabase
+        .from('checklists')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (!supabaseError && supabaseRecord) {
+        return {
+          id: supabaseRecord.id,
+          templateId: supabaseRecord.template_id,
+          branchId: supabaseRecord.branch_id,
+          branchName: supabaseRecord.branch_name,
+          date: supabaseRecord.record_date,
+          category: supabaseRecord.category as any,
+          status: supabaseRecord.status as any,
+          openWorker: supabaseRecord.open_worker,
+          closeWorker: supabaseRecord.close_worker,
+          responsiblePerson: supabaseRecord.responsible_person,
+          items: supabaseRecord.items as any,
+          notes: supabaseRecord.notes,
+          weather: supabaseRecord.weather,
+          specialEvents: supabaseRecord.special_events,
+          completedAt: Timestamp.fromDate(new Date(supabaseRecord.updated_at))
+        } as unknown as ChecklistRecord;
+      }
+
       const docRef = doc(db, 'checklists', id);
       const docSnap = await getDoc(docRef);
-      
+
       if (docSnap.exists()) {
         return { id: docSnap.id, ...docSnap.data() } as ChecklistRecord;
       }
@@ -217,8 +303,53 @@ export const useChecklist = () => {
   // 체크리스트 목록 가져오기
   const getChecklists = useCallback(async (filter: ChecklistFilter = {}): Promise<ChecklistRecord[]> => {
     try {
+      // [Supabase 우선 조회]
+      let queryBuilder = supabase
+        .from('checklists')
+        .select('*')
+        .order('record_date', { ascending: false });
+
+      if (!(isHQManager() || user?.role === '본사 관리자')) {
+        const branchId = userRole?.branchId || user?.franchise || '';
+        if (branchId) {
+          queryBuilder = queryBuilder.eq('branch_id', branchId);
+        }
+      }
+
+      const { data: supabaseItems, error: supabaseError } = await queryBuilder;
+
+      if (!supabaseError && supabaseItems) {
+        let checklists = supabaseItems.map(item => ({
+          id: item.id,
+          templateId: item.template_id,
+          branchId: item.branch_id,
+          branchName: item.branch_name,
+          date: item.record_date,
+          category: item.category as any,
+          status: item.status as any,
+          openWorker: item.open_worker,
+          closeWorker: item.close_worker,
+          responsiblePerson: item.responsible_person,
+          items: item.items as any,
+          notes: item.notes,
+          weather: item.weather,
+          specialEvents: item.special_events,
+          completedAt: Timestamp.fromDate(new Date(item.updated_at))
+        } as unknown as ChecklistRecord));
+
+        // 필터링 적용...
+        if (filter.date) checklists = checklists.filter(c => c.date === filter.date);
+        if (filter.status) checklists = checklists.filter(c => c.status === filter.status);
+        if (filter.worker) checklists = checklists.filter(c => c.responsiblePerson === filter.worker);
+        if (filter.branchId && (isHQManager() || user?.role === '본사 관리자')) {
+          checklists = checklists.filter(c => c.branchId === filter.branchId);
+        }
+
+        return checklists;
+      }
+
       let q;
-      
+
       // 본사 관리자는 모든 체크리스트를 볼 수 있음
       if (isHQManager() || user?.role === '본사 관리자') {
         q = query(collection(db, 'checklists'));
@@ -234,10 +365,10 @@ export const useChecklist = () => {
           where('branchId', '==', branchId)
         );
       }
-      
+
       const snapshot = await getDocs(q);
       let checklists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as ChecklistRecord);
-      
+
       // 클라이언트 사이드에서 필터링 및 정렬
       if (filter.date) {
         checklists = checklists.filter(c => c.date === filter.date);
@@ -257,10 +388,10 @@ export const useChecklist = () => {
       if (filter.branchId && isHQManager()) {
         checklists = checklists.filter(c => c.branchId === filter.branchId);
       }
-      
+
       // 날짜별 내림차순 정렬
       const sortedChecklists = checklists.sort((a, b) => b.date.localeCompare(a.date));
-      
+
       return sortedChecklists;
     } catch (err) {
       console.error('Error getting checklists:', err);
@@ -279,6 +410,17 @@ export const useChecklist = () => {
         ...updates,
         completedAt: serverTimestamp(),
       });
+
+      // [이중 저장: Supabase]
+      const supabaseUpdates: any = {};
+      if (updates.status) supabaseUpdates.status = updates.status;
+      if (updates.notes) supabaseUpdates.notes = updates.notes;
+      if (updates.weather) supabaseUpdates.weather = updates.weather;
+      if (updates.specialEvents) supabaseUpdates.special_events = updates.specialEvents;
+      if (updates.items) supabaseUpdates.items = updates.items;
+      supabaseUpdates.updated_at = new Date().toISOString();
+
+      await supabase.from('checklists').update(supabaseUpdates).eq('id', id);
     } catch (err) {
       console.error('Error updating checklist:', err);
       throw err;
@@ -317,14 +459,14 @@ export const useChecklist = () => {
       // 필수 항목만으로 완료율 계산
       const requiredItems = template.items.filter(item => item.required && item.category === checklist.category);
       const requiredItemIds = requiredItems.map(item => item.id);
-      
-      const completedRequiredItems = updatedItems.filter(item => 
+
+      const completedRequiredItems = updatedItems.filter(item =>
         item.checked && requiredItemIds.includes(item.itemId)
       ).length;
-      
+
       const totalRequiredItems = requiredItemIds.length;
       const completionRate = totalRequiredItems > 0 ? (completedRequiredItems / totalRequiredItems) * 100 : 0;
-      
+
       let status: 'pending' | 'completed' | 'partial' = 'pending';
       if (completionRate === 100) status = 'completed';
       else if (completionRate > 0) status = 'partial';
@@ -344,6 +486,9 @@ export const useChecklist = () => {
     try {
       const docRef = doc(db, 'checklists', id);
       await deleteDoc(docRef);
+
+      // [이중 저장: Supabase]
+      await supabase.from('checklists').delete().eq('id', id);
     } catch (err) {
       console.error('Error deleting checklist:', err);
       throw err;
@@ -353,11 +498,23 @@ export const useChecklist = () => {
   // 근무자 목록 가져오기
   const getWorkers = useCallback(async (): Promise<Worker[]> => {
     try {
-      // 사용자의 지점 ID 가져오기
       const branchId = userRole?.branchId || user?.franchise || '';
-      if (!branchId) {
-        console.error('Branch ID not found for user');
-        return [];
+      if (!branchId) return [];
+
+      // [Supabase 우선 조회]
+      const { data: supabaseWorkers, error: supabaseError } = await supabase
+        .from('workers')
+        .select('*')
+        .eq('branch_id', branchId)
+        .order('last_used', { ascending: false });
+
+      if (!supabaseError && supabaseWorkers) {
+        return supabaseWorkers.map(w => ({
+          id: w.id,
+          name: w.name,
+          branchId: w.branch_id,
+          lastUsed: Timestamp.fromDate(new Date(w.last_used))
+        } as Worker));
       }
 
       const q = query(
@@ -366,7 +523,7 @@ export const useChecklist = () => {
       );
       const snapshot = await getDocs(q);
       const workers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Worker);
-      
+
       // 클라이언트 사이드에서 정렬 (임시 해결책)
       return workers.sort((a, b) => {
         if (!a.lastUsed || !b.lastUsed) return 0;
@@ -393,21 +550,36 @@ export const useChecklist = () => {
         where('name', '==', name)
       );
       const snapshot = await getDocs(q);
-      
+
       if (snapshot.empty) {
         // 새 근무자 추가
-        await addDoc(collection(db, 'workers'), {
+        const docRef = await addDoc(collection(db, 'workers'), {
           name,
           branchId,
           createdAt: serverTimestamp(),
           lastUsed: serverTimestamp(),
         });
+
+        // [이중 저장: Supabase]
+        await supabase.from('workers').insert([{
+          id: docRef.id,
+          name: name,
+          branch_id: branchId,
+          created_at: new Date().toISOString(),
+          last_used: new Date().toISOString()
+        }]);
       } else {
         // 기존 근무자 lastUsed 업데이트
-        const docRef = doc(db, 'workers', snapshot.docs[0].id);
+        const workerId = snapshot.docs[0].id;
+        const docRef = doc(db, 'workers', workerId);
         await updateDoc(docRef, {
           lastUsed: serverTimestamp(),
         });
+
+        // [이중 저장: Supabase]
+        await supabase.from('workers').update({
+          last_used: new Date().toISOString()
+        }).eq('id', workerId);
       }
     } catch (err) {
       console.error('Error adding worker:', err);
@@ -438,7 +610,7 @@ export const useChecklist = () => {
       }
 
       let q;
-      
+
       // 본사 관리자는 모든 체크리스트를 볼 수 있음
       if (isHQManager() || user?.role === '본사 관리자') {
         q = query(collection(db, 'checklists'));
@@ -457,7 +629,7 @@ export const useChecklist = () => {
 
       const snapshot = await getDocs(q);
       let checklists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as ChecklistRecord);
-      
+
       // 클라이언트 사이드에서 날짜 필터링
       checklists = checklists.filter(checklist => {
         const checklistDate = new Date(checklist.date);

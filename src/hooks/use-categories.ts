@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { collection, getDocs, doc, setDoc, addDoc, serverTimestamp, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useToast } from './use-toast';
 export interface Category {
   id: string;
@@ -17,6 +18,27 @@ export function useCategories() {
   const fetchCategories = useCallback(async () => {
     try {
       setLoading(true);
+
+      // [Supabase 우선 조회]
+      const { data: supabaseItems, error: supabaseError } = await supabase
+        .from('categories')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (!supabaseError && supabaseItems && supabaseItems.length > 0) {
+        const mappedData = supabaseItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          type: item.type as 'main' | 'mid',
+          parentCategory: item.parent_category,
+          createdAt: item.created_at
+        } as Category));
+
+        setCategories(mappedData);
+        setLoading(false);
+        return;
+      }
+
       const categoriesCollection = collection(db, 'categories');
       const categoriesData = (await getDocs(categoriesCollection)).docs.map(doc => {
         const data = doc.data();
@@ -45,7 +67,7 @@ export function useCategories() {
     try {
       // 중복 확인
       const existingQuery = query(
-        collection(db, 'categories'), 
+        collection(db, 'categories'),
         where('name', '==', name),
         where('type', '==', type)
       );
@@ -59,7 +81,17 @@ export function useCategories() {
         parentCategory,
         createdAt: serverTimestamp(),
       };
-      await addDoc(collection(db, 'categories'), categoryData);
+      const docRef = await addDoc(collection(db, 'categories'), categoryData);
+
+      // [이중 저장: Supabase]
+      await supabase.from('categories').insert([{
+        id: docRef.id,
+        name,
+        type,
+        parent_category: parentCategory,
+        created_at: new Date().toISOString()
+      }]);
+
       await fetchCategories();
       return true;
     } catch (error) {
@@ -77,12 +109,12 @@ export function useCategories() {
     }
     return categories.filter(cat => cat.type === 'mid').map(cat => cat.name);
   };
-  return { 
-    categories, 
-    loading, 
-    fetchCategories, 
-    addCategory, 
-    getMainCategories, 
-    getMidCategories 
+  return {
+    categories,
+    loading,
+    fetchCategories,
+    addCategory,
+    getMainCategories,
+    getMidCategories
   };
 }

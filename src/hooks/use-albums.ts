@@ -1,18 +1,20 @@
 import { useState, useEffect } from 'react';
-import { 
-  collection, 
-  query, 
-  orderBy, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
+import {
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
   serverTimestamp,
   where,
-  getDocs
+  getDocs,
+  Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useAuth } from '@/hooks/use-auth';
 import { Album, CreateAlbumData } from '@/types/album';
 import { FirebaseStorageService } from '@/lib/firebase-storage';
@@ -26,26 +28,50 @@ export const useAlbums = () => {
       setLoading(false);
       return;
     }
-    const albumsRef = collection(db, 'albums');
-    const q = query(albumsRef, orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const albumsData = snapshot.docs.map(doc => ({
+
+    const fetchAlbums = async () => {
+      try {
+        const { data: supabaseAlbums, error: supabaseError } = await supabase
+          .from('albums')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!supabaseError && supabaseAlbums) {
+          const mappedAlbums = supabaseAlbums.map(a => ({
+            id: a.id,
+            title: a.title,
+            description: a.description,
+            category: a.category as any,
+            thumbnailUrl: a.thumbnail_url,
+            photoCount: a.photo_count,
+            isPublic: a.is_public,
+            branchId: a.branch_id,
+            createdBy: a.created_by,
+            createdAt: Timestamp.fromDate(new Date(a.created_at)),
+            updatedAt: Timestamp.fromDate(new Date(a.updated_at))
+          })) as Album[];
+          setAlbums(mappedAlbums);
+          setLoading(false);
+          return;
+        }
+
+        const albumsRef = collection(db, 'albums');
+        const q = query(albumsRef, orderBy('createdAt', 'desc'));
+        const querySnapshot = await getDocs(q);
+        const albumsData = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         })) as Album[];
         setAlbums(albumsData);
-        setLoading(false);
-        setError(null);
-      },
-      (error) => {
-        console.error('앨범 목록 조회 실패:', error);
+      } catch (err) {
+        console.error('앨범 목록 조회 실패:', err);
         setError('앨범 목록을 불러오는데 실패했습니다.');
+      } finally {
         setLoading(false);
       }
-    );
-    return () => unsubscribe();
+    };
+
+    fetchAlbums();
   }, [user]);
   const createAlbum = async (albumData: CreateAlbumData): Promise<string> => {
     if (!user) throw new Error('로그인이 필요합니다.');
@@ -59,6 +85,20 @@ export const useAlbums = () => {
         updatedAt: serverTimestamp(),
         createdBy: user.uid
       });
+
+      // [이중 저장: Supabase]
+      await supabase.from('albums').insert([{
+        id: docRef.id,
+        title: albumData.title,
+        description: albumData.description,
+        category: albumData.category,
+        is_public: albumData.isPublic ?? true,
+        branch_id: (albumData as any).branchId,
+        created_by: user.uid,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]);
+
       return docRef.id;
     } catch (error) {
       console.error('앨범 생성 실패:', error);
@@ -73,6 +113,18 @@ export const useAlbums = () => {
         ...updates,
         updatedAt: serverTimestamp()
       });
+
+      // [이중 저장: Supabase]
+      const supabaseUpdates: any = {};
+      if (updates.title) supabaseUpdates.title = updates.title;
+      if (updates.description !== undefined) supabaseUpdates.description = updates.description;
+      if (updates.category) supabaseUpdates.category = updates.category;
+      if (updates.isPublic !== undefined) supabaseUpdates.is_public = updates.isPublic;
+      if (updates.thumbnailUrl) supabaseUpdates.thumbnail_url = updates.thumbnailUrl;
+      if (updates.photoCount !== undefined) supabaseUpdates.photo_count = updates.photoCount;
+      supabaseUpdates.updated_at = new Date().toISOString();
+
+      await supabase.from('albums').update(supabaseUpdates).eq('id', albumId);
     } catch (error) {
       console.error('앨범 수정 실패:', error);
       throw new Error('앨범 수정에 실패했습니다.');
@@ -110,6 +162,9 @@ export const useAlbums = () => {
       // 3. 앨범 문서 삭제
       const albumRef = doc(db, 'albums', albumId);
       await deleteDoc(albumRef);
+
+      // [이중 저장: Supabase]
+      await supabase.from('albums').delete().eq('id', albumId);
     } catch (error) {
       console.error('앨범 삭제 실패:', error);
       throw new Error('앨범 삭제에 실패했습니다.');

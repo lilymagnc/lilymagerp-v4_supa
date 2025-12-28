@@ -110,6 +110,7 @@ export interface SimpleExpense {
   quantity?: number; // 수량 필드 추가
   unitPrice?: number; // 단가 필드 추가
   receiptUrl?: string;
+  receiptFileName?: string; // 추가
   branchId: string;
   branchName: string;
   // 자재요청 관련 필드 추가

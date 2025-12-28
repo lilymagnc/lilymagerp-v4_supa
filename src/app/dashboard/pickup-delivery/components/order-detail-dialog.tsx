@@ -101,10 +101,10 @@ export function OrderDetailDialog({ order, open, onOpenChange }: OrderDetailDial
               <div>
                 <p className="text-sm text-muted-foreground">수령 방법</p>
                 <p className="font-medium">
-                  {order.receiptType === 'store_pickup' ? '매장픽업 (즉시)' : 
-                   order.receiptType === 'pickup_reservation' ? '픽업예약' : 
-                   order.receiptType === 'delivery_reservation' ? '배송예약' : 
-                   order.receiptType || '기타'}
+                  {order.receiptType === 'store_pickup' ? '매장픽업 (즉시)' :
+                    order.receiptType === 'pickup_reservation' ? '픽업예약' :
+                      order.receiptType === 'delivery_reservation' ? '배송예약' :
+                        order.receiptType || '기타'}
                 </p>
               </div>
               <div>
@@ -112,8 +112,8 @@ export function OrderDetailDialog({ order, open, onOpenChange }: OrderDetailDial
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center gap-2">
                     <p className="font-medium">
-                      {order.transferInfo?.isTransferred && order.transferInfo?.processBranchName 
-                        ? order.transferInfo.processBranchName 
+                      {order.transferInfo?.isTransferred && order.transferInfo?.processBranchName
+                        ? order.transferInfo.processBranchName
                         : order.branchName || '-'}
                     </p>
                     {order.transferInfo?.isTransferred && (
@@ -198,6 +198,17 @@ export function OrderDetailDialog({ order, open, onOpenChange }: OrderDetailDial
                     <p className="font-medium">{order.pickupInfo?.pickerContact || '-'}</p>
                   </div>
                 </div>
+                {order.pickupInfo?.completedAt && (
+                  <div className="md:col-span-2">
+                    <p className="text-sm text-green-600 font-medium flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      픽업 완료 일시
+                    </p>
+                    <p className="font-medium text-green-600">
+                      {format(order.pickupInfo.completedAt instanceof Date ? order.pickupInfo.completedAt : (order.pickupInfo.completedAt as any).toDate(), 'yyyy-MM-dd HH:mm')}
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -241,6 +252,17 @@ export function OrderDetailDialog({ order, open, onOpenChange }: OrderDetailDial
                   <div>
                     <p className="text-sm text-muted-foreground">배송 지역</p>
                     <p className="font-medium">{order.deliveryInfo.district}</p>
+                  </div>
+                )}
+                {order.deliveryInfo?.completedAt && (
+                  <div className="md:col-span-2">
+                    <p className="text-sm text-green-600 font-medium flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      배송 완료 일시
+                    </p>
+                    <p className="font-medium text-green-600">
+                      {format(order.deliveryInfo.completedAt instanceof Date ? order.deliveryInfo.completedAt : (order.deliveryInfo.completedAt as any).toDate(), 'yyyy-MM-dd HH:mm')}
+                    </p>
                   </div>
                 )}
               </CardContent>

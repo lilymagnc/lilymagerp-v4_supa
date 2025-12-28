@@ -1,23 +1,24 @@
 "use client";
 import { useState, useCallback } from 'react';
-import { 
-  collection, 
-  addDoc, 
-  getDocs, 
-  doc, 
-  getDoc, 
-  updateDoc, 
+import {
+  collection,
+  addDoc,
+  getDocs,
+  doc,
+  getDoc,
+  updateDoc,
   deleteDoc,
-  query, 
-  where, 
-  orderBy, 
+  query,
+  where,
+  orderBy,
   serverTimestamp,
   Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useToast } from './use-toast';
-import type { 
-  MaterialRequest, 
+import type {
+  MaterialRequest,
   CreateMaterialRequestData,
   RequestStatus
 } from '@/types/material-request';
@@ -35,12 +36,38 @@ export function useMaterialRequests() {
   // ID로 특정 요청 조회
   const getRequestById = useCallback(async (requestId: string): Promise<MaterialRequest | null> => {
     try {
+      // [Supabase 우선 조회]
+      const { data: supabaseItem, error: supabaseError } = await supabase
+        .from('material_requests')
+        .select('*')
+        .eq('id', requestId)
+        .single();
+
+      if (!supabaseError && supabaseItem) {
+        return {
+          id: supabaseItem.id,
+          requestNumber: supabaseItem.request_number,
+          branchId: supabaseItem.branch_id,
+          branchName: supabaseItem.branch_name,
+          requesterId: supabaseItem.requester_id,
+          requesterName: supabaseItem.requester_name,
+          requestedItems: supabaseItem.items,
+          status: supabaseItem.status as RequestStatus,
+          totalEstimatedCost: supabaseItem.total_estimated_cost,
+          memo: supabaseItem.memo,
+          operator: supabaseItem.operator,
+          actualDelivery: supabaseItem.actual_delivery,
+          createdAt: new Date(supabaseItem.created_at),
+          updatedAt: new Date(supabaseItem.updated_at)
+        } as MaterialRequest;
+      }
+
       const docRef = doc(db, 'materialRequests', requestId);
-      const docSnap = await getDoc(docRef, { source: 'server' }); // source: 'server' 추가
+      const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data();
-        return { 
-          id: docSnap.id, 
+        return {
+          id: docSnap.id,
           ...data,
           createdAt: data.createdAt?.toDate(), // Timestamp를 Date 객체로 변환
           updatedAt: data.updatedAt?.toDate(), // Timestamp를 Date 객체로 변환
@@ -138,8 +165,8 @@ export function useMaterialRequests() {
         updatedAt: now as any
       };
       // 필수 필드 검증
-      if (!materialRequest.requestNumber || !materialRequest.branchId || !materialRequest.branchName || 
-          !materialRequest.requesterId || !materialRequest.requesterName || !materialRequest.requestedItems) {
+      if (!materialRequest.requestNumber || !materialRequest.branchId || !materialRequest.branchName ||
+        !materialRequest.requesterId || !materialRequest.requesterName || !materialRequest.requestedItems) {
         console.error('필수 필드 누락:', {
           requestNumber: !!materialRequest.requestNumber,
           branchId: !!materialRequest.branchId,
@@ -167,13 +194,27 @@ export function useMaterialRequests() {
         createdAt: cleanData.createdAt,
         updatedAt: cleanData.updatedAt
       };
-      
+
       // 최종 데이터 검증
       if (!safeData.requestNumber || !safeData.branchId || !safeData.branchName) {
         throw new Error('필수 필드가 누락되었습니다: requestNumber, branchId, branchName');
       }
       // Firestore에 저장하기 전에 최종 확인
       const docRef = await addDoc(collection(db, 'materialRequests'), safeData);
+
+      // [이중 저장: Supabase]
+      await supabase.from('material_requests').insert([{
+        id: docRef.id,
+        request_number: requestNumber,
+        branch_id: requestData.branchId,
+        branch_name: requestData.branchName,
+        requester_id: requestData.requesterId,
+        requester_name: requestData.requesterName,
+        items: materialRequest.requestedItems,
+        status: materialRequest.status,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]);
       // 알림 생성 (본사 관리자에게)
       try {
         await createNotification({
@@ -196,7 +237,7 @@ export function useMaterialRequests() {
             relatedRequestId: docRef.id
           });
         }
-        } catch (notificationError) {
+      } catch (notificationError) {
         console.warn('알림 생성 실패 (무시됨):', notificationError);
         // 알림 생성 실패는 전체 프로세스를 중단시키지 않음
       }
@@ -221,6 +262,27 @@ export function useMaterialRequests() {
   // 지점별 요청 목록 조회
   const getRequestsByBranch = useCallback(async (branchName: string): Promise<MaterialRequest[]> => {
     try {
+      // [Supabase 우선 조회]
+      const { data: supabaseItems, error: supabaseError } = await supabase
+        .from('material_requests')
+        .select('*')
+        .eq('branch_name', branchName)
+        .order('created_at', { ascending: false });
+
+      if (!supabaseError && supabaseItems) {
+        return supabaseItems.map(item => ({
+          id: item.id,
+          requestNumber: item.request_number,
+          branchId: item.branch_id,
+          branchName: item.branch_name,
+          requestedItems: item.items,
+          status: item.status as RequestStatus,
+          createdAt: new Date(item.created_at),
+          updatedAt: new Date(item.updated_at),
+          ...item.extra_data
+        })) as MaterialRequest[];
+      }
+
       // 먼저 지점 정보를 가져와서 branchId를 찾습니다
       const branchesQuery = query(
         collection(db, 'branches'),
@@ -236,7 +298,7 @@ export function useMaterialRequests() {
         where('branchId', '==', branchId),
         orderBy('createdAt', 'desc')
       );
-      const querySnapshot = await getDocs(q, { source: 'server' }); // source: 'server' 추가
+      const querySnapshot = await getDocs(q);
       const requests = querySnapshot.docs.map(doc => {
         const data = doc.data();
         return {
@@ -255,11 +317,32 @@ export function useMaterialRequests() {
   // branchId로 요청 목록 조회
   const getRequestsByBranchId = useCallback(async (branchId: string): Promise<MaterialRequest[]> => {
     try {
+      // [Supabase 우선 조회]
+      const { data: supabaseItems, error: supabaseError } = await supabase
+        .from('material_requests')
+        .select('*')
+        .eq('branch_id', branchId)
+        .order('created_at', { ascending: false });
+
+      if (!supabaseError && supabaseItems) {
+        return supabaseItems.map(item => ({
+          id: item.id,
+          requestNumber: item.request_number,
+          branchId: item.branch_id,
+          branchName: item.branch_name,
+          requestedItems: item.items,
+          status: item.status as RequestStatus,
+          createdAt: new Date(item.created_at),
+          updatedAt: new Date(item.updated_at),
+          ...item.extra_data
+        })) as MaterialRequest[];
+      }
+
       const q = query(
         collection(db, 'materialRequests'),
         where('branchId', '==', branchId)
       );
-      const querySnapshot = await getDocs(q, { source: 'server' });
+      const querySnapshot = await getDocs(q);
       const requests = querySnapshot.docs.map(doc => {
         const data = doc.data();
         return {
@@ -270,10 +353,10 @@ export function useMaterialRequests() {
         } as MaterialRequest;
       });
       // 클라이언트 사이드에서 정렬
-      return requests.sort((a, b) => {
-        const dateA = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt);
-        const dateB = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
-        return dateB.getTime() - dateA.getTime();
+      return requests.sort((a: any, b: any) => {
+        const dateA = a.createdAt instanceof Timestamp ? a.createdAt.toDate() : new Date(a.createdAt);
+        const dateB = b.createdAt instanceof Timestamp ? b.createdAt.toDate() : new Date(b.createdAt as any);
+        return (dateB as any).getTime() - (dateA as any).getTime();
       });
     } catch (error) {
       console.error('branchId로 요청 조회 오류:', error);
@@ -284,6 +367,48 @@ export function useMaterialRequests() {
   const getAllRequests = useCallback(async (): Promise<MaterialRequest[]> => {
     try {
       setLoading(true);
+
+      // [Supabase 우선 조회]
+      const { data: supabaseItems, error: supabaseError } = await supabase
+        .from('material_requests')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!supabaseError && supabaseItems) {
+        const requestsData = supabaseItems.map(item => ({
+          id: item.id,
+          requestNumber: item.request_number,
+          branchId: item.branch_id,
+          branchName: item.branch_name,
+          requesterId: item.requester_id,
+          requesterName: item.requester_name,
+          requestedItems: item.items,
+          status: item.status as RequestStatus,
+          createdAt: new Date(item.created_at),
+          updatedAt: new Date(item.updated_at),
+          ...item.extra_data
+        })) as MaterialRequest[];
+
+        setRequests(requestsData);
+        // 통계 계산
+        const totalRequests = requestsData.length;
+        const pendingRequests = requestsData.filter(r => ['submitted', 'reviewing', 'purchasing'].includes(r.status)).length;
+        const completedRequests = requestsData.filter(r => r.status === 'completed').length;
+        const totalCost = requestsData.reduce((sum, request) =>
+          sum + (request.requestedItems?.reduce((itemSum, item: any) =>
+            itemSum + (item.requestedQuantity * item.estimatedPrice), 0
+          ) || 0), 0
+        );
+        setStats({
+          totalRequests,
+          pendingRequests,
+          completedRequests,
+          totalCost,
+          averageProcessingTime: 0
+        });
+        return requestsData;
+      }
+
       const q = query(
         collection(db, 'materialRequests')
       );
@@ -299,8 +424,8 @@ export function useMaterialRequests() {
       });
       // 클라이언트 사이드에서 정렬
       const sortedRequests = requestsData.sort((a, b) => {
-        const dateA = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt);
-        const dateB = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
+        const dateA = a.createdAt instanceof Timestamp ? a.createdAt.toDate() : new Date(a.createdAt as any);
+        const dateB = b.createdAt instanceof Timestamp ? b.createdAt.toDate() : new Date(b.createdAt as any);
         return dateB.getTime() - dateA.getTime();
       });
       // 상태 업데이트
@@ -309,8 +434,8 @@ export function useMaterialRequests() {
       const totalRequests = sortedRequests.length;
       const pendingRequests = sortedRequests.filter(r => ['submitted', 'reviewing', 'purchasing'].includes(r.status)).length;
       const completedRequests = sortedRequests.filter(r => r.status === 'completed').length;
-      const totalCost = sortedRequests.reduce((sum, request) => 
-        sum + request.requestedItems.reduce((itemSum, item) => 
+      const totalCost = sortedRequests.reduce((sum, request) =>
+        sum + request.requestedItems.reduce((itemSum, item) =>
           itemSum + (item.requestedQuantity * item.estimatedPrice), 0
         ), 0
       );
@@ -331,7 +456,7 @@ export function useMaterialRequests() {
   }, []);
   // 요청 상태 업데이트
   const updateRequestStatus = useCallback(async (
-    requestId: string, 
+    requestId: string,
     newStatus: RequestStatus,
     additionalData?: Partial<MaterialRequest>
   ): Promise<void> => {
@@ -343,6 +468,14 @@ export function useMaterialRequests() {
         ...additionalData
       };
       await updateDoc(doc(db, 'materialRequests', requestId), updateData);
+
+      // [이중 저장: Supabase]
+      await supabase.from('material_requests').update({
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+        ...((additionalData as any)?.branchId ? { branch_id: (additionalData as any).branchId } : {})
+      }).eq('id', requestId);
+
       // 상태 변경 알림 생성
       if (additionalData?.branchId) {
         await createStatusChangeNotification(requestId, newStatus, additionalData.branchId);
@@ -357,11 +490,32 @@ export function useMaterialRequests() {
   // 상태별 요청 조회
   const getRequestsByStatus = useCallback(async (status: RequestStatus): Promise<MaterialRequest[]> => {
     try {
+      // [Supabase 우선 조회]
+      const { data: supabaseItems, error: supabaseError } = await supabase
+        .from('material_requests')
+        .select('*')
+        .eq('status', status)
+        .order('created_at', { ascending: false });
+
+      if (!supabaseError && supabaseItems) {
+        return supabaseItems.map(item => ({
+          id: item.id,
+          requestNumber: item.request_number,
+          branchId: item.branch_id,
+          branchName: item.branch_name,
+          requestedItems: item.items,
+          status: item.status as RequestStatus,
+          createdAt: new Date(item.created_at),
+          updatedAt: new Date(item.updated_at),
+          ...item.extra_data
+        })) as MaterialRequest[];
+      }
+
       const q = query(
         collection(db, 'materialRequests'),
         where('status', '==', status)
       );
-      const querySnapshot = await getDocs(q, { source: 'server' }); // source: 'server' 추가
+      const querySnapshot = await getDocs(q);
       const requests = querySnapshot.docs.map(doc => {
         const data = doc.data();
         return {
@@ -372,10 +526,10 @@ export function useMaterialRequests() {
         } as MaterialRequest;
       });
       // 클라이언트 사이드에서 정렬
-      return requests.sort((a, b) => {
-        const dateA = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt);
-        const dateB = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
-        return dateB.getTime() - dateA.getTime();
+      return requests.sort((a: any, b: any) => {
+        const dateA = a.createdAt instanceof Timestamp ? a.createdAt.toDate() : new Date(a.createdAt);
+        const dateB = b.createdAt instanceof Timestamp ? b.createdAt.toDate() : new Date(b.createdAt as any);
+        return (dateB as any).getTime() - (dateA as any).getTime();
       });
     } catch (error) {
       console.error('상태별 요청 조회 오류:', error);
@@ -406,8 +560,8 @@ export function useMaterialRequests() {
   };
   // 상태 변경 알림 생성
   const createStatusChangeNotification = async (
-    requestId: string, 
-    newStatus: RequestStatus, 
+    requestId: string,
+    newStatus: RequestStatus,
     branchId: string
   ) => {
     const statusMessages: Record<RequestStatus, string> = {
@@ -504,7 +658,7 @@ export function useMaterialRequests() {
       const docRef = await addDoc(collection(db, 'purchaseBatches'), batch);
       // 포함된 요청들의 상태를 'purchasing'으로 업데이트
       await Promise.all(
-        requestIds.map(requestId => 
+        requestIds.map(requestId =>
           updateRequestStatus(requestId, 'purchasing')
         )
       );
@@ -573,6 +727,10 @@ export function useMaterialRequests() {
     try {
       const docRef = doc(db, 'materialRequests', requestId);
       await deleteDoc(docRef);
+
+      // [이중 저장: Supabase]
+      await supabase.from('material_requests').delete().eq('id', requestId);
+
       toast({
         title: "요청 삭제 완료",
         description: "자재 요청이 성공적으로 삭제되었습니다."

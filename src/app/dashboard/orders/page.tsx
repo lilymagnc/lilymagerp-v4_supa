@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
-import { PlusCircle, Search, MoreHorizontal, MessageSquareText, Upload, Download, FileText, DollarSign, TrendingUp, ShoppingCart, CheckSquare, Square, ArrowRightLeft, Package, Target } from "lucide-react";
+import { PlusCircle, Search, MoreHorizontal, MessageSquareText, Upload, Download, FileText, DollarSign, TrendingUp, ShoppingCart, CheckSquare, Square, ArrowRightLeft, Package, Target, RefreshCw } from "lucide-react";
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -293,6 +293,76 @@ export default function OrdersPage() {
       });
     }
   };
+
+  // 기존 완료된 주문 중 누락된 픽업/배송 정보 보완
+  const handleSyncMissingData = async () => {
+    if (!isAdmin) return;
+
+    const completedOrders = orders.filter(o => o.status === 'completed');
+    let updateCount = 0;
+
+    toast({
+      title: "동기화 시작",
+      description: "누락된 픽업/배송 정보를 확인하고 보완합니다...",
+    });
+
+    try {
+      for (const order of completedOrders) {
+        let needsUpdate = false;
+        const updateData: any = {};
+
+        if (order.receiptType === 'delivery_reservation' && order.deliveryInfo) {
+          if (!order.deliveryInfo.completedAt) {
+            updateData.deliveryInfo = {
+              ...order.deliveryInfo,
+              completedAt: order.orderDate || Timestamp.now(),
+              completedBy: user?.uid || 'system_sync'
+            };
+            needsUpdate = true;
+          }
+        } else if (order.receiptType === 'pickup_reservation' && order.pickupInfo) {
+          if (!order.pickupInfo.completedAt) {
+            updateData.pickupInfo = {
+              ...order.pickupInfo,
+              completedAt: order.orderDate || Timestamp.now(),
+              completedBy: user?.uid || 'system_sync'
+            };
+            needsUpdate = true;
+          }
+        } else if (order.receiptType === 'store_pickup' && order.pickupInfo) {
+          if (!order.pickupInfo.completedAt) {
+            updateData.pickupInfo = {
+              ...order.pickupInfo,
+              completedAt: order.orderDate || Timestamp.now(),
+              completedBy: user?.uid || 'system_sync'
+            };
+            needsUpdate = true;
+          }
+        }
+
+        if (needsUpdate) {
+          const orderRef = doc(db, 'orders', order.id);
+          await updateDoc(orderRef, updateData);
+          updateCount++;
+        }
+      }
+
+      toast({
+        title: "동기화 완료",
+        description: `${updateCount}개의 주문 데이터가 보완되었습니다.`,
+      });
+      // 데이터 새로고침
+      window.location.reload();
+    } catch (error) {
+      console.error("동기화 오류:", error);
+      toast({
+        variant: "destructive",
+        title: "동기화 실패",
+        description: "데이터 보완 중 오류가 발생했습니다.",
+      });
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
@@ -867,6 +937,12 @@ export default function OrdersPage() {
             <Download className="mr-2 h-4 w-4" />
             엑셀 다운로드
           </Button>
+          {isAdmin && (
+            <Button onClick={handleSyncMissingData} variant="outline" className="text-orange-600 border-orange-200 hover:bg-orange-50">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              누락 데이터 보완
+            </Button>
+          )}
           <Button variant="outline" asChild>
             <Link href="/dashboard/transfers">
               <ArrowRightLeft className="mr-2 h-4 w-4" />
