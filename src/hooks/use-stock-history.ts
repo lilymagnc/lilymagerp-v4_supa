@@ -33,7 +33,8 @@ export function useStockHistory() {
         const { data: supabaseItems, error: supabaseError } = await supabase
           .from('stock_history')
           .select('*')
-          .order('date', { ascending: false });
+          .order('date', { ascending: false })
+          .limit(100);
 
         if (!supabaseError && supabaseItems && supabaseItems.length > 0) {
           const mappedData = supabaseItems.map(item => ({

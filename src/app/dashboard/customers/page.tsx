@@ -1,6 +1,6 @@
 
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { PlusCircle, Search } from "lucide-react";
@@ -32,7 +32,7 @@ export default function CustomersPage() {
     const [selectedBranch, setSelectedBranch] = useState("all");
     const [selectedType, setSelectedType] = useState("all");
     const [selectedGrade, setSelectedGrade] = useState("all");
-    const { customers, loading, addCustomer, updateCustomer, deleteCustomer, bulkAddCustomers } = useCustomers();
+    const { customers, totalCount, loading, addCustomer, updateCustomer, deleteCustomer, bulkAddCustomers, fetchCustomers } = useCustomers();
     const { branches } = useBranches();
     const { user } = useAuth();
     const { toast } = useToast();
@@ -44,19 +44,19 @@ export default function CustomersPage() {
         // 권한에 따른 지점 필터링 (통합 관리 시스템)
         if (!isHeadOfficeAdmin && userBranch) {
             // 일반 사용자는 자신의 지점에 등록된 고객만 보기
-            filtered = filtered.filter(customer => 
-                customer.branch === userBranch || 
+            filtered = filtered.filter(customer =>
+                customer.branch === userBranch ||
                 (customer.branches && customer.branches[userBranch])
             );
         } else if (selectedBranch && selectedBranch !== "all") {
             // 본사 관리자는 선택한 지점에 등록된 고객만 보기
-            filtered = filtered.filter(customer => 
-                customer.branch === selectedBranch || 
+            filtered = filtered.filter(customer =>
+                customer.branch === selectedBranch ||
                 (customer.branches && customer.branches[selectedBranch])
             );
         }
         // 검색어 필터링 (전 지점 검색)
-        filtered = filtered.filter(customer => 
+        filtered = filtered.filter(customer =>
             String(customer.name ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
             String(customer.contact ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
             String(customer.companyName ?? '').toLowerCase().includes(searchTerm.toLowerCase())
@@ -104,18 +104,18 @@ export default function CustomersPage() {
         await deleteCustomer(id);
     };
     const handleImport = async (data: any[]) => {
-      // 엑셀 업로드 시 올바른 지점 정보 결정
-      let importBranch: string | undefined;
-      
-      if (isHeadOfficeAdmin) {
-        // 본사 관리자는 선택된 지점 사용 (all이 아닌 경우)
-        importBranch = selectedBranch !== "all" ? selectedBranch : undefined;
-      } else {
-        // 가맹점 관리자/직원은 자신의 지점 사용
-        importBranch = userBranch;
-      }
-      
-      await bulkAddCustomers(data, importBranch);
+        // 엑셀 업로드 시 올바른 지점 정보 결정
+        let importBranch: string | undefined;
+
+        if (isHeadOfficeAdmin) {
+            // 본사 관리자는 선택된 지점 사용 (all이 아닌 경우)
+            importBranch = selectedBranch !== "all" ? selectedBranch : undefined;
+        } else {
+            // 가맹점 관리자/직원은 자신의 지점 사용
+            importBranch = userBranch;
+        }
+
+        await bulkAddCustomers(data, importBranch);
     };
     const handleExport = () => {
         if (filteredCustomers.length === 0) {
@@ -152,10 +152,17 @@ export default function CustomersPage() {
         });
     };
 
-    // 고객 정보 업데이트 핸들러
     const handleCustomerUpdate = (updatedCustomer: Customer) => {
         setSelectedCustomer(updatedCustomer);
     };
+
+    // 검색어 변경 시 서버 사이드 조회 (디바운스 효과)
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            fetchCustomers(searchTerm);
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [searchTerm, fetchCustomers]);
 
     return (
         <div>
@@ -175,13 +182,14 @@ export default function CustomersPage() {
                     </Button>
                 </div>
             </PageHeader>
-            
+
             {/* 고객 통계 카드 */}
-            <CustomerStatsCards 
+            <CustomerStatsCards
                 customers={filteredCustomers}
                 selectedBranch={selectedBranch}
+                totalCount={totalCount}
             />
-            
+
             <Card className="mb-4">
                 <CardContent className="pt-6">
                     <div className="flex flex-col sm:flex-row items-center gap-2">
@@ -205,7 +213,7 @@ export default function CustomersPage() {
                                 ))}
                             </SelectContent>
                         </Select>
-                         <Select value={selectedType} onValueChange={setSelectedType}>
+                        <Select value={selectedType} onValueChange={setSelectedType}>
                             <SelectTrigger className="w-full sm:w-[120px]">
                                 <SelectValue placeholder="고객 유형" />
                             </SelectTrigger>
@@ -215,7 +223,7 @@ export default function CustomersPage() {
                                 <SelectItem value="company">기업</SelectItem>
                             </SelectContent>
                         </Select>
-                         <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+                        <Select value={selectedGrade} onValueChange={setSelectedGrade}>
                             <SelectTrigger className="w-full sm:w-[120px]">
                                 <SelectValue placeholder="고객 등급" />
                             </SelectTrigger>
@@ -230,7 +238,7 @@ export default function CustomersPage() {
                 </CardContent>
             </Card>
             {loading ? (
-                 <Card>
+                <Card>
                     <CardContent className="pt-6">
                         <div className="space-y-2">
                             {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
@@ -238,7 +246,7 @@ export default function CustomersPage() {
                     </CardContent>
                 </Card>
             ) : (
-                <CustomerTable 
+                <CustomerTable
                     customers={filteredCustomers}
                     onEdit={handleEdit}
                     onDelete={handleDelete}

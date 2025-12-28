@@ -37,51 +37,30 @@ export interface Customer extends CustomerFormValues {
 }
 export function useCustomers() {
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  // [기존 실시간 리스너 유지: 데이터 정합성 보장]
-  // 조회 로직을 Supabase 우선으로 하되, 실시간 업데이트는 Firebase 리스너가 담당하도록 하여 안정적 전이를 도모합니다.
-  useEffect(() => {
-    setLoading(true);
-    const customersCollection = collection(db, 'customers');
-
-    const unsubscribe = onSnapshot(customersCollection, (querySnapshot) => {
-      try {
-        const customersData = querySnapshot.docs
-          .filter(doc => !doc.data().isDeleted)
-          .map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              ...data,
-              createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt,
-              lastOrderDate: data.lastOrderDate?.toDate ? data.lastOrderDate.toDate().toISOString() : data.lastOrderDate,
-            } as Customer;
-          });
-        setCustomers(customersData);
-      } catch (error) {
-        if (process.env.NODE_ENV === 'development') console.error("Error processing customers:", error);
-      } finally {
-        setLoading(false);
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  const fetchCustomers = useCallback(async () => {
+  const fetchCustomers = useCallback(async (searchTerm?: string) => {
     try {
       setLoading(true);
 
       // [Supabase 우선 조회]
-      const { data: supabaseCustomers, error: supabaseError } = await supabase
+      let queryBuilder = supabase
         .from('customers')
-        .select('*')
-        .eq('is_deleted', false)
-        .order('name');
+        .select('*', { count: 'exact' })
+        .eq('is_deleted', false);
+
+      if (searchTerm) {
+        queryBuilder = queryBuilder.or(`name.ilike.%${searchTerm}%,contact.ilike.%${searchTerm}%,company_name.ilike.%${searchTerm}%`);
+      } else {
+        queryBuilder = queryBuilder.order('name').limit(100);
+      }
+
+      const { data: supabaseCustomers, error: supabaseError, count } = await queryBuilder;
 
       if (!supabaseError && supabaseCustomers) {
+        if (count !== null) setTotalCount(count);
         const mappedCustomers = supabaseCustomers.map(c => {
           // branches 필드 매핑
           const mappedBranches: any = {};
@@ -149,6 +128,11 @@ export function useCustomers() {
       setLoading(false);
     }
   }, []);
+
+  // 실시간 리스너 제거 및 초기 조회로 변경
+  useEffect(() => {
+    fetchCustomers();
+  }, [fetchCustomers]);
 
   const findCustomerByContact = useCallback(async (contact: string) => {
     try {
@@ -578,6 +562,8 @@ export function useCustomers() {
     findCustomerByContact,
     getCustomerPoints,
     deductCustomerPoints,
-    addCustomerPoints
+    addCustomerPoints,
+    fetchCustomers,
+    totalCount
   };
 }

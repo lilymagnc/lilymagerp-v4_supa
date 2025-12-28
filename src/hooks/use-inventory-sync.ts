@@ -515,7 +515,9 @@ export function useInventorySync() {
         queryBuilder = queryBuilder.lte('occurred_at', dateTo.toISOString());
       }
 
-      const { data: supabaseHistory, error: supabaseError } = await queryBuilder.order('occurred_at', { ascending: false });
+      const { data: supabaseHistory, error: supabaseError } = await queryBuilder
+        .order('occurred_at', { ascending: false })
+        .limit(100);
 
       if (!supabaseError && supabaseHistory) {
         return supabaseHistory.map(h => ({

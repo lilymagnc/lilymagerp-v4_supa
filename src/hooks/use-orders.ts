@@ -120,17 +120,65 @@ export type PaymentStatus = "paid" | "pending" | "completed" | "split_payment";
 export function useOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
+  const PAGE_SIZE = 50;
   const { toast } = useToast();
   const { user } = useAuth();
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (isLoadMore = false, filters?: {
+    branchName?: string;
+    status?: string;
+    paymentStatus?: string;
+    startDate?: string;
+    endDate?: string;
+    searchTerm?: string;
+  }) => {
     try {
       setLoading(true);
+      const currentOffset = isLoadMore ? offset : 0;
 
       // [Supabase 우선 조회]
-      const { data: supabaseOrders, error: supabaseError } = await supabase
+      let queryBuilder = supabase
         .from('orders')
         .select('*')
-        .order('order_date', { ascending: false });
+        .order('order_date', { ascending: false })
+        .range(currentOffset, currentOffset + PAGE_SIZE - 1);
+
+      // 필터 적용
+      if (filters) {
+        if (filters.branchName && filters.branchName !== 'all') {
+          queryBuilder = queryBuilder.eq('branch_name', filters.branchName);
+        }
+        if (filters.status && filters.status !== 'all') {
+          queryBuilder = queryBuilder.eq('status', filters.status);
+        }
+        if (filters.paymentStatus && filters.paymentStatus !== 'all') {
+          // 결제 상태는 JSON 내부에 있으므로 적절히 필터링 (Supabase JSON 필터링 기능 활용 가능 시)
+          // 여기서는 단순 문자열 비교로 예시 작성 (실제 데이터 구조에 맞춤)
+          if (filters.paymentStatus === 'paid') {
+            queryBuilder = queryBuilder.or('payment->>status.eq.paid,payment->>status.eq.completed');
+          } else {
+            queryBuilder = queryBuilder.eq('payment->>status', filters.paymentStatus);
+          }
+        }
+        if (filters.startDate) {
+          queryBuilder = queryBuilder.gte('order_date', filters.startDate);
+        }
+        if (filters.endDate) {
+          queryBuilder = queryBuilder.lte('order_date', filters.endDate);
+        }
+        if (filters.searchTerm) {
+          // 주문자 이름 또는 주문 ID 검색
+          queryBuilder = queryBuilder.or(`orderer->>name.ilike.%${filters.searchTerm}%,id.ilike.%${filters.searchTerm}%`);
+        }
+      } else if (!isLoadMore) {
+        // 초기 로딩 시(필터도 없고 LoadMore도 아닐 때)만 최근 3개월 데이터 조회
+        const threeMonthsAgo = new Date();
+        threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+        queryBuilder = queryBuilder.gte('order_date', threeMonthsAgo.toISOString());
+      }
+
+      const { data: supabaseOrders, error: supabaseError } = await queryBuilder;
 
       if (!supabaseError && supabaseOrders) {
         const mappedOrders = supabaseOrders.map(o => {
@@ -165,16 +213,19 @@ export function useOrders() {
           } as Order;
         });
 
-        // 지점 사용자의 경우 클라이언트 사이드 필터링 (필요 시)
-        let filteredOrders = mappedOrders;
-        if (user?.franchise && user?.role !== '본사 관리자') {
-          // 여기서 지점별 필터링 수행 가능
+        if (isLoadMore) {
+          setOrders(prev => [...prev, ...mappedOrders]);
+          setOffset(prev => prev + PAGE_SIZE);
+        } else {
+          setOrders(mappedOrders);
+          setOffset(PAGE_SIZE);
         }
 
-        setOrders(filteredOrders);
+        setHasMore(supabaseOrders.length === PAGE_SIZE);
         setLoading(false);
         return;
       }
+
 
       // Fallback: Firebase
       // Firebase 연결 상태 확인
@@ -222,13 +273,14 @@ export function useOrders() {
       const uniqueOrders = Array.from(uniqueOrdersMap.values()) as Order[];
 
       setOrders(uniqueOrders);
+      setHasMore(false); // Firebase 폴백 시에는 일단 페이징 미지원 처리
     } catch (error) {
       console.error('주문 데이터 로딩 오류:', error);
       // 주문 정보 로딩 오류는 조용히 처리하되, 콘솔에는 로그 남김
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, offset]);
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
@@ -1097,7 +1149,19 @@ export function useOrders() {
     }
   };
 
-  return { orders, loading, addOrder, fetchOrders, updateOrderStatus, updatePaymentStatus, updateOrder, cancelOrder, deleteOrder, completeDelivery };
+  return {
+    orders,
+    loading,
+    hasMore,
+    addOrder,
+    fetchOrders,
+    updateOrderStatus,
+    updatePaymentStatus,
+    updateOrder,
+    cancelOrder,
+    deleteOrder,
+    completeDelivery
+  };
 }
 // 헬퍼 함수들도 이중 저장을 고려해야 함 (예: registerCustomerFromOrder, deductCustomerPoints 등)
 const registerCustomerFromOrder = async (orderData: OrderData) => {

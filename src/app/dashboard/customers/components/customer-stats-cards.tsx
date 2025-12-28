@@ -10,52 +10,64 @@ import { useMemo } from "react";
 interface CustomerStatsCardsProps {
   customers: Customer[];
   selectedBranch?: string;
+  totalCount?: number;
 }
 
-export function CustomerStatsCards({ customers, selectedBranch }: CustomerStatsCardsProps) {
+export function CustomerStatsCards({ customers, selectedBranch, totalCount }: CustomerStatsCardsProps) {
   const { orders } = useOrders();
+
+  // 지점별 포인트 사용 통계 등은 현재 로드된 데이터(customers)를 기준으로 하되,
+  // 전체 고객 수는 prop으로 받은 totalCount를 우선 사용합니다.
+  const displayTotalCount = totalCount !== undefined ? totalCount : customers.length;
+
+  // 고객별 주문 데이터 인덱싱 (성능 최적화: O(Orders))
+  const ordersByCustomer = useMemo(() => {
+    const map = new Map<string, any[]>();
+    orders.forEach(order => {
+      // ID 우선, 없으면 성함+연락처로 키 생성
+      const key = order.orderer?.id || `${order.orderer?.name}_${order.orderer?.contact}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(order);
+    });
+    return map;
+  }, [orders]);
 
   // 지점별 포인트 사용 통계 계산
   const branchPointStats = useMemo(() => {
     const stats: Record<string, { totalPointsUsed: number; totalCustomers: number; topCustomer: Customer | null }> = {};
-    
+
     customers.forEach(customer => {
       const branches = customer.branches || {};
       const primaryBranch = customer.primaryBranch || customer.branch;
-      
-      // 고객이 등록된 모든 지점 처리 ("all" 제외)
-      const customerBranches = Object.keys(branches).length > 0 
+
+      const customerBranches = Object.keys(branches).length > 0
         ? Object.keys(branches).filter(branch => branch !== "all" && branch !== "")
         : [primaryBranch].filter(branch => branch && branch !== "all" && branch !== "");
-      
+
+      const customerKey = customer.id || `${customer.name}_${customer.contact}`;
+      const customerOrders = ordersByCustomer.get(customerKey) || [];
+
       customerBranches.forEach(branchName => {
         if (!stats[branchName]) {
           stats[branchName] = { totalPointsUsed: 0, totalCustomers: 0, topCustomer: null };
         }
-        
+
         stats[branchName].totalCustomers++;
-        
-        // 해당 고객의 주문에서 포인트 사용량 계산
-        const customerOrders = orders.filter(order => 
-          (order.orderer?.name === customer.name && order.orderer?.contact === customer.contact) ||
-          order.orderer?.id === customer.id
-        );
-        
-        const pointsUsed = customerOrders.reduce((total, order) => 
+
+        const pointsUsed = customerOrders.reduce((total, order) =>
           total + (order.summary?.pointsUsed || 0), 0
         );
-        
+
         stats[branchName].totalPointsUsed += pointsUsed;
-        
-        // 해당 지점에서 가장 많은 포인트를 가진 고객 찾기
+
         if (!stats[branchName].topCustomer || (customer.points || 0) > (stats[branchName].topCustomer.points || 0)) {
           stats[branchName].topCustomer = customer;
         }
       });
     });
-    
+
     return stats;
-  }, [customers, orders]);
+  }, [customers, ordersByCustomer]);
 
   // TOP 10 고객 리스트 (포인트 보유량 기준)
   const top10Customers = useMemo(() => {
@@ -63,22 +75,19 @@ export function CustomerStatsCards({ customers, selectedBranch }: CustomerStatsC
       .sort((a, b) => (b.points || 0) - (a.points || 0))
       .slice(0, 10)
       .map((customer, index) => {
-        // 최근 주문에서 지점 정보 가져오기
-        const customerOrders = orders.filter(order => 
-          (order.orderer?.name === customer.name && order.orderer?.contact === customer.contact) ||
-          order.orderer?.id === customer.id
-        ).sort((a, b) => {
+        const customerKey = customer.id || `${customer.name}_${customer.contact}`;
+        const customerOrders = [...(ordersByCustomer.get(customerKey) || [])].sort((a, b) => {
           const dateA = a.orderDate?.toDate ? a.orderDate.toDate() : new Date(a.orderDate);
           const dateB = b.orderDate?.toDate ? b.orderDate.toDate() : new Date(b.orderDate);
           return dateB.getTime() - dateA.getTime();
         });
-        
-        const lastOrderBranch = customerOrders[0]?.branchName || 
-          (customer.primaryBranch && customer.primaryBranch !== "all" ? customer.primaryBranch : "") || 
-          (customer.branch && customer.branch !== "all" ? customer.branch : "") || 
+
+        const lastOrderBranch = customerOrders[0]?.branchName ||
+          (customer.primaryBranch && customer.primaryBranch !== "all" ? customer.primaryBranch : "") ||
+          (customer.branch && customer.branch !== "all" ? customer.branch : "") ||
           '정보 없음';
         const totalOrderAmount = customerOrders.reduce((total, order) => total + (order.summary?.total || 0), 0);
-        
+
         return {
           ...customer,
           rank: index + 1,
@@ -87,10 +96,10 @@ export function CustomerStatsCards({ customers, selectedBranch }: CustomerStatsC
           orderCount: customerOrders.length
         };
       });
-  }, [customers, orders]);
+  }, [customers, ordersByCustomer]);
 
   // 선택된 지점에 따른 필터링
-  const displayBranchStats = selectedBranch && selectedBranch !== "all" 
+  const displayBranchStats = selectedBranch && selectedBranch !== "all"
     ? { [selectedBranch]: branchPointStats[selectedBranch] }
     : branchPointStats;
 
@@ -103,7 +112,7 @@ export function CustomerStatsCards({ customers, selectedBranch }: CustomerStatsC
           <Users className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{customers.length}명</div>
+          <div className="text-2xl font-bold">{displayTotalCount.toLocaleString()}명</div>
           <p className="text-xs text-muted-foreground">
             등록된 총 고객 수
           </p>
