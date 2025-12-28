@@ -410,8 +410,14 @@ CREATE TABLE photos (
     id TEXT PRIMARY KEY,
     album_id TEXT REFERENCES albums(id) ON DELETE CASCADE,
     url TEXT NOT NULL,
+    thumbnail_url TEXT, -- 추가
+    preview_url TEXT, -- 추가
     name TEXT,
+    filename TEXT, -- 추가
     size BIGINT,
+    width INTEGER, -- 추가
+    height INTEGER, -- 추가
+    "order" INTEGER, -- 추가
     type TEXT,
     created_by TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -509,15 +515,29 @@ CREATE INDEX idx_calendar_events_start_date ON calendar_events(start_date);
 CREATE INDEX idx_checklists_record_date ON checklists(record_date);
 CREATE INDEX idx_photos_album_id ON photos(album_id);
 
--- 30. 고정비 템플릿(Fixed Cost Templates)
-CREATE TABLE fixed_cost_templates (
+-- 34. 배송비 설정(Delivery Fees)
+CREATE TABLE delivery_fees (
     id TEXT PRIMARY KEY,
-    branch_id TEXT,
+    branch_id TEXT REFERENCES branches(id) ON DELETE CASCADE,
     branch_name TEXT,
-    items JSONB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    district TEXT NOT NULL,
+    fee INTEGER DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- 35. 할인 설정(Discount Settings)
+CREATE TABLE discount_settings (
+    id TEXT PRIMARY KEY DEFAULT 'settings',
+    global_settings JSONB,
+    branch_settings JSONB,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_delivery_fees_branch_id ON delivery_fees(branch_id);
+
+-- 30. 고정비 템플릿(Fixed Cost Templates) 제거됨 (상단 중첩)
 
 -- 31. 구매처 자동완성(Supplier Suggestions)
 CREATE TABLE supplier_suggestions (

@@ -6,6 +6,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  setDoc,
   getDocs,
   query,
   where,
@@ -173,6 +174,7 @@ export function useSimpleExpenses() {
           const supplierSnapshot = await getDocs(supplierQuery);
           if (supplierSnapshot.empty) {
             // 중복이 없으면 새로 등록 (첫 번째 등록한 지점 정보로 저장)
+            const partnerRef = doc(collection(db, 'partners'));
             const partnerData = {
               name: supplierName,
               type: '기타공급업체',
@@ -185,7 +187,22 @@ export function useSimpleExpenses() {
               memo: `간편지출에서 자동 추가된 공급업체: ${supplierName} (${branchName || '지점미지정'})`,
               createdAt: serverTimestamp()
             };
-            await addDoc(collection(db, 'partners'), partnerData);
+            await setDoc(partnerRef, partnerData);
+
+            // [이중 저장: Supabase 새 거래처 추가]
+            await supabase.from('partners').insert([{
+              id: partnerRef.id,
+              name: partnerData.name,
+              type: partnerData.type,
+              contact: partnerData.contact,
+              contact_person: partnerData.contactPerson,
+              email: partnerData.email,
+              address: partnerData.address,
+              items: partnerData.items,
+              memo: partnerData.memo,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }]);
             supplierAdded = true;
 
           } else {
@@ -203,6 +220,12 @@ export function useSimpleExpenses() {
                 memo: updatedMemo,
                 updatedAt: serverTimestamp()
               });
+
+              // [이중 저장: Supabase 거래처 메모 업데이트]
+              await supabase.from('partners').update({
+                memo: updatedMemo,
+                updated_at: new Date().toISOString()
+              }).eq('id', existingPartner.id);
 
             }
           }
@@ -225,6 +248,7 @@ export function useSimpleExpenses() {
           const materialSnapshot = await getDocs(materialQuery);
           if (materialSnapshot.empty) {
             // 해당 지점에 같은 이름의 자재가 없으면 새로 등록
+            const materialRef = doc(collection(db, 'materials'));
             const materialData = {
               id: `MAT${Date.now()}`,
               name: materialName,
@@ -238,18 +262,43 @@ export function useSimpleExpenses() {
               branch: branchName,
               createdAt: serverTimestamp()
             };
-            await addDoc(collection(db, 'materials'), materialData);
+            await setDoc(materialRef, materialData);
+
+            // [이중 저장: Supabase 새 자재 추가]
+            await supabase.from('materials').insert([{
+              id: materialRef.id,
+              name: materialData.name,
+              main_category: materialData.mainCategory,
+              mid_category: materialData.midCategory,
+              price: materialData.price,
+              supplier: materialData.supplier,
+              stock: materialData.stock,
+              size: materialData.size,
+              color: materialData.color,
+              branch: materialData.branch,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }]);
             materialAdded = true;
           } else {
             // 해당 지점에 같은 이름의 자재가 있으면 수량만 업데이트
             const existingMaterial = materialSnapshot.docs[0];
             const existingData = existingMaterial.data();
             const newStock = (existingData.stock || 0) + (data.quantity || 1);
+            const newPrice = data.unitPrice || existingData.price || 0;
             await updateDoc(existingMaterial.ref, {
               stock: newStock,
-              price: data.unitPrice || existingData.price || 0, // 최신 가격으로 업데이트
+              price: newPrice,
               updatedAt: serverTimestamp()
             });
+
+            // [이중 저장: Supabase 자재 업데이트]
+            await supabase.from('materials').update({
+              stock: newStock,
+              price: newPrice,
+              updated_at: new Date().toISOString()
+            }).eq('id', existingMaterial.id);
+
             materialAdded = true;
           }
         } catch (error) {
@@ -284,6 +333,7 @@ export function useSimpleExpenses() {
           const branchProductSnapshot = await getDocs(branchProductQuery);
           if (branchProductSnapshot.empty) {
             // 해당 지점에 같은 ID의 제품이 없으면 새로 등록
+            const productRef = doc(collection(db, 'products'));
             const productData = {
               id: productId,
               name: productName,
@@ -297,18 +347,43 @@ export function useSimpleExpenses() {
               branch: branchName,
               createdAt: serverTimestamp()
             };
-            await addDoc(collection(db, 'products'), productData);
+            await setDoc(productRef, productData);
+
+            // [이중 저장: Supabase 새 제품 추가]
+            await supabase.from('products').insert([{
+              id: productRef.id,
+              name: productData.name,
+              main_category: productData.mainCategory,
+              mid_category: productData.midCategory,
+              price: productData.price,
+              supplier: productData.supplier,
+              stock: productData.stock,
+              size: productData.size,
+              color: productData.color,
+              branch: productData.branch,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }]);
             productAdded = true;
           } else {
             // 해당 지점에 같은 ID의 제품이 있으면 수량만 업데이트
             const existingProduct = branchProductSnapshot.docs[0];
             const existingData = existingProduct.data();
             const newStock = (existingData.stock || 0) + (data.quantity || 1);
+            const newPrice = data.unitPrice || existingData.price || 0;
             await updateDoc(existingProduct.ref, {
               stock: newStock,
-              price: data.unitPrice || existingData.price || 0, // 최신 가격으로 업데이트
+              price: newPrice,
               updatedAt: serverTimestamp()
             });
+
+            // [이중 저장: Supabase 제품 업데이트]
+            await supabase.from('products').update({
+              stock: newStock,
+              price: newPrice,
+              updated_at: new Date().toISOString()
+            }).eq('id', existingProduct.id);
+
             productAdded = true;
           }
         } catch (error) {
@@ -401,6 +476,17 @@ export function useSimpleExpenses() {
             },
             updatedAt: serverTimestamp()
           });
+
+          // [이중 저장: Supabase 자재 요청 완료 처리]
+          await supabase.from('material_requests').update({
+            status: 'completed',
+            actual_delivery: {
+              delivered_at: new Date().toISOString(),
+              items: actualItems,
+              completed_by: 'expense_system'
+            },
+            updated_at: new Date().toISOString()
+          }).eq('id', data.relatedRequestId);
           toast({
             title: "자재 요청 완료",
             description: "간편지출 입력으로 자재 요청이 자동 완료되었습니다."

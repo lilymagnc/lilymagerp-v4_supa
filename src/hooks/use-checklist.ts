@@ -367,7 +367,7 @@ export const useChecklist = () => {
       }
 
       const snapshot = await getDocs(q);
-      let checklists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as ChecklistRecord);
+      let checklists = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as object) }) as ChecklistRecord);
 
       // 클라이언트 사이드에서 필터링 및 정렬
       if (filter.date) {
@@ -444,7 +444,7 @@ export const useChecklist = () => {
           return {
             ...item,
             checked,
-            checkedAt: checked ? new Date() : undefined,
+            checkedAt: checked ? Timestamp.fromDate(new Date()) : undefined,
             checkedBy: checked ? workerName || user?.displayName || 'Unknown' : undefined,
             notes: notes || item.notes,
           };
@@ -609,6 +609,37 @@ export const useChecklist = () => {
           break;
       }
 
+      // [Supabase 우선 조회]
+      let queryBuilder = supabase
+        .from('checklists')
+        .select('*')
+        .gte('date', startDate.toISOString())
+        .lte('date', endDate.toISOString());
+
+      if (!(isHQManager() || user?.role === '본사 관리자')) {
+        const branchId = userRole?.branchId || user?.franchise || '';
+        if (!branchId) return [];
+        queryBuilder = queryBuilder.eq('branch_id', branchId);
+      }
+
+      const { data: supabaseData, error: supabaseError } = await queryBuilder;
+
+      if (!supabaseError && supabaseData) {
+        return supabaseData.map(checklist => {
+          const items = Array.isArray(checklist.items) ? checklist.items : [];
+          const totalItems = items.length;
+          const completedItems = items.filter((item: any) => item.checked).length;
+          const completionRate = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
+          return {
+            totalItems,
+            completedItems,
+            completionRate,
+            lastUpdated: checklist.completed_at ? Timestamp.fromDate(new Date(checklist.completed_at)) : null,
+          };
+        });
+      }
+
       let q;
 
       // 본사 관리자는 모든 체크리스트를 볼 수 있음
@@ -628,7 +659,7 @@ export const useChecklist = () => {
       }
 
       const snapshot = await getDocs(q);
-      let checklists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as ChecklistRecord);
+      let checklists = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as object) }) as ChecklistRecord);
 
       // 클라이언트 사이드에서 날짜 필터링
       checklists = checklists.filter(checklist => {

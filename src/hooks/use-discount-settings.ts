@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { collection, doc, getDoc, setDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useToast } from '@/hooks/use-toast';
 import { DiscountSettings, BranchDiscountSettings, GlobalDiscountSettings, DiscountRate } from '@/types/discount';
 const DEFAULT_DISCOUNT_RATES: DiscountRate[] = [
@@ -65,6 +66,39 @@ export function useDiscountSettings() {
     try {
       setLoading(true);
       setError(null);
+
+      // [Supabase 우선 조회]
+      const { data: supabaseSettings, error: supabaseError } = await supabase
+        .from('discount_settings')
+        .select('*')
+        .eq('id', 'settings')
+        .single();
+
+      if (!supabaseError && supabaseSettings) {
+        const convertedData: DiscountSettings = {
+          globalSettings: {
+            ...supabaseSettings.global_settings,
+            startDate: new Date(supabaseSettings.global_settings.startDate),
+            endDate: new Date(supabaseSettings.global_settings.endDate),
+          },
+          branchSettings: Object.keys(supabaseSettings.branch_settings || {}).reduce((acc, branchId) => {
+            const branchData = supabaseSettings.branch_settings[branchId];
+            acc[branchId] = {
+              ...branchData,
+              startDate: new Date(branchData.startDate),
+              endDate: new Date(branchData.endDate),
+              createdAt: new Date(branchData.createdAt),
+              updatedAt: new Date(branchData.updatedAt),
+            };
+            return acc;
+          }, {} as Record<string, BranchDiscountSettings>),
+        };
+        setDiscountSettings(convertedData);
+        setLoading(false);
+        return;
+      }
+
+      // Fallback: Firebase
       const docRef = doc(db, 'discount_settings', 'settings');
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
@@ -84,6 +118,15 @@ export function useDiscountSettings() {
           branchSettings: {},
         };
         await setDoc(docRef, defaultSettings);
+
+        // [이중 저장: Supabase]
+        await supabase.from('discount_settings').upsert({
+          id: 'settings',
+          global_settings: defaultSettings.globalSettings,
+          branch_settings: defaultSettings.branchSettings,
+          updated_at: new Date().toISOString()
+        });
+
         setDiscountSettings(defaultSettings);
       }
     } catch (error) {
@@ -111,6 +154,13 @@ export function useDiscountSettings() {
         },
       };
       await updateDoc(docRef, updatedSettings);
+
+      // [이중 저장: Supabase]
+      await supabase.from('discount_settings').update({
+        global_settings: updatedSettings.globalSettings,
+        updated_at: new Date().toISOString()
+      }).eq('id', 'settings');
+
       setDiscountSettings(updatedSettings);
       toast({
         title: '성공',
@@ -142,6 +192,13 @@ export function useDiscountSettings() {
         },
       };
       await updateDoc(docRef, updatedSettings);
+
+      // [이중 저장: Supabase]
+      await supabase.from('discount_settings').update({
+        branch_settings: updatedSettings.branchSettings,
+        updated_at: new Date().toISOString()
+      }).eq('id', 'settings');
+
       setDiscountSettings(updatedSettings);
       toast({
         title: '성공',

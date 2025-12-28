@@ -240,18 +240,29 @@ export function usePurchaseBatches() {
         for (const item of purchaseData.items) {
           if (item.status === 'purchased' || item.status === 'substituted') {
             const materialIdToUpdate = item.actualMaterialId || item.originalMaterialId;
+            const customMaterialId = materialIdToUpdate.split('-')[0];
+
             const materialQuery = query(
               collection(db, "materials"),
-              where("id", "==", materialIdToUpdate.split('-')[0])
+              where("id", "==", customMaterialId)
             );
             const materialSnapshot = await getDocs(materialQuery);
-            materialSnapshot.forEach(materialDoc => {
+
+            for (const materialDoc of materialSnapshot.docs) {
               transaction.update(materialDoc.ref, {
                 price: item.actualPrice,
                 lastPurchasePrice: item.actualPrice,
                 lastPurchaseDate: now
               });
-            });
+
+              // [이중 저장: Supabase 자재 가격 업데이트]
+              await supabase.from('materials').update({
+                price: item.actualPrice,
+                last_purchase_price: item.actualPrice,
+                last_purchase_date: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              }).eq('id', materialDoc.id);
+            }
           }
         }
 

@@ -1,18 +1,20 @@
-import { useState, useEffect } from 'react';
-import { 
-  collection, 
-  query, 
-  orderBy, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
+import { useState, useEffect, useCallback } from 'react';
+import {
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
   serverTimestamp,
   writeBatch,
-  getDocs
+  getDocs,
+  Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase'; // 추가
 import { useAuth } from '@/hooks/use-auth';
 import { Photo, UploadProgress } from '@/types/album';
 import { FirebaseStorageService } from '@/lib/firebase-storage';
@@ -30,28 +32,56 @@ export const usePhotos = (albumId: string) => {
       setLoading(false);
       return;
     }
-    const photosRef = collection(db, 'albums', albumId, 'photos');
-    const q = query(photosRef, orderBy('order', 'asc'));
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const photosData = snapshot.docs.map(doc => ({
+
+    const fetchPhotos = async () => {
+      setLoading(true);
+      try {
+        // [Supabase 우선 조회]
+        const { data: supabasePhotos, error: supabaseError } = await supabase
+          .from('photos')
+          .select('*')
+          .eq('album_id', albumId)
+          .order('order', { ascending: true });
+
+        if (!supabaseError && supabasePhotos) {
+          const mappedPhotos = supabasePhotos.map(p => ({
+            id: p.id,
+            filename: p.filename || p.name,
+            originalUrl: p.url,
+            thumbnailUrl: p.thumbnail_url || p.url,
+            previewUrl: p.preview_url || p.url,
+            order: p.order,
+            size: p.size,
+            width: p.width,
+            height: p.height,
+            uploadedAt: Timestamp.fromDate(new Date(p.created_at)),
+            uploadedBy: p.created_by
+          })) as Photo[];
+          setPhotos(mappedPhotos);
+          setLoading(false);
+          return;
+        }
+
+        // Fallback: Firebase
+        const photosRef = collection(db, 'albums', albumId, 'photos');
+        const q = query(photosRef, orderBy('order', 'asc'));
+        const querySnapshot = await getDocs(q);
+        const photosData = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         })) as Photo[];
         setPhotos(photosData);
-        setLoading(false);
-        setError(null);
-      },
-      (error) => {
-        console.error('사진 목록 조회 실패:', error);
+      } catch (err) {
+        console.error('사진 목록 조회 실패:', err);
         setError('사진 목록을 불러오는데 실패했습니다.');
+      } finally {
         setLoading(false);
       }
-    );
-    return () => unsubscribe();
+    };
+
+    fetchPhotos();
   }, [albumId, user]);
-  const uploadPhotos = async (files: File[]): Promise<void> => {
+  const uploadPhotos = useCallback(async (files: File[]): Promise<void> => {
     if (!user || !albumId) throw new Error('로그인이 필요합니다.');
     setUploading(true);
     setUploadProgress([]);
@@ -75,13 +105,13 @@ export const usePhotos = (albumId: string) => {
         try {
           // Storage에 파일 업로드
           const urls = await FirebaseStorageService.uploadPhoto(
-            albumId, 
-            photoId, 
+            albumId,
+            photoId,
             file,
             (progress) => {
-              setUploadProgress(prev => 
-                prev.map(item => 
-                  item.filename === file.name 
+              setUploadProgress(prev =>
+                prev.map(item =>
+                  item.filename === file.name
                     ? { ...item, progress }
                     : item
                 )
@@ -96,7 +126,7 @@ export const usePhotos = (albumId: string) => {
           });
           // Firestore에 메타데이터 저장
           const photosRef = collection(db, 'albums', albumId, 'photos');
-          await addDoc(photosRef, {
+          const docRef = await addDoc(photosRef, {
             filename: file.name,
             originalUrl: urls.originalUrl,
             thumbnailUrl: urls.thumbnailUrl,
@@ -108,19 +138,37 @@ export const usePhotos = (albumId: string) => {
             uploadedAt: serverTimestamp(),
             uploadedBy: user.uid
           });
+
+          // [이중 저장: Supabase]
+          await supabase.from('photos').insert([{
+            id: docRef.id,
+            album_id: albumId,
+            url: urls.originalUrl,
+            thumbnail_url: urls.thumbnailUrl,
+            preview_url: urls.previewUrl,
+            name: file.name,
+            filename: file.name,
+            size: file.size,
+            width,
+            height,
+            order,
+            type: file.type,
+            created_by: user.uid,
+            created_at: new Date().toISOString()
+          }]);
           // 업로드 완료 상태 업데이트
-          setUploadProgress(prev => 
-            prev.map(item => 
-              item.filename === file.name 
+          setUploadProgress(prev =>
+            prev.map(item =>
+              item.filename === file.name
                 ? { ...item, status: 'completed', progress: 100 }
                 : item
             )
           );
         } catch (error) {
           console.error(`사진 업로드 실패 (${file.name}):`, error);
-          setUploadProgress(prev => 
-            prev.map(item => 
-              item.filename === file.name 
+          setUploadProgress(prev =>
+            prev.map(item =>
+              item.filename === file.name
                 ? { ...item, status: 'error', error: error instanceof Error ? error.message : '업로드 실패' }
                 : item
             )
@@ -153,13 +201,16 @@ export const usePhotos = (albumId: string) => {
       // 3초 후 업로드 진행률 초기화
       setTimeout(() => setUploadProgress([]), 3000);
     }
-  };
-  const deletePhoto = async (photoId: string): Promise<void> => {
+  }, [user, albumId, photos, updatePhotoCount, updateThumbnail]);
+  const deletePhoto = useCallback(async (photoId: string): Promise<void> => {
     if (!user || !albumId) throw new Error('로그인이 필요합니다.');
     try {
       // Firestore에서 문서 삭제만 수행 (Storage 삭제는 무시)
       const photoRef = doc(db, 'albums', albumId, 'photos', photoId);
       await deleteDoc(photoRef);
+
+      // [이중 저장: Supabase]
+      await supabase.from('photos').delete().eq('id', photoId);
       // 앨범의 사진 개수 업데이트
       const newPhotoCount = Math.max(0, photos.length - 1);
       await updatePhotoCount(albumId, newPhotoCount);
@@ -175,21 +226,34 @@ export const usePhotos = (albumId: string) => {
       console.error('사진 삭제 실패:', error);
       throw new Error('사진 삭제에 실패했습니다.');
     }
-  };
-  const reorderPhotos = async (reorderedPhotos: Photo[]): Promise<void> => {
+  }, [user, albumId, photos, updatePhotoCount, updateThumbnail]);
+  const reorderPhotos = useCallback(async (reorderedPhotos: Photo[]): Promise<void> => {
     if (!user || !albumId) throw new Error('로그인이 필요합니다.');
     try {
       const batch = writeBatch(db);
-      reorderedPhotos.forEach((photo, index) => {
+      const supabaseUpdates = reorderedPhotos.map((photo, index) => {
         const photoRef = doc(db, 'albums', albumId, 'photos', photo.id);
         batch.update(photoRef, { order: index + 1 });
+
+        return {
+          id: photo.id,
+          album_id: albumId,
+          order: index + 1
+        };
       });
       await batch.commit();
+
+      // [이중 저장: Supabase]
+      // 각 행을 개별적으로 업데이트 (Supabase insert/upsert 방식 사용 가능하지만 여기서는 반복문 또는 RPC 고려 가능)
+      // 간단히 Promise.all 사용
+      await Promise.all(supabaseUpdates.map(update =>
+        supabase.from('photos').update({ order: update.order }).eq('id', update.id)
+      ));
     } catch (error) {
       console.error('사진 순서 변경 실패:', error);
       throw new Error('사진 순서 변경에 실패했습니다.');
     }
-  };
+  }, [user, albumId]);
   return {
     photos,
     loading,

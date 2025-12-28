@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   collection,
   query,
@@ -73,7 +73,7 @@ export const useAlbums = () => {
 
     fetchAlbums();
   }, [user]);
-  const createAlbum = async (albumData: CreateAlbumData): Promise<string> => {
+  const createAlbum = useCallback(async (albumData: CreateAlbumData): Promise<string> => {
     if (!user) throw new Error('로그인이 필요합니다.');
     try {
       const albumsRef = collection(db, 'albums');
@@ -104,8 +104,8 @@ export const useAlbums = () => {
       console.error('앨범 생성 실패:', error);
       throw new Error('앨범 생성에 실패했습니다.');
     }
-  };
-  const updateAlbum = async (albumId: string, updates: Partial<Album>): Promise<void> => {
+  }, [user]);
+  const updateAlbum = useCallback(async (albumId: string, updates: Partial<Album>): Promise<void> => {
     if (!user) throw new Error('로그인이 필요합니다.');
     try {
       const albumRef = doc(db, 'albums', albumId);
@@ -129,8 +129,8 @@ export const useAlbums = () => {
       console.error('앨범 수정 실패:', error);
       throw new Error('앨범 수정에 실패했습니다.');
     }
-  };
-  const deleteAlbum = async (albumId: string): Promise<void> => {
+  }, [user]);
+  const deleteAlbum = useCallback(async (albumId: string): Promise<void> => {
     if (!user) throw new Error('로그인이 필요합니다.');
     try {
       // 1. 앨범의 모든 사진 삭제 (Firestore + Storage)
@@ -169,29 +169,41 @@ export const useAlbums = () => {
       console.error('앨범 삭제 실패:', error);
       throw new Error('앨범 삭제에 실패했습니다.');
     }
-  };
-  const updatePhotoCount = async (albumId: string, count: number): Promise<void> => {
+  }, [user]);
+  const updatePhotoCount = useCallback(async (albumId: string, count: number): Promise<void> => {
     try {
       const albumRef = doc(db, 'albums', albumId);
       await updateDoc(albumRef, {
         photoCount: count,
         updatedAt: serverTimestamp()
       });
+
+      // [이중 저장: Supabase]
+      await supabase.from('albums').update({
+        photo_count: count,
+        updated_at: new Date().toISOString()
+      }).eq('id', albumId);
     } catch (error) {
       console.error('사진 개수 업데이트 실패:', error);
     }
-  };
-  const updateThumbnail = async (albumId: string, thumbnailUrl: string): Promise<void> => {
+  }, []);
+  const updateThumbnail = useCallback(async (albumId: string, thumbnailUrl: string): Promise<void> => {
     try {
       const albumRef = doc(db, 'albums', albumId);
       await updateDoc(albumRef, {
         thumbnailUrl,
         updatedAt: serverTimestamp()
       });
+
+      // [이중 저장: Supabase]
+      await supabase.from('albums').update({
+        thumbnail_url: thumbnailUrl,
+        updated_at: new Date().toISOString()
+      }).eq('id', albumId);
     } catch (error) {
       console.error('썸네일 업데이트 실패:', error);
     }
-  };
+  }, []);
   return {
     albums,
     loading,

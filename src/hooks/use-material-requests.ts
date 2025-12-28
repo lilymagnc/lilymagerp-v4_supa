@@ -57,8 +57,8 @@ export function useMaterialRequests() {
           memo: supabaseItem.memo,
           operator: supabaseItem.operator,
           actualDelivery: supabaseItem.actual_delivery,
-          createdAt: new Date(supabaseItem.created_at),
-          updatedAt: new Date(supabaseItem.updated_at)
+          createdAt: Timestamp.fromDate(new Date(supabaseItem.created_at)),
+          updatedAt: Timestamp.fromDate(new Date(supabaseItem.updated_at))
         } as MaterialRequest;
       }
 
@@ -689,6 +689,13 @@ export function useMaterialRequests() {
         actualPurchase: actualPurchaseInfo,
         updatedAt: serverTimestamp()
       });
+
+      // [이중 저장: Supabase 구매 완료 처리]
+      await supabase.from('material_requests').update({
+        status: 'purchased',
+        actual_purchase: actualPurchaseInfo,
+        updated_at: new Date().toISOString()
+      }).eq('id', requestId);
       // 간편지출 자동 등록은 제거 (순환 참조 방지)
       // 필요시 별도 프로세스에서 처리
     } catch (error) {
@@ -713,6 +720,17 @@ export function useMaterialRequests() {
         },
         updatedAt: serverTimestamp()
       });
+
+      // [이중 저장: Supabase 자재 요청 완료 처리]
+      await supabase.from('material_requests').update({
+        status: 'completed',
+        actual_delivery: {
+          delivered_at: new Date().toISOString(),
+          items: actualItems,
+          completed_by: 'expense_system'
+        },
+        updated_at: new Date().toISOString()
+      }).eq('id', requestId);
       toast({
         title: "자재 요청 완료",
         description: "간편지출 입력으로 자재 요청이 자동 완료되었습니다."
