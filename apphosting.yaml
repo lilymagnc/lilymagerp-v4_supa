@@ -1,0 +1,8 @@
+kind: "AppHostingYaml"
+apiVersion: "v1"
+
+env:
+  - variable: NEXT_PUBLIC_SUPABASE_URL
+    value: "https://onkhiqddkjeawnottfee.supabase.co"
+  - variable: NEXT_PUBLIC_SUPABASE_ANON_KEY
+    value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZCI6Im9ua2hpcWRka2plYXdub3R0ZmVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3MDU3OTUsImV4cCI6MjA4MjI4MTc5NX0.hoo0ER7i_qKrTtXkuHZ83x4OXuMkHIa71PHwgVLVcfk"
