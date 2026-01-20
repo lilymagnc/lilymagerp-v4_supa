@@ -1,0 +1,61 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 인증된 사용자만 접근 가능
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // 주문 컬렉션 규칙
+    match /orders/{orderId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // 사용자 역할 컬렉션 규칙
+    match /userRoles/{roleId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+    
+    // 사용자 컬렉션 규칙
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+    
+    // 지점 컬렉션 규칙
+    match /branches/{branchId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // 제품 컬렉션 규칙
+    match /products/{productId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // 재료 컬렉션 규칙
+    match /materials/{materialId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // 고객 컬렉션 규칙
+    match /customers/{customerId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // 일정 관리 컬렉션 규칙
+    match /calendarEvents/{eventId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && 
+        (resource.data.createdBy == request.auth.uid || 
+         get(/databases/$(database)/documents/userRoles/$(request.auth.uid)).data.role == '본사 관리자');
+    }
+    
+    // 기타 컬렉션들에 대한 기본 규칙
+    match /{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

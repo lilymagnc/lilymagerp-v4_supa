@@ -1,0 +1,25 @@
+# Firebase App Hosting ignore file
+# Functions 폴더 제외
+functions/
+lilymagerp/
+docs/
+lib/
+
+# 개발 관련 파일들
+.git/
+.vscode/
+.idx/
+.kiro/
+node_modules/
+.next/
+out/
+
+# 로그 및 임시 파일
+*.log
+.env.local
+firebase-debug.log
+firebase-debug.*.log
+
+# 기타
+README.md
+.gitignore

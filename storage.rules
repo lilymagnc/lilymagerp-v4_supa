@@ -1,0 +1,29 @@
+rules_version = '2';
+
+// Craft rules based on data in your Firestore database
+// allow write: if firestore.get(
+//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
+service firebase.storage {
+  match /b/{bucket}/o {
+    // 샘플 앨범 관련 파일들 - 인증된 사용자만
+    match /sample-albums/{albumId}/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // 배송완료 사진 - 인증된 사용자만
+    match /delivery-photos/{orderId}/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // 인사 서류 제출 파일 - 인증된 사용자가 자신의 폴더에만 업로드 가능
+    match /hr_submissions/{userId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // 기타 파일들 - 기본적으로 차단
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
