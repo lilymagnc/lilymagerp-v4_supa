@@ -1,27 +1,10 @@
 "use client";
-
-import { useState, useEffect } from 'react';
-import { 
-  collection, 
-  doc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  getDocs, 
-  getDoc,
-  query, 
-  where, 
-  orderBy, 
-  limit,
-  Timestamp,
-  writeBatch,
-  runTransaction
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
-import type { 
-  PurchaseBatch, 
+import type {
+  PurchaseBatch,
   CreatePurchaseBatchData,
   ActualPurchaseInputData,
   DeliveryPlanItem,
@@ -34,123 +17,97 @@ export function usePurchaseBatches() {
   const [batches, setBatches] = useState<PurchaseBatch[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const { user } = useAuth();
   const { toast } = useToast();
 
-  // 구매 배치 목록 조회
-  const fetchBatches = async (filters?: {
+  const mapRowToBatch = (row: any): PurchaseBatch => ({
+    id: row.id,
+    batchNumber: row.batch_number,
+    purchaseDate: row.purchase_date,
+    purchaserId: row.purchaser_id,
+    purchaserName: row.purchaser_name,
+    includedRequests: row.included_requests || [],
+    purchasedItems: row.purchased_items || [],
+    totalCost: row.total_cost,
+    deliveryPlan: row.delivery_plan || [],
+    status: row.status,
+    notes: row.notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  });
+
+  const fetchBatches = useCallback(async (filters?: {
     status?: 'planning' | 'purchasing' | 'completed';
     limit?: number;
   }) => {
     if (!user) return;
-
     setLoading(true);
     setError(null);
-
     try {
-      let q = query(
-        collection(db, 'purchaseBatches'),
-        orderBy('createdAt', 'desc')
-      );
+      let query = supabase.from('purchase_batches').select('*').order('created_at', { ascending: false });
+      if (filters?.status) query = query.eq('status', filters.status);
+      if (filters?.limit) query = query.limit(filters.limit);
 
-      if (filters?.status) {
-        q = query(q, where('status', '==', filters.status));
-      }
-
-      if (filters?.limit) {
-        q = query(q, limit(filters.limit));
-      }
-
-      const snapshot = await getDocs(q);
-      const batchList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as PurchaseBatch[];
-
-      setBatches(batchList);
+      const { data, error } = await query;
+      if (error) throw error;
+      setBatches((data || []).map(mapRowToBatch));
     } catch (err) {
       console.error('구매 배치 조회 오류:', err);
       setError('구매 배치를 불러오는데 실패했습니다.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
-  // 구매 배치 생성
   const createPurchaseBatch = async (
     data: CreatePurchaseBatchData,
     requests: MaterialRequest[]
   ): Promise<PurchaseBatch | null> => {
     if (!user) {
-      toast({
-        title: "오류",
-        description: "로그인이 필요합니다.",
-        variant: "destructive"
-      });
+      toast({ title: "오류", description: "로그인이 필요합니다.", variant: "destructive" });
       return null;
     }
 
     try {
-      const batch = writeBatch(db);
-      const now = Timestamp.now();
       const batchNumber = generateBatchNumber();
-
-      // 지점별 배송 계획 생성
+      const id = crypto.randomUUID();
       const deliveryPlan = generateDeliveryPlan(requests);
 
-      // 구매 배치 문서 생성
-      const batchRef = doc(collection(db, 'purchaseBatches'));
-      const newBatch: Omit<PurchaseBatch, 'id'> = {
-        batchNumber,
-        purchaseDate: now,
-        purchaserId: data.purchaserId,
-        purchaserName: data.purchaserName,
-        includedRequests: data.includedRequests,
-        purchasedItems: [], // 실제 구매 후 업데이트
-        totalCost: 0, // 실제 구매 후 업데이트
-        deliveryPlan,
+      const payload = {
+        id,
+        batch_number: batchNumber,
+        purchase_date: new Date().toISOString(),
+        purchaser_id: data.purchaserId,
+        purchaser_name: data.purchaserName,
+        included_requests: data.includedRequests,
+        purchased_items: [],
+        total_cost: 0,
+        delivery_plan: deliveryPlan,
         status: 'planning',
         notes: data.notes || '',
-        createdAt: now,
-        updatedAt: now
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
 
-      batch.set(batchRef, newBatch);
+      const { error: batchError } = await supabase.from('purchase_batches').insert([payload]);
+      if (batchError) throw batchError;
 
       // 포함된 요청들의 상태를 'purchasing'으로 업데이트
-      for (const requestId of data.includedRequests) {
-        const requestRef = doc(db, 'materialRequests', requestId);
-        batch.update(requestRef, {
-          status: 'purchasing',
-          updatedAt: now
-        });
-      }
+      const { error: requestError } = await supabase.from('material_requests')
+        .update({ status: 'purchasing', updated_at: new Date().toISOString() })
+        .in('id', data.includedRequests);
+      if (requestError) throw requestError;
 
-      await batch.commit();
-
-      toast({
-        title: "구매 배치 생성 완료",
-        description: `배치 번호: ${batchNumber}`,
-      });
-
-      // 목록 새로고침
+      toast({ title: "구매 배치 생성 완료", description: `배치 번호: ${batchNumber}` });
       await fetchBatches();
-
-      // 생성된 배치 객체 반환
-      return { id: batchRef.id, ...newBatch } as PurchaseBatch;
+      return mapRowToBatch(payload);
     } catch (error) {
       console.error('구매 배치 생성 오류:', error);
-      toast({
-        title: "오류",
-        description: "구매 배치 생성 중 오류가 발생했습니다.",
-        variant: "destructive"
-      });
+      toast({ title: "오류", description: "구매 배치 생성 중 오류가 발생했습니다.", variant: "destructive" });
       return null;
     }
   };
 
-  // 실제 구매 내역 입력
   const updateActualPurchase = async (
     batchId: string,
     purchaseData: ActualPurchaseInputData
@@ -162,356 +119,161 @@ export function usePurchaseBatches() {
 
     setLoading(true);
     try {
-      await runTransaction(db, async (transaction) => {
-        const now = Timestamp.now();
-        const batchRef = doc(db, 'purchaseBatches', batchId);
-        const batchDoc = await transaction.get(batchRef);
+      const now = new Date().toISOString();
 
-        if (!batchDoc.exists()) {
-          throw new Error(`구매 배치를 찾을 수 없습니다: ID ${batchId}`);
+      // 1. 자재 마스터 가격 정보 업데이트
+      for (const item of purchaseData.items) {
+        if (item.status === 'purchased' || item.status === 'substituted') {
+          const materialIdToUpdate = item.actualMaterialId || item.originalMaterialId;
+          const materialIdBase = materialIdToUpdate.split('-')[0];
+
+          await supabase.from('materials')
+            .update({
+              price: item.actualPrice,
+              last_purchase_price: item.actualPrice,
+              last_purchase_date: now
+            })
+            .eq('id', materialIdBase);
         }
+      }
 
-        const batchData = batchDoc.data() as PurchaseBatch;
-
-        // 1. 자재 마스터 가격 정보 업데이트
-        for (const item of purchaseData.items) {
-          if (item.status === 'purchased' || item.status === 'substituted') {
-            const materialIdToUpdate = item.actualMaterialId || item.originalMaterialId;
-            const materialQuery = query(
-              collection(db, "materials"), 
-              where("id", "==", materialIdToUpdate.split('-')[0])
-            );
-            const materialSnapshot = await getDocs(materialQuery);
-            materialSnapshot.forEach(materialDoc => {
-              transaction.update(materialDoc.ref, { 
-                price: item.actualPrice,
-                lastPurchasePrice: item.actualPrice,
-                lastPurchaseDate: now
-              });
-            });
-          }
-        }
-
-        // 2. 구매 배치 문서 업데이트
-        transaction.update(batchRef, {
-          purchasedItems: purchaseData.items,
-          totalCost: purchaseData.totalCost,
+      // 2. 구매 배치 문서 업데이트
+      const { error: batchError } = await supabase.from('purchase_batches')
+        .update({
+          purchased_items: purchaseData.items,
+          total_cost: purchaseData.totalCost,
           status: 'completed',
           notes: purchaseData.notes,
-          updatedAt: now
-        });
+          updated_at: now
+        })
+        .eq('id', batchId);
+      if (batchError) throw batchError;
 
-        // 3. 포함된 요청들의 상태를 'purchased'로 업데이트
-        for (const requestId of batchData.includedRequests) {
-          const requestRef = doc(db, 'materialRequests', requestId);
-          transaction.update(requestRef, { 
-            status: 'purchased',
-            updatedAt: now
-          });
-        }
-      });
+      // 3. 포함된 요청들의 상태를 'purchased'로 업데이트
+      const { data: batch } = await supabase.from('purchase_batches').select('included_requests').eq('id', batchId).single();
+      if (batch?.included_requests) {
+        await supabase.from('material_requests')
+          .update({ status: 'purchased', updated_at: now })
+          .in('id', batch.included_requests);
+      }
 
       toast({ title: "구매 내역 저장 완료", description: "실제 구매 내역이 저장되고 자재 정보가 업데이트되었습니다." });
       await fetchBatches();
       return true;
-
     } catch (error) {
       console.error('구매 내역 입력 오류:', error);
-      toast({ title: "오류", description: `구매 내역 저장 중 오류가 발생했습니다: ${error.message}`, variant: "destructive" });
+      toast({ title: "오류", description: `구매 내역 저장 중 오류가 발생했습니다.`, variant: "destructive" });
       return false;
     } finally {
       setLoading(false);
     }
   };
 
-  // 배송 시작 처리 (구매 배치용)
   const startDelivery = async (batchId: string): Promise<boolean> => {
     if (!user) {
-      toast({
-        title: "오류",
-        description: "로그인이 필요합니다.",
-        variant: "destructive"
-      });
+      toast({ title: "오류", description: "로그인이 필요합니다.", variant: "destructive" });
       return false;
     }
 
     try {
-      const batch = writeBatch(db);
-      const now = Timestamp.now();
+      const now = new Date().toISOString();
+      const { data: batch } = await supabase.from('purchase_batches').select('included_requests').eq('id', batchId).single();
 
-      // 구매 배치의 포함된 요청들을 'shipping' 상태로 변경
-      const batchRef = doc(db, 'purchaseBatches', batchId);
-      const batchDoc = await getDoc(batchRef);
-
-      if (batchDoc.exists()) {
-        const batchData = batchDoc.data() as PurchaseBatch;
-        for (const requestId of batchData.includedRequests) {
-          const requestRef = doc(db, 'materialRequests', requestId);
-          batch.update(requestRef, {
+      if (batch?.included_requests) {
+        await supabase.from('material_requests')
+          .update({
             status: 'shipping',
             delivery: {
               shippingDate: now,
               deliveryMethod: '직접배송',
               deliveryStatus: 'shipped'
             },
-            updatedAt: now
-          });
-        }
-      } else {
-        console.error('배치를 찾을 수 없음:', batchId);
-        throw new Error('배치를 찾을 수 없습니다.');
+            updated_at: now
+          })
+          .in('id', batch.included_requests);
       }
 
-      await batch.commit();
-      toast({
-        title: "배송 시작",
-        description: "배송이 시작되었습니다.",
-      });
-
-      // 목록 새로고침
+      toast({ title: "배송 시작", description: "배송이 시작되었습니다." });
       await fetchBatches();
-
       return true;
     } catch (error) {
       console.error('배송 시작 오류:', error);
-      toast({
-        title: "오류",
-        description: "배송 시작 처리 중 오류가 발생했습니다.",
-        variant: "destructive"
-      });
+      toast({ title: "오류", description: "배송 시작 처리 중 오류가 발생했습니다.", variant: "destructive" });
       return false;
     }
   };
 
-  // 개별 요청 배송 시작 처리
-  const startRequestDelivery = async (requestId: string): Promise<boolean> => {
-    if (!user) {
-      toast({
-        title: "오류",
-        description: "로그인이 필요합니다.",
-        variant: "destructive"
-      });
-      return false;
-    }
-
-    try {
-      const now = Timestamp.now();
-      const requestRef = doc(db, 'materialRequests', requestId);
-
-      await updateDoc(requestRef, {
-        status: 'shipping',
-        delivery: {
-          shippingDate: now,
-          deliveryMethod: '직접배송',
-          deliveryStatus: 'shipped'
-        },
-        updatedAt: now
-      });
-
-      toast({
-        title: "배송 시작",
-        description: "요청의 배송이 시작되었습니다.",
-      });
-
-      return true;
-    } catch (error) {
-      console.error('개별 요청 배송 시작 오류:', error);
-      toast({
-        title: "오류",
-        description: "배송 시작 처리 중 오류가 발생했습니다.",
-        variant: "destructive"
-      });
-      return false;
-    }
-  };
-
-  // 구매 배치 삭제
   const deleteBatch = async (batchId: string): Promise<boolean> => {
     if (!user) {
-      toast({
-        title: "오류",
-        description: "로그인이 필요합니다.",
-        variant: "destructive"
-      });
+      toast({ title: "오류", description: "로그인이 필요합니다.", variant: "destructive" });
       return false;
     }
 
     try {
-      const batch = writeBatch(db);
+      const now = new Date().toISOString();
+      const { data: batch } = await supabase.from('purchase_batches').select('included_requests').eq('id', batchId).single();
 
-      // 구매 배치의 포함된 요청들을 'reviewing' 상태로 되돌리기
-      const batchRef = doc(db, 'purchaseBatches', batchId);
-      const batchDoc = await getDoc(batchRef);
-
-      if (batchDoc.exists()) {
-        const batchData = batchDoc.data() as PurchaseBatch;
-
-        for (const requestId of batchData.includedRequests) {
-          const requestRef = doc(db, 'materialRequests', requestId);
-          batch.update(requestRef, {
-            status: 'reviewing',
-            updatedAt: Timestamp.now()
-          });
-        }
+      if (batch?.included_requests) {
+        await supabase.from('material_requests')
+          .update({ status: 'reviewing', updated_at: now })
+          .in('id', batch.included_requests);
       }
 
-      // 구매 배치 삭제
-      batch.delete(batchRef);
+      const { error: deleteError } = await supabase.from('purchase_batches').delete().eq('id', batchId);
+      if (deleteError) throw deleteError;
 
-      await batch.commit();
-
-      toast({
-        title: "구매 배치 삭제",
-        description: "구매 배치가 삭제되었습니다.",
-      });
-
-      // 목록 새로고침
+      toast({ title: "구매 배치 삭제", description: "구매 배치가 삭제되었습니다." });
       await fetchBatches();
-
       return true;
     } catch (error) {
       console.error('구매 배치 삭제 오류:', error);
-      toast({
-        title: "오류",
-        description: "구매 배치 삭제 중 오류가 발생했습니다.",
-        variant: "destructive"
-      });
+      toast({ title: "오류", description: "구매 배치 삭제 중 오류가 발생했습니다.", variant: "destructive" });
       return false;
     }
   };
 
-  // 지점별 배송 계획 생성 헬퍼 함수
   const generateDeliveryPlan = (requests: MaterialRequest[]): DeliveryPlanItem[] => {
     const branchMap = new Map<string, DeliveryPlanItem>();
-
     requests.forEach(request => {
       const branchId = request.branchId;
       const branchName = request.branchName;
-
       if (!branchMap.has(branchId)) {
-        branchMap.set(branchId, {
-          branchId,
-          branchName,
-          items: [],
-          estimatedCost: 0
-        });
+        branchMap.set(branchId, { branchId, branchName, items: [], estimatedCost: 0 });
       }
-
       const branchPlan = branchMap.get(branchId)!;
-
-      // 요청 품목들을 배송 계획에 추가
       request.requestedItems.forEach(item => {
         const estimatedCost = item.requestedQuantity * item.estimatedPrice;
         branchPlan.estimatedCost += estimatedCost;
-
-        // 배송 계획용 임시 ActualPurchaseItem 생성
-        const planItem: ActualPurchaseItem = {
+        branchPlan.items.push({
           originalMaterialId: item.materialId,
           originalMaterialName: item.materialName,
           requestedQuantity: item.requestedQuantity,
           actualMaterialName: item.materialName,
-          actualQuantity: item.requestedQuantity, // 실제 구매 후 업데이트
-          actualPrice: item.estimatedPrice, // 실제 구매 후 업데이트
-          totalAmount: estimatedCost, // 실제 구매 후 업데이트
-          status: 'purchased', // 실제 구매 후 업데이트
+          actualQuantity: item.requestedQuantity,
+          actualPrice: item.estimatedPrice,
+          totalAmount: estimatedCost,
+          status: 'purchased',
           memo: item.memo || '',
-          purchaseDate: Timestamp.now(),
-        };
-
-        branchPlan.items.push(planItem);
+          purchaseDate: new Date().toISOString() as any
+        });
       });
     });
-
     return Array.from(branchMap.values());
   };
 
-  // 실제 구매 완료 후 배송 계획 업데이트
-  const updateDeliveryPlan = (
-    originalPlan: DeliveryPlanItem[], 
-    actualItems: ActualPurchaseItem[],
-    requests: MaterialRequest[]
-  ): DeliveryPlanItem[] => {
-    const updatedPlan = originalPlan.map(plan => ({
-      ...plan,
-      items: [],
-      estimatedCost: 0
-    }));
+  const calculateBatchStats = (batch: PurchaseBatch) => ({
+    requestCount: batch.includedRequests.length,
+    branchCount: batch.deliveryPlan.length,
+    totalItems: batch.purchasedItems.length,
+    totalCost: batch.totalCost,
+    completionRate: batch.status === 'completed' ? 100 : batch.status === 'purchasing' ? 50 : 0
+  });
 
-    // 실제 구매 품목을 지점별로 배분
-    actualItems.forEach(actualItem => {
-      // 원래 자재 ID로 어느 지점에서 요청했는지 찾기
-      const requestingBranches = requests.filter(request =>
-        request.requestedItems.some(item => 
-          item.materialId === actualItem.originalMaterialId
-        )
-      );
-
-      requestingBranches.forEach(request => {
-        const originalRequestItem = request.requestedItems.find(item =>
-          item.materialId === actualItem.originalMaterialId
-        );
-
-        if (originalRequestItem) {
-          const branchPlan = updatedPlan.find(plan => plan.branchId === request.branchId);
-          if (branchPlan) {
-            // 요청 수량 비율에 따라 실제 구매 품목 배분
-            const requestRatio = originalRequestItem.requestedQuantity / 
-              requestingBranches.reduce((sum, req) => {
-                const reqItem = req.requestedItems.find(item => 
-                  item.materialId === actualItem.originalMaterialId
-                );
-                return sum + (reqItem?.requestedQuantity || 0);
-              }, 0);
-
-            const allocatedQuantity = Math.floor(actualItem.actualQuantity * requestRatio);
-            const allocatedAmount = actualItem.totalAmount * requestRatio;
-
-            if (allocatedQuantity > 0) {
-              const branchItem: ActualPurchaseItem = {
-                ...actualItem,
-                actualQuantity: allocatedQuantity,
-                totalAmount: allocatedAmount
-              };
-
-              branchPlan.items.push(branchItem);
-              branchPlan.estimatedCost += allocatedAmount;
-            }
-          }
-        }
-      });
-    });
-
-    return updatedPlan;
-  };
-
-  // 구매 배치 통계 계산
-  const calculateBatchStats = (batch: PurchaseBatch) => {
-    return {
-      requestCount: batch.includedRequests.length,
-      branchCount: batch.deliveryPlan.length,
-      totalItems: batch.purchasedItems.length,
-      totalCost: batch.totalCost,
-      completionRate: batch.status === 'completed' ? 100 : 
-                     batch.status === 'purchasing' ? 50 : 0
-    };
-  };
-
-  // 초기 로드
   useEffect(() => {
-    if (user) {
-      fetchBatches();
-    }
-  }, [user]);
+    if (user) fetchBatches();
+  }, [user, fetchBatches]);
 
   return {
-    batches,
-    loading,
-    error,
-    fetchBatches,
-    createPurchaseBatch,
-    updateActualPurchase,
-    startDelivery,
-    deleteBatch,
-    calculateBatchStats
+    batches, loading, error, fetchBatches, createPurchaseBatch, updateActualPurchase, startDelivery, deleteBatch, calculateBatchStats
   };
 }

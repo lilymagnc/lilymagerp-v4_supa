@@ -26,12 +26,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useBranches } from "@/hooks/use-branches"
 import { useToast } from "@/hooks/use-toast"
 import { useState, useEffect } from "react"
-import { doc, setDoc, addDoc, collection, serverTimestamp, getDoc, query, where, getDocs, updateDoc } from "firebase/firestore"
-import { db } from "@/lib/firebase"
+import { supabase } from "@/lib/supabase"
 import { Loader2 } from "lucide-react"
-import { POSITION_OPTIONS, POSITION_TO_ROLE } from "@/lib/constants";
+import { POSITION_OPTIONS } from "@/lib/constants";
 
-// 직원 데이터 타입 정의
+// 직원 데이터 타입 정의 (Supabase)
 interface EmployeeData {
   id: string;
   name: string;
@@ -39,11 +38,10 @@ interface EmployeeData {
   position: string;
   department: string;
   contact: string;
-  hireDate: Date;
-  birthDate: Date;
-  address: string;
-  createdAt: any;
-  [key: string]: any;
+  hire_date?: string;
+  birth_date?: string;
+  address?: string;
+  created_at?: any;
 }
 
 const userSchema = z.object({
@@ -51,7 +49,6 @@ const userSchema = z.object({
   role: z.string().min(1, "권한을 선택해주세요."),
   franchise: z.string().min(1, "소속을 선택해주세요."),
   password: z.string().optional(),
-  // 직원 정보 추가 필드
   name: z.string().min(1, "이름을 입력해주세요."),
   position: z.string().min(1, "직위를 입력해주세요."),
   contact: z.string().min(1, "연락처를 입력해주세요."),
@@ -63,14 +60,13 @@ interface UserFormProps {
   isOpen: boolean
   onOpenChange: (isOpen: boolean) => void
   user?: UserFormValues & { id: string } | null
-  onUserUpdated?: () => void // 사용자 업데이트 후 콜백 추가
+  onUserUpdated?: () => void
 }
 
 export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserFormProps) {
   const { branches } = useBranches()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
-  const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null)
   const isEditMode = !!user
 
   const form = useForm<UserFormValues>({
@@ -86,92 +82,74 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
     },
   })
 
-  // 수정 모드일 때 사용자 데이터와 직원 데이터를 가져와서 폼 초기화
+  // 1. 기존 데이터 불러오기
   useEffect(() => {
     const fetchUserAndEmployeeData = async () => {
       if (isEditMode && user?.email) {
         try {
-          // 1) 사용자 기본 문서 조회로 최신 값 확보
-          const userDocRef = doc(db, "users", user.email)
-          const userDocSnap = await getDoc(userDocRef)
-          
-          // 2) userRoles에서 branchName/role 코드 보완
-          const userRolesSnap = await getDocs(query(collection(db, "userRoles"), where("email", "==", user.email), where("isActive", "==", true)))
-          
+          // 1) user_roles에서 기본 정보 가져오기
+          const { data: roleData } = await supabase
+            .from('user_roles')
+            .select('*')
+            .eq('email', user.email)
+            .single();
+
+          // 2) employees에서 상세 정보 가져오기
+          const { data: employeeData } = await supabase
+            .from('employees')
+            .select('*')
+            .eq('email', user.email)
+            .maybeSingle();
+
+          // Role mapping
           const roleCodeToLabel: Record<string, string> = {
             hq_manager: "본사 관리자",
             branch_manager: "가맹점 관리자",
             branch_user: "직원",
             admin: "본사 관리자",
           }
-          
-          let resolvedRole = user.role || ""
-          let resolvedFranchise = user.franchise || ""
-          
-          if (userDocSnap.exists()) {
-            const d = userDocSnap.data() as any
-            resolvedRole = (d.role || resolvedRole) as string
-            resolvedFranchise = (d.franchise || resolvedFranchise) as string
+
+          // Initial values
+          const initialEmail = user.email;
+          let initialRole = user.role;
+          let initialFranchise = user.franchise;
+          let initialName = "";
+          let initialPosition = "";
+          let initialContact = "";
+
+          if (roleData) {
+            initialRole = roleCodeToLabel[roleData.role] || roleData.role;
+            initialFranchise = roleData.branch_name || "";
           }
-          
-          if (!resolvedFranchise || !resolvedRole) {
-            if (!userRolesSnap.empty) {
-              const r = userRolesSnap.docs[0].data() as any
-              // role 코드 → 라벨 매핑
-              const mapped = roleCodeToLabel[r.role as string]
-              if (!resolvedRole && mapped) resolvedRole = mapped
-              if (!resolvedFranchise && r.branchName) resolvedFranchise = r.branchName
-            }
+
+          if (employeeData) {
+            initialName = employeeData.name || "";
+            initialPosition = employeeData.position || "";
+            initialContact = employeeData.contact || "";
           }
-          
-          // 사용자 데이터 설정 (권한/소속 보완값 반영)
-          const userData = {
-            email: user.email,
-            role: resolvedRole,
-            franchise: resolvedFranchise,
+
+          form.reset({
+            email: initialEmail,
+            role: initialRole,
+            franchise: initialFranchise,
             password: "",
-            name: "",
-            position: "",
-            contact: "",
-          }
-          
-          // 직원 데이터 가져오기
-          const employeesQuery = collection(db, "employees")
-          const employeeSnapshot = await getDocs(query(employeesQuery, where("email", "==", user.email)))
-          
-          if (!employeeSnapshot.empty) {
-            const employeeDoc = employeeSnapshot.docs[0]
-            const employee = employeeDoc.data() as EmployeeData
-            setEmployeeData({
-              ...employee,
-              id: employeeDoc.id // 문서 ID 추가
-            })
-            // 직원 데이터로 폼 업데이트
-            form.reset({
-              ...userData,
-              name: employee.name || "",
-              position: employee.position || "",
-              contact: employee.contact || "",
-            })
-          } else {
-            // 직원 데이터가 없는 경우 사용자 데이터만 설정
-            form.reset(userData)
-          }
+            name: initialName,
+            position: initialPosition,
+            contact: initialContact,
+          });
+
         } catch (error) {
-          console.error("Error fetching employee data:", error)
-          // 에러가 발생해도 사용자 데이터는 설정
+          console.error("Error fetching user details:", error);
           form.reset({
             email: user.email,
             role: user.role || "",
             franchise: user.franchise || "",
-            password: "",
-            name: "",
-            position: "",
-            contact: "",
-          })
+            name: user.name || "",
+            position: user.position || "",
+            contact: user.contact || "",
+          });
         }
       } else if (!isEditMode) {
-        // 새 사용자 추가 모드일 때 폼 초기화
         form.reset({
           email: "",
           role: "",
@@ -183,23 +161,33 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
         })
       }
     }
-    
+
     if (isOpen) {
       fetchUserAndEmployeeData()
     }
   }, [isOpen, user, isEditMode, form])
 
+  // 2. 제출 (Create / Update)
   const onSubmit = async (data: UserFormValues) => {
     setLoading(true);
     try {
-      // 중복 이메일 체크 (새 사용자 추가 시에만)
+      // 권한 매핑
+      const roleMapping = {
+        "본사 관리자": "hq_manager",
+        "가맹점 관리자": "branch_manager",
+        "직원": "branch_user"
+      };
+      const mappedRole = roleMapping[data.role as keyof typeof roleMapping] || "branch_user";
+
+      // A. 신규 사용자 중복 체크 (Supabase user_roles)
       if (!isEditMode) {
-        const existingUserQuery = query(
-          collection(db, "users"),
-          where("email", "==", data.email)
-        );
-        const existingUser = await getDocs(existingUserQuery);
-        if (!existingUser.empty) {
+        const { data: existing, error: checkError } = await supabase
+          .from('user_roles')
+          .select('email')
+          .eq('email', data.email)
+          .maybeSingle();
+
+        if (existing) {
           toast({
             variant: "destructive",
             title: "중복 이메일",
@@ -208,137 +196,59 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
           setLoading(false);
           return;
         }
+
+        // 새 사용자: Supabase Auth signUp 필요 (클라이언트 사이드라 제한적일 수 있음)
+        // 여기서는 DB 레코드만 생성한다고 가정하거나, 필요 시 Admin API 호출
+        // 일단 DB 레코드 생성에 집중
       }
 
-      // 최종 권한 결정
-      let finalRole = data.role;
-      let finalFranchise = data.franchise;
-
-      if (isEditMode) {
-        // 1. users 컬렉션 업데이트
-        const userDocRef = doc(db, "users", data.email);
-        const existingDoc = await getDoc(userDocRef);
-        
-        if (existingDoc.exists()) {
-          const currentData = existingDoc.data();
-          const newData = {
-            ...currentData,
-            role: finalRole,
-            franchise: finalFranchise,
-            updatedAt: serverTimestamp()
-          };
-          await setDoc(userDocRef, newData);
-        } else {
-          toast({
-            variant: "destructive",
-            title: "오류",
-            description: "사용자 문서를 찾을 수 없습니다."
-          });
-          setLoading(false);
-          return;
-        }
-
-        // 2. userRoles 컬렉션 업데이트
-        const roleMapping = {
-          "본사 관리자": "hq_manager",
-          "가맹점 관리자": "branch_manager", 
-          "직원": "branch_user"
-        };
-        const mappedRole = roleMapping[finalRole as keyof typeof roleMapping] || "branch_user";
-        
-        const userRolesQuery = query(collection(db, "userRoles"), where("email", "==", data.email));
-        const userRolesSnapshot = await getDocs(userRolesQuery);
-        
-        if (!userRolesSnapshot.empty) {
-          const userRoleDoc = userRolesSnapshot.docs[0];
-          await updateDoc(userRoleDoc.ref, {
-            role: mappedRole,
-            branchName: finalFranchise,
-            updatedAt: serverTimestamp()
-          });
-        } else {
-          // userRoles가 없으면 생성
-          await addDoc(collection(db, "userRoles"), {
-            userId: data.email,
-            email: data.email,
-            role: mappedRole,
-            branchName: finalFranchise,
-            permissions: getPermissionsForRole(mappedRole),
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            isActive: true
-          });
-        }
-
-        // 3. 직원 데이터 업데이트
-        await updateEmployeeData(data);
-
-        toast({
-          title: "성공",
-          description: "사용자 정보가 성공적으로 수정되었습니다.",
-        });
-      } else {
-        // 새 사용자 추가
-        // 1. users 컬렉션에 추가
-        const userDocRef = doc(db, "users", data.email);
-        await setDoc(userDocRef, {
-          email: data.email,
-          role: finalRole,
-          franchise: finalFranchise,
-          createdAt: serverTimestamp(),
-          isActive: true
-        });
-
-        // 2. userRoles 컬렉션에 추가
-        const roleMapping = {
-          "본사 관리자": "hq_manager",
-          "가맹점 관리자": "branch_manager", 
-          "직원": "branch_user"
-        };
-        const mappedRole = roleMapping[finalRole as keyof typeof roleMapping] || "branch_user";
-        
-        await addDoc(collection(db, "userRoles"), {
-          userId: data.email,
+      // B. user_roles upsert (이메일 기준)
+      // Upsert user_roles
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .upsert({
           email: data.email,
           role: mappedRole,
-          branchName: finalFranchise,
-          permissions: getPermissionsForRole(mappedRole),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          isActive: true
-        });
+          branch_name: data.franchise,
+          is_active: true,
+          permissions: getPermissionsForRole(mappedRole)
+        }, { onConflict: 'email' });
 
-        // 3. 직원 데이터 추가
-        await addEmployeeData(data);
+      if (roleError) throw roleError;
 
-        toast({
-          title: "성공",
-          description: "새 사용자가 추가되었습니다.",
-        });
-      }
+      // C. employees upsert (이메일 기준)
+      const { error: empError } = await supabase
+        .from('employees')
+        .upsert({
+          email: data.email,
+          name: data.name,
+          position: data.position,
+          contact: data.contact,
+          department: data.franchise,
+        }, { onConflict: 'email' });
 
-      // 사용자 업데이트 콜백 호출
-      if (onUserUpdated) {
-        onUserUpdated();
-      }
+      if (empError) throw empError;
 
-      // 다이얼로그 닫기
-      setTimeout(() => {
-        onOpenChange(false);
-      }, 1000);
-    } catch(error) {
+      toast({
+        title: "성공",
+        description: isEditMode ? "사용자 정보가 수정되었습니다." : "새 사용자가 등록되었습니다.",
+      });
+
+      if (onUserUpdated) onUserUpdated();
+      setTimeout(() => onOpenChange(false), 500);
+
+    } catch (error: any) {
       console.error("❌ Error saving user:", error);
       toast({
         variant: "destructive",
         title: "오류",
-        description: "사용자 정보 저장 중 오류가 발생했습니다."
+        description: `저장 중 오류가 발생했습니다: ${error.message}`
       })
     } finally {
       setLoading(false);
     }
   }
 
-  // 역할에 따른 권한 반환 함수
   const getPermissionsForRole = (role: string) => {
     switch (role) {
       case 'hq_manager':
@@ -349,55 +259,6 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
       case 'branch_user':
       default:
         return ['create_request'];
-    }
-  }
-
-  // 직원 데이터 업데이트 함수
-  const updateEmployeeData = async (data: UserFormValues) => {
-    try {
-      const employeesQuery = query(collection(db, "employees"), where("email", "==", data.email));
-      const employeeSnapshot = await getDocs(employeesQuery);
-      
-      if (!employeeSnapshot.empty) {
-        // 기존 직원 데이터 업데이트
-        const employeeDoc = employeeSnapshot.docs[0];
-        await updateDoc(employeeDoc.ref, {
-          name: data.name,
-          position: data.position,
-          contact: data.contact,
-          updatedAt: serverTimestamp()
-        });
-      } else {
-        // 새 직원 데이터 생성
-        await addDoc(collection(db, "employees"), {
-          email: data.email,
-          name: data.name,
-          position: data.position,
-          contact: data.contact,
-          department: data.franchise,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
-      }
-    } catch (error) {
-      console.error("직원 데이터 업데이트 오류:", error);
-    }
-  }
-
-  // 직원 데이터 추가 함수
-  const addEmployeeData = async (data: UserFormValues) => {
-    try {
-      await addDoc(collection(db, "employees"), {
-        email: data.email,
-        name: data.name,
-        position: data.position,
-        contact: data.contact,
-        department: data.franchise,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-    } catch (error) {
-      console.error("직원 데이터 추가 오류:", error);
     }
   }
 
@@ -419,9 +280,9 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
                 <FormItem>
                   <FormLabel htmlFor="user-email">이메일</FormLabel>
                   <FormControl>
-                    <Input 
-                      placeholder="user@example.com" 
-                      {...field} 
+                    <Input
+                      placeholder="user@example.com"
+                      {...field}
                       disabled={isEditMode}
                       id="user-email"
                       name="email"
@@ -439,8 +300,8 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
                 <FormItem>
                   <FormLabel htmlFor="user-name">이름</FormLabel>
                   <FormControl>
-                    <Input 
-                      placeholder="홍길동" 
+                    <Input
+                      placeholder="홍길동"
                       {...field}
                       id="user-name"
                       name="name"
@@ -458,8 +319,8 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
                 <FormItem>
                   <FormLabel htmlFor="user-contact">연락처</FormLabel>
                   <FormControl>
-                    <Input 
-                      placeholder="010-1234-5678" 
+                    <Input
+                      placeholder="010-1234-5678"
                       {...field}
                       id="user-contact"
                       name="contact"
@@ -484,9 +345,9 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
                     </FormControl>
                     <SelectContent id="user-position-content">
                       {POSITION_OPTIONS.map(option => (
-                        <SelectItem 
-                          key={option.value} 
-                          value={option.value} 
+                        <SelectItem
+                          key={option.value}
+                          value={option.value}
                           id={`position-${option.value}`}
                           className="cursor-pointer"
                         >
@@ -527,8 +388,8 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
               render={({ field }) => (
                 <FormItem>
                   <FormLabel htmlFor="user-franchise">소속</FormLabel>
-                  <Select 
-                    onValueChange={field.onChange} 
+                  <Select
+                    onValueChange={field.onChange}
                     value={field.value}
                   >
                     <FormControl>
@@ -537,7 +398,6 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent id="user-franchise-content">
-                      {/* 현재 값이 옵션 목록에 없더라도 표시되도록 임시 옵션 추가 */}
                       {field.value &&
                         field.value !== '' &&
                         !['본사', ...branches.map(b => b.name)].includes(field.value) && (
@@ -547,9 +407,9 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
                         )}
                       <SelectItem value="본사" id="franchise-hq" className="cursor-pointer">본사</SelectItem>
                       {branches.map(branch => (
-                        <SelectItem 
-                          key={branch.id} 
-                          value={branch.name} 
+                        <SelectItem
+                          key={branch.id}
+                          value={branch.name}
                           id={`franchise-${branch.id}`}
                           className="cursor-pointer"
                         >
@@ -568,11 +428,11 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel htmlFor="user-password">임시 비밀번호</FormLabel>
+                    <FormLabel htmlFor="user-password">초기 비밀번호</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="password" 
-                        placeholder="임시 비밀번호" 
+                      <Input
+                        type="password"
+                        placeholder="로그인 시 사용할 초기 비밀번호"
                         {...field}
                         id="user-password"
                         name="password"

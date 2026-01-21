@@ -94,6 +94,14 @@ export default function SettingsPage() {
       setLocalSettings(settings);
     }
   }, [settings, loading]);
+
+  // URL query parameter ('tab') 변경 감지하여 탭 전환
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
   const handleSaveSettings = async () => {
     try {
       setSaving(true);

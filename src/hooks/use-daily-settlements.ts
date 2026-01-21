@@ -1,14 +1,6 @@
 "use client";
-
 import { useState, useCallback } from 'react';
-import {
-    doc,
-    getDoc,
-    setDoc,
-    Timestamp,
-    serverTimestamp
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { useToast } from './use-toast';
 import { DailySettlementRecord } from '@/types/daily-settlement';
 
@@ -20,12 +12,24 @@ export function useDailySettlements() {
         if (!branchId || !date) return null;
         setLoading(true);
         try {
-            const docId = `${branchId}_${date}`;
-            const docRef = doc(db, 'dailySettlements', docId);
-            const snapshot = await getDoc(docRef);
+            const { data, error } = await supabase.from('daily_settlements')
+                .select('*')
+                .eq('branch_id', branchId)
+                .eq('date', date)
+                .maybeSingle();
 
-            if (snapshot.exists()) {
-                return { id: snapshot.id, ...snapshot.data() } as DailySettlementRecord;
+            if (error) throw error;
+            if (data) {
+                return {
+                    id: data.id,
+                    branchId: data.branch_id,
+                    branchName: data.branch_name,
+                    date: data.date,
+                    status: data.status,
+                    createdAt: data.created_at,
+                    updatedAt: data.updated_at,
+                    ...data.settlement_data
+                } as DailySettlementRecord;
             }
             return null;
         } catch (error) {
@@ -40,19 +44,26 @@ export function useDailySettlements() {
         if (!data.branchId || !data.date) return false;
         setLoading(true);
         try {
-            const docId = `${data.branchId}_${data.date}`;
-            const docRef = doc(db, 'dailySettlements', docId);
+            const { branchId, branchName, date, status, ...settlement_data } = data;
+            const id = `${branchId}_${date}`;
 
             const payload = {
-                ...data,
-                updatedAt: serverTimestamp(),
+                id,
+                branch_id: branchId,
+                branch_name: branchName,
+                date: date,
+                status: status || 'completed',
+                settlement_data: settlement_data,
+                updated_at: new Date().toISOString()
             };
 
-            if (!data.createdAt) {
-                (payload as any).createdAt = serverTimestamp();
+            const { data: existing } = await supabase.from('daily_settlements').select('created_at').eq('id', id).maybeSingle();
+            if (!existing) {
+                (payload as any).created_at = new Date().toISOString();
             }
 
-            await setDoc(docRef, payload, { merge: true });
+            const { error } = await supabase.from('daily_settlements').upsert([payload]);
+            if (error) throw error;
 
             toast({
                 title: "정산 완료",
@@ -73,8 +84,6 @@ export function useDailySettlements() {
     }, [toast]);
 
     return {
-        loading,
-        getSettlement,
-        saveSettlement
+        loading, getSettlement, saveSettlement
     };
 }

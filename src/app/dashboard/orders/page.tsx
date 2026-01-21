@@ -38,6 +38,16 @@ import { useNotifications } from "@/hooks/use-notifications";
 import { useDisplayBoard } from "@/hooks/use-display-board";
 import { useCalendar } from "@/hooks/use-calendar";
 
+// Helper for safe date parsing
+const parseDate = (date: any): Date | null => {
+  if (!date) return null;
+  if (date instanceof Date) return date;
+  if (typeof date === 'string') return new Date(date);
+  if (typeof date.toDate === 'function') return date.toDate();
+  if (date.seconds) return new Date(date.seconds * 1000);
+  return null;
+};
+
 export default function OrdersPage() {
   const { orders, loading, fetchOrders, fetchAllOrders, updateOrderStatus, updatePaymentStatus, cancelOrder, deleteOrder } = useOrders();
   const [isFullDataLoaded, setIsFullDataLoaded] = useState(false);
@@ -448,9 +458,9 @@ export default function OrdersPage() {
         return (
           <div className="flex flex-col gap-1">
             <Badge className="bg-blue-500 text-white">완결</Badge>
-            {completedAt && (
+            {parseDate(completedAt) && (
               <span className="text-xs text-gray-500">
-                {format((completedAt as Timestamp).toDate(), 'MM/dd HH:mm')}
+                {format(parseDate(completedAt)!, 'MM/dd HH:mm')}
               </span>
             )}
           </div>
@@ -649,7 +659,16 @@ export default function OrdersPage() {
     // 오늘 주문한 모든 주문 (주문일 기준)
     const todayOrderedOrdersForRevenue = filteredOrders.filter(order => {
       if (!order.orderDate) return false;
-      const orderDate = (order.orderDate as Timestamp).toDate();
+      let orderDate: Date;
+      if (typeof order.orderDate === 'string') {
+        orderDate = new Date(order.orderDate);
+      } else if (order.orderDate.seconds) {
+        orderDate = new Date(order.orderDate.seconds * 1000);
+      } else if (typeof order.orderDate.toDate === 'function') {
+        orderDate = order.orderDate.toDate();
+      } else {
+        return false;
+      }
       const orderDateOnly = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate());
       return orderDateOnly.getTime() === todayStartForRevenue.getTime();
     });
@@ -657,7 +676,20 @@ export default function OrdersPage() {
     // 오늘 결제 완료된 모든 주문 (결제완료일 기준)
     const todayCompletedOrdersForRevenue = filteredOrders.filter(order => {
       if ((order.payment?.status !== 'paid' && order.payment?.status !== 'completed') || !order.payment?.completedAt) return false;
-      const completedDate = (order.payment.completedAt as Timestamp).toDate();
+
+      let completedDate: Date;
+      const compAt = order.payment.completedAt;
+
+      if (typeof compAt === 'string') {
+        completedDate = new Date(compAt);
+      } else if (compAt.seconds) {
+        completedDate = new Date(compAt.seconds * 1000);
+      } else if (typeof compAt.toDate === 'function') {
+        completedDate = compAt.toDate();
+      } else {
+        return false;
+      }
+
       const completedDateOnly = new Date(completedDate.getFullYear(), completedDate.getMonth(), completedDate.getDate());
       return completedDateOnly.getTime() === todayStartForRevenue.getTime();
     });
@@ -665,7 +697,18 @@ export default function OrdersPage() {
     // 금일결제: 어제 및 과거주문 + 오늘결제완료 (오늘주문 + 오늘결제완료는 제외)
     const todayPaymentCompletedOrdersForRevenue = todayCompletedOrdersForRevenue.filter(order => {
       if (!order.orderDate) return false;
-      const orderDate = (order.orderDate as Timestamp).toDate();
+
+      let orderDate: Date;
+      if (typeof order.orderDate === 'string') {
+        orderDate = new Date(order.orderDate);
+      } else if (order.orderDate.seconds) {
+        orderDate = new Date(order.orderDate.seconds * 1000);
+      } else if (typeof order.orderDate.toDate === 'function') {
+        orderDate = order.orderDate.toDate();
+      } else {
+        return false;
+      }
+
       const orderDateOnly = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate());
       // 주문일이 오늘이 아닌 주문만 포함 (어제 및 과거주문)
       return orderDateOnly.getTime() !== todayStartForRevenue.getTime();
@@ -679,7 +722,16 @@ export default function OrdersPage() {
     // 어제 주문했지만 오늘 결제된 주문
     const yesterdayOrderedTodayCompletedOrdersForRevenue = todayCompletedOrdersForRevenue.filter(order => {
       if (!order.orderDate) return false;
-      const orderDate = (order.orderDate as Timestamp).toDate();
+      let orderDate: Date;
+      if (typeof order.orderDate === 'string') {
+        orderDate = new Date(order.orderDate);
+      } else if (order.orderDate.seconds) {
+        orderDate = new Date(order.orderDate.seconds * 1000);
+      } else if (typeof order.orderDate.toDate === 'function') {
+        orderDate = order.orderDate.toDate();
+      } else {
+        return false;
+      }
       const orderDateOnly = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate());
       return orderDateOnly.getTime() !== todayStartForRevenue.getTime();
     });
@@ -835,7 +887,16 @@ export default function OrdersPage() {
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const todayOrders = filteredOrders.filter(order => {
       if (!order.orderDate) return false;
-      const orderDate = (order.orderDate as Timestamp).toDate();
+      let orderDate: Date;
+      if (typeof order.orderDate === 'string') {
+        orderDate = new Date(order.orderDate);
+      } else if (order.orderDate.seconds) {
+        orderDate = new Date(order.orderDate.seconds * 1000);
+      } else if (typeof order.orderDate.toDate === 'function') {
+        orderDate = order.orderDate.toDate();
+      } else {
+        return false;
+      }
       const orderDateOnly = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate());
       const isToday = orderDateOnly.getTime() === todayStart.getTime();
 
@@ -892,7 +953,16 @@ export default function OrdersPage() {
     // 이번 달 주문 (해당 지점에서 발주한 주문만 포함, 수주받은 주문은 건수만)
     const thisMonthOrders = filteredOrders.filter(order => {
       if (!order.orderDate) return false;
-      const orderDate = (order.orderDate as Timestamp).toDate();
+      let orderDate: Date;
+      if (typeof order.orderDate === 'string') {
+        orderDate = new Date(order.orderDate);
+      } else if (order.orderDate.seconds) {
+        orderDate = new Date(order.orderDate.seconds * 1000);
+      } else if (typeof order.orderDate.toDate === 'function') {
+        orderDate = order.orderDate.toDate();
+      } else {
+        return false;
+      }
       const isThisMonth = orderDate.getMonth() === today.getMonth() &&
         orderDate.getFullYear() === today.getFullYear();
 
@@ -1767,8 +1837,8 @@ export default function OrdersPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col">
-                          <span className="text-xs">{order.orderDate && format((order.orderDate as Timestamp).toDate(), 'yyyy-MM-dd')}</span>
-                          <span className="text-[10px] text-muted-foreground">{order.orderDate && format((order.orderDate as Timestamp).toDate(), 'HH:mm')}</span>
+                          <span className="text-xs">{parseDate(order.orderDate) ? format(parseDate(order.orderDate)!, 'yyyy-MM-dd') : ''}</span>
+                          <span className="text-[10px] text-muted-foreground">{parseDate(order.orderDate) ? format(parseDate(order.orderDate)!, 'HH:mm') : ''}</span>
                         </div>
                       </TableCell>
                       <TableCell>

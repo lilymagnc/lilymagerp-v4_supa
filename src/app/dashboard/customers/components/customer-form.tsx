@@ -51,6 +51,7 @@ const customerSchema = z.object({
   otherAnniversaryName: z.string().optional(),
   otherAnniversary: z.string().optional(),
   memo: z.string().optional(),
+  address: z.string().optional(),
   // 특이사항 및 월결제일 필드 추가
   specialNotes: z.string().optional(),
   monthlyPaymentDay: z.string().optional(),
@@ -93,6 +94,7 @@ const defaultValues: CustomerFormValues = {
   otherAnniversaryName: "",
   otherAnniversary: "",
   memo: "",
+  address: "",
   specialNotes: "",
   monthlyPaymentDay: "",
   businessNumber: "",
@@ -124,10 +126,10 @@ export function CustomerForm({ isOpen, onOpenChange, onSubmit, customer }: Custo
         });
       } else {
         // 새 고객 추가 시 로그인한 사용자의 지점으로 자동 설정
-        const userBranch = user?.franchise && user.franchise !== '본사' && user.franchise !== '미지정' 
-          ? user.franchise 
+        const userBranch = user?.franchise && user.franchise !== '본사' && user.franchise !== '미지정'
+          ? user.franchise
           : "";
-        
+
         form.reset({
           ...defaultValues,
           branch: userBranch,
@@ -139,7 +141,7 @@ export function CustomerForm({ isOpen, onOpenChange, onSubmit, customer }: Custo
     onSubmit(data);
   }
   const customerType = form.watch("type");
-  
+
   // 고객유형이 변경될 때 담당자명을 고객명으로 자동 설정
   useEffect(() => {
     if (customerType === 'company') {
@@ -158,25 +160,25 @@ export function CustomerForm({ isOpen, onOpenChange, onSubmit, customer }: Custo
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-4">
-             <FormField
-                control={form.control}
-                name="type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>고객 유형</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="personal">개인</SelectItem>
-                        <SelectItem value="company">기업</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <FormField
+              control={form.control}
+              name="type"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>고객 유형</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="personal">개인</SelectItem>
+                      <SelectItem value="company">기업</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <Separator />
             <p className="text-sm font-semibold">담당자 정보</p>
             <Separator />
@@ -222,59 +224,72 @@ export function CustomerForm({ isOpen, onOpenChange, onSubmit, customer }: Custo
               )}
             />
             <div className="grid grid-cols-2 gap-4">
-                <FormField
-                    control={form.control}
-                    name="branch"
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>담당 지점 *</FormLabel>
-                        {user?.role === '본사 관리자' ? (
-                          <Select onValueChange={field.onChange} value={field.value}>
-                              <FormControl>
-                                  <SelectTrigger><SelectValue placeholder="지점 선택" /></SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                  {branches.filter(b => b.type !== '본사').map(branch => (
-                                      <SelectItem key={branch.id} value={branch.name}>{branch.name}</SelectItem>
-                                  ))}
-                              </SelectContent>
-                          </Select>
-                        ) : (
-                          <FormControl>
-                              <Input 
-                                  value={field.value} 
-                                  readOnly 
-                                  className="bg-gray-50"
-                                  placeholder="자동 설정됨"
-                              />
-                          </FormControl>
-                        )}
-                        <FormMessage />
-                    </FormItem>
+              <FormField
+                control={form.control}
+                name="branch"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>담당 지점 *</FormLabel>
+                    {user?.role === '본사 관리자' ? (
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="지점 선택" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {branches.filter(b => b.type !== '본사').map(branch => (
+                            <SelectItem key={branch.id} value={branch.name}>{branch.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <FormControl>
+                        <Input
+                          value={field.value}
+                          readOnly
+                          className="bg-gray-50"
+                          placeholder="자동 설정됨"
+                        />
+                      </FormControl>
                     )}
-                />
-                <FormField
-                    control={form.control}
-                    name="grade"
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>고객 등급</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl>
-                                <SelectTrigger><SelectValue placeholder="등급 선택" /></SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                                <SelectItem value="신규">신규</SelectItem>
-                                <SelectItem value="일반">일반</SelectItem>
-                                <SelectItem value="VIP">VIP</SelectItem>
-                                <SelectItem value="VVIP">VVIP</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="grade"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>고객 등급</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger><SelectValue placeholder="등급 선택" /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="신규">신규</SelectItem>
+                        <SelectItem value="일반">일반</SelectItem>
+                        <SelectItem value="VIP">VIP</SelectItem>
+                        <SelectItem value="VVIP">VVIP</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
+            <FormField
+              control={form.control}
+              name="address"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>주소</FormLabel>
+                  <FormControl>
+                    <Input placeholder="서울시 강남구..." {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <Separator className="my-6" />
             <p className="text-sm font-semibold">추가 정보</p>
             <Separator />
@@ -293,163 +308,163 @@ export function CustomerForm({ isOpen, onOpenChange, onSubmit, customer }: Custo
             />
             <Separator className="my-4" />
             <p className="text-sm font-semibold mb-4">기념일 정보</p>
-            
+
             <div className="grid grid-cols-2 gap-4">
-                <FormField
-                    control={form.control}
-                    name="birthday"
-                    render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>생일</FormLabel>
-                            <FormControl>
-                                <Input 
-                                    type="date" 
-                                    placeholder="YYYY-MM-DD" 
-                                    {...field} 
-                                />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="weddingAnniversary"
-                    render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>결혼기념일</FormLabel>
-                            <FormControl>
-                                <Input 
-                                    type="date" 
-                                    placeholder="YYYY-MM-DD" 
-                                    {...field} 
-                                />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                {customerType === 'company' && (
-                    <FormField
-                        control={form.control}
-                        name="foundingAnniversary"
-                        render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>창립기념일</FormLabel>
-                                <FormControl>
-                                    <Input 
-                                        type="date" 
-                                        placeholder="YYYY-MM-DD" 
-                                        {...field} 
-                                    />
-                                </FormControl>
-                                <FormMessage />
-                            </FormItem>
-                        )}
-                    />
+              <FormField
+                control={form.control}
+                name="birthday"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>생일</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="date"
+                        placeholder="YYYY-MM-DD"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )}
+              />
+              <FormField
+                control={form.control}
+                name="weddingAnniversary"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>결혼기념일</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="date"
+                        placeholder="YYYY-MM-DD"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {customerType === 'company' && (
                 <FormField
-                    control={form.control}
-                    name="firstVisitDate"
-                    render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>첫 방문일</FormLabel>
-                            <FormControl>
-                                <Input 
-                                    type="date" 
-                                    placeholder="YYYY-MM-DD" 
-                                    {...field} 
-                                />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )}
+                  control={form.control}
+                  name="foundingAnniversary"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>창립기념일</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          placeholder="YYYY-MM-DD"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-                <FormField
-                    control={form.control}
-                    name="otherAnniversaryName"
-                    render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>기타 기념일명</FormLabel>
-                            <FormControl>
-                                <Input 
-                                    placeholder="예: 아이 생일, 개업일 등" 
-                                    {...field} 
-                                />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="otherAnniversary"
-                    render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>기타 기념일</FormLabel>
-                            <FormControl>
-                                <Input 
-                                    type="date" 
-                                    placeholder="YYYY-MM-DD" 
-                                    {...field} 
-                                />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
+              )}
+              <FormField
+                control={form.control}
+                name="firstVisitDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>첫 방문일</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="date"
+                        placeholder="YYYY-MM-DD"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="otherAnniversaryName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>기타 기념일명</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="예: 아이 생일, 개업일 등"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="otherAnniversary"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>기타 기념일</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="date"
+                        placeholder="YYYY-MM-DD"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
             {customerType === 'company' && (
               <>
                 <Separator className="my-6" />
                 <p className="text-sm font-semibold">사업자 정보 (세금계산서 발행용)</p>
                 <Separator />
-                                 <FormField control={form.control} name="companyName" render={({ field }) => (
-                     <FormItem>
-                       <FormLabel>회사명 *</FormLabel>
-                       <FormControl><Input placeholder="꽃길 주식회사" {...field} /></FormControl>
-                       <FormMessage />
-                     </FormItem>
-                 )}/>
+                <FormField control={form.control} name="companyName" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>회사명 *</FormLabel>
+                    <FormControl><Input placeholder="꽃길 주식회사" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <div className="grid grid-cols-2 gap-4">
                   <FormField control={form.control} name="businessNumber" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>사업자등록번호</FormLabel>
-                        <FormControl><Input placeholder="123-45-67890" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                  )}/>
+                    <FormItem>
+                      <FormLabel>사업자등록번호</FormLabel>
+                      <FormControl><Input placeholder="123-45-67890" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
                   <FormField control={form.control} name="ceoName" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>대표자명</FormLabel>
-                        <FormControl><Input placeholder="홍길동" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                  )}/>
+                    <FormItem>
+                      <FormLabel>대표자명</FormLabel>
+                      <FormControl><Input placeholder="홍길동" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <FormField control={form.control} name="businessType" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>업태</FormLabel>
-                        <FormControl><Input placeholder="소매업" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                  )}/>
+                    <FormItem>
+                      <FormLabel>업태</FormLabel>
+                      <FormControl><Input placeholder="소매업" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
                   <FormField control={form.control} name="businessItem" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>종목</FormLabel>
-                        <FormControl><Input placeholder="전자상거래업" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                  )}/>
+                    <FormItem>
+                      <FormLabel>종목</FormLabel>
+                      <FormControl><Input placeholder="전자상거래업" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
                 </div>
                 <FormField control={form.control} name="businessAddress" render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>사업장 주소</FormLabel>
-                        <FormControl><Textarea placeholder="상세 주소 입력" {...field} /></FormControl>
-                        <FormMessage />
-                    </FormItem>
-                )}/>
+                  <FormItem>
+                    <FormLabel>사업장 주소</FormLabel>
+                    <FormControl><Textarea placeholder="상세 주소 입력" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
               </>
             )}
             <FormField
@@ -465,13 +480,13 @@ export function CustomerForm({ isOpen, onOpenChange, onSubmit, customer }: Custo
                 </FormItem>
               )}
             />
-            
+
             {customerType === 'company' && (
               <>
                 <Separator className="my-6" />
                 <p className="text-sm font-semibold">결제 및 특이사항</p>
                 <Separator />
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
@@ -480,12 +495,12 @@ export function CustomerForm({ isOpen, onOpenChange, onSubmit, customer }: Custo
                       <FormItem>
                         <FormLabel>월결제일</FormLabel>
                         <FormControl>
-                          <Input 
-                            type="number" 
-                            placeholder="1-31" 
-                            min="1" 
+                          <Input
+                            type="number"
+                            placeholder="1-31"
+                            min="1"
                             max="31"
-                            {...field} 
+                            {...field}
                           />
                         </FormControl>
                         <FormMessage />
@@ -493,7 +508,7 @@ export function CustomerForm({ isOpen, onOpenChange, onSubmit, customer }: Custo
                     )}
                   />
                 </div>
-                
+
                 <FormField
                   control={form.control}
                   name="specialNotes"
@@ -501,10 +516,10 @@ export function CustomerForm({ isOpen, onOpenChange, onSubmit, customer }: Custo
                     <FormItem>
                       <FormLabel>특이사항</FormLabel>
                       <FormControl>
-                        <Textarea 
-                          placeholder="고객 관련 특이사항, 주의사항, 선호사항 등을 기록해주세요" 
-                          {...field} 
-                          rows={4} 
+                        <Textarea
+                          placeholder="고객 관련 특이사항, 주의사항, 선호사항 등을 기록해주세요"
+                          {...field}
+                          rows={4}
                         />
                       </FormControl>
                       <FormMessage />

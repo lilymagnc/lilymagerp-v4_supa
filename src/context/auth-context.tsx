@@ -1,16 +1,19 @@
-
 "use client";
 
 import { createContext, useEffect, useState, ReactNode, useCallback } from 'react';
-import type { User } from 'firebase/auth';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, getDocs, collection, query, where } from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
+import { auth } from '@/lib/firebase';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { Loader2 } from 'lucide-react';
 
-export interface UserProfile extends User {
+export interface UserProfile {
+  id: string;
+  uid: string; // Firebase UID
+  email?: string;
   role?: '본사 관리자' | '가맹점 관리자' | '직원';
   franchise?: string;
+  branchId?: string;
+  branchName?: string;
 }
 
 interface AuthContextType {
@@ -24,26 +27,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserRole = useCallback(async (firebaseUser: User) => {
-    if (!firebaseUser.email) return firebaseUser;
+  const fetchUserRole = useCallback(async (firebaseUser: FirebaseUser) => {
+    if (!firebaseUser.email) return null;
 
     try {
-      // 1. 먼저 userRoles 컬렉션에서 사용자 역할 확인 (우선순위 1)
-      const userRolesQuery = query(
-        collection(db, 'userRoles'),
-        where('email', '==', firebaseUser.email),
-        where('isActive', '==', true)
-      );
-      const userRolesSnapshot = await getDocs(userRolesQuery);
+      // user_roles 테이블에서 사용자 역할 확인
+      const { data: roleData, error } = await supabase
+        .from('user_roles')
+        .select('*')
+        .eq('email', firebaseUser.email)
+        .eq('is_active', true)
+        .maybeSingle();
 
-      if (!userRolesSnapshot.empty) {
-        // userRoles에서 찾은 역할 사용
-        const userRoleDoc = userRolesSnapshot.docs[0];
-        const userRoleData = userRoleDoc.data();
-        
-        // 역할 매핑 - 권한과 소속은 별개로 처리
+      if (roleData) {
         let role: '본사 관리자' | '가맹점 관리자' | '직원';
-        switch (userRoleData.role) {
+        switch (roleData.role) {
           case 'hq_manager':
           case 'admin':
             role = '본사 관리자';
@@ -52,61 +50,47 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             role = '가맹점 관리자';
             break;
           case 'branch_user':
-            role = '직원';
-            break;
           default:
             role = '직원';
         }
 
-        // 소속은 실제 branchName 사용 (권한과 별개)
-        const franchise = userRoleData.branchName || '미지정';
-
-        return { 
-          ...firebaseUser, 
-          uid: firebaseUser.uid, // uid 명시적으로 포함
-          role, 
-          franchise
+        return {
+          id: roleData.id,
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          role,
+          franchise: roleData.branch_name || '', // 미지정이면 빈 문자열
+          branchId: roleData.branch_id,
+          branchName: roleData.branch_name
         } as UserProfile;
       }
 
-      // 2. userRoles에 없으면 기존 users 컬렉션 사용 (우선순위 2)
-      const userDocRef = doc(db, 'users', firebaseUser.email);
-      let userDoc = await getDoc(userDocRef);
-
-      if (!userDoc.exists()) {
-        // 기존 로직: 새 사용자 자동 생성
-        const usersCollectionRef = collection(db, 'users');
-        const usersSnapshot = await getDocs(usersCollectionRef);
-        const isFirstUser = usersSnapshot.empty;
-
-        const newUserProfile = {
-          email: firebaseUser.email,
-          role: isFirstUser ? '본사 관리자' : '직원',
-          franchise: isFirstUser ? '본사' : '미지정',
-        };
-
-        await setDoc(userDocRef, newUserProfile);
-        userDoc = await getDoc(userDocRef);
-      }
-
-      const userData = userDoc.data();
-      
-      // 소속은 실제 franchise 사용 (권한과 별개)
-      const franchise = userData?.franchise || '미지정';
-      
-      return { 
-        ...firebaseUser, 
-        uid: firebaseUser.uid, // uid 명시적으로 포함
-        role: userData?.role, 
-        franchise 
+      // 기본값 반환
+      return {
+        id: firebaseUser.uid,
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        role: '직원',
+        franchise: '' // 기본값 빈 문자열
       } as UserProfile;
     } catch (error) {
-      console.error("Error fetching or creating user role:", error);
+      console.error("Error fetching user role from Supabase:", error);
+      return {
+        id: firebaseUser.uid,
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        role: '직원',
+        franchise: '미정'
+      } as UserProfile;
     }
-    return firebaseUser;
   }, []);
 
   useEffect(() => {
+    if (!auth) {
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const userWithRole = await fetchUserRole(firebaseUser);
@@ -134,3 +118,4 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     </AuthContext.Provider>
   );
 };
+

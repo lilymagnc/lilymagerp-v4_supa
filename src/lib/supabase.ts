@@ -5,6 +5,8 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 if (!supabaseUrl || !supabaseAnonKey) {
     console.warn('Supabase URL or Anon Key is missing. Please check your .env.local file.');
+} else {
+    // console.log('Supabase Client Initialized', { url: supabaseUrl }); // Uncomment for debugging
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);

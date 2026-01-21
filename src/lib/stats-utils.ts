@@ -1,19 +1,7 @@
-import { db } from '@/lib/firebase';
-import {
-    doc,
-    runTransaction,
-    serverTimestamp,
-    increment,
-    Timestamp,
-    collection,
-    query,
-    where,
-    orderBy,
-    getDocs
-} from 'firebase/firestore';
+import { supabase } from '@/lib/supabase';
 
 export async function updateDailyStats(
-    orderDate: Date | Timestamp | string,
+    orderDate: Date | string,
     branchName: string,
     change: {
         revenueDelta: number;
@@ -25,50 +13,20 @@ export async function updateDailyStats(
 
     const date = orderDate instanceof Date
         ? orderDate
-        : orderDate instanceof Timestamp
-            ? orderDate.toDate()
-            : new Date(orderDate);
+        : new Date(orderDate);
 
     const dateStr = date.toISOString().split('T')[0];
-    const statsRef = doc(db, 'dailyStats', dateStr);
 
     try {
-        await runTransaction(db, async (transaction) => {
-            const statsDoc = await transaction.get(statsRef);
-
-            const updateData: any = {
-                date: dateStr,
-                lastUpdated: serverTimestamp(),
-                totalRevenue: increment(change.revenueDelta),
-                totalOrderCount: increment(change.orderCountDelta),
-                totalSettledAmount: increment(change.settledAmountDelta),
-            };
-
-            // Branch specific stats
-            const branchKey = `branches.${branchName.replace(/\./g, '_')}`;
-            updateData[`${branchKey}.revenue`] = increment(change.revenueDelta);
-            updateData[`${branchKey}.orderCount`] = increment(change.orderCountDelta);
-            updateData[`${branchKey}.settledAmount`] = increment(change.settledAmountDelta);
-
-            if (!statsDoc.exists()) {
-                transaction.set(statsRef, {
-                    date: dateStr,
-                    lastUpdated: serverTimestamp(),
-                    totalRevenue: change.revenueDelta,
-                    totalOrderCount: change.orderCountDelta,
-                    totalSettledAmount: change.settledAmountDelta,
-                    branches: {
-                        [branchName.replace(/\./g, '_')]: {
-                            revenue: change.revenueDelta,
-                            orderCount: change.orderCountDelta,
-                            settledAmount: change.settledAmountDelta
-                        }
-                    }
-                });
-            } else {
-                transaction.update(statsRef, updateData);
-            }
+        const { error } = await supabase.rpc('increment_daily_stats', {
+            p_date: dateStr,
+            p_revenue_delta: Math.round(change.revenueDelta),
+            p_order_count_delta: change.orderCountDelta,
+            p_settled_amount_delta: Math.round(change.settledAmountDelta),
+            p_branch_key: branchName
         });
+
+        if (error) throw error;
     } catch (error) {
         console.error('Error updating daily stats:', error);
     }
@@ -79,17 +37,30 @@ export async function updateDailyStats(
  */
 export async function fetchDailyStats(startDate: string, endDate: string) {
     try {
-        const statsRef = collection(db, 'dailyStats');
-        const q = query(
-            statsRef,
-            where('date', '>=', startDate),
-            where('date', '<=', endDate),
-            orderBy('date', 'asc')
-        );
+        const { data, error } = await supabase
+            .from('daily_stats')
+            .select('*')
+            .gte('date', startDate)
+            .lte('date', endDate)
+            .order('date', { ascending: true });
 
-        const snapshot = await getDocs(q);
-        return snapshot.docs.map(doc => doc.data());
-    } catch (error) {
+        if (error) throw error;
+
+        // Firestore format compatibility (mapping snake_case to camelCase)
+        return (data || []).map(row => ({
+            date: row.date,
+            totalRevenue: row.total_revenue,
+            totalOrderCount: row.total_order_count,
+            totalSettledAmount: row.total_settled_amount,
+            branches: row.branches,
+            lastUpdated: row.last_updated
+        }));
+    } catch (error: any) {
+        // 테이블이 아직 없거나 404 에러인 경우 빈 배열 반환하여 앱 충돌 방지
+        if (error.code === '42P01' || error.message?.includes('404')) {
+            console.warn('Daily stats table missing or not found. Returning empty stats.');
+            return [];
+        }
         console.error('Error fetching daily stats:', error);
         return [];
     }

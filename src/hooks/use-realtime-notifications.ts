@@ -1,20 +1,8 @@
+"use client";
 import { useState, useEffect, useCallback } from 'react';
-import {
-  collection,
-  addDoc,
-  updateDoc,
-  doc,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
-  serverTimestamp,
-  Timestamp
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/use-auth';
 import { useBranches } from '@/hooks/use-branches';
-
 import { useSettings } from '@/hooks/use-settings';
 
 export interface Notification {
@@ -23,10 +11,10 @@ export interface Notification {
   message: string;
   type: 'order_transfer' | 'order_complete' | 'delivery' | 'system';
   isRead: boolean;
-  createdAt: Timestamp;
+  createdAt: string;
   userId?: string;
   branchId?: string;
-  relatedId?: string; // 관련 주문 ID 또는 이관 ID
+  relatedId?: string;
 }
 
 export function useRealtimeNotifications() {
@@ -36,73 +24,87 @@ export function useRealtimeNotifications() {
 
   const { user } = useAuth();
   const { branches } = useBranches();
-
   const { settings } = useSettings();
 
-  // 알림 목록 실시간 구독
-  useEffect(() => {
+  const mapRowToNotification = useCallback((row: any): Notification => ({
+    id: row.id,
+    title: row.title,
+    message: row.message,
+    type: row.type,
+    isRead: row.is_read,
+    createdAt: row.created_at,
+    userId: row.user_id,
+    branchId: row.branch_id,
+    relatedId: row.related_id
+  }), []);
+
+  const fetchNotifications = useCallback(async () => {
     if (!user) {
       setNotifications([]);
       setLoading(false);
       return;
     }
 
-    setLoading(true);
-    setError(null);
-
-    const notificationsRef = collection(db, 'notifications');
-
-    // 사용자별 알림 필터링
-    let q = query(
-      notificationsRef,
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
-    );
-
-    // 지점 사용자의 경우 지점별 알림도 포함
-    if (user.franchise) {
-      // 지점별 알림을 쿼리
-      q = query(
-        notificationsRef,
-        where('branchId', '==', user.franchise),
-        orderBy('createdAt', 'desc')
-      );
-    }
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const notificationList: Notification[] = [];
-        snapshot.forEach((doc) => {
-          notificationList.push({
-            id: doc.id,
-            ...doc.data()
-          } as Notification);
-        });
-
-        setNotifications(notificationList);
-        setLoading(false);
-
-
-      },
-      (error) => {
-        console.error('알림 구독 오류:', error);
-        setError('알림을 불러오는 중 오류가 발생했습니다.');
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [user]);
-
-  // 알림 생성
-  const createNotification = useCallback(async (notificationData: Omit<Notification, 'id' | 'createdAt'>) => {
     try {
-      const notificationsRef = collection(db, 'notifications');
-      await addDoc(notificationsRef, {
-        ...notificationData,
-        createdAt: serverTimestamp()
-      });
+      setLoading(true);
+      setError(null);
+
+      let query = supabase.from('notifications')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (user.franchise) {
+        query = query.or(`user_id.eq.${user.uid},branch_id.eq.${user.franchise}`);
+      } else {
+        query = query.eq('user_id', user.uid);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setNotifications((data || []).map(mapRowToNotification));
+    } catch (err) {
+      console.error('알림 구독 오류:', err);
+      setError('알림을 불러오는 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }, [user, mapRowToNotification]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchNotifications();
+
+    const channel = supabase.channel(`user_notifications_${user.uid}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'notifications'
+      }, () => {
+        fetchNotifications();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchNotifications]);
+
+  const createNotification = useCallback(async (notificationData: any) => {
+    try {
+      const payload = {
+        id: crypto.randomUUID(),
+        title: notificationData.title,
+        message: notificationData.message,
+        type: notificationData.type,
+        is_read: false,
+        user_id: notificationData.userId,
+        branch_id: notificationData.branchId,
+        related_id: notificationData.relatedId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      const { error } = await supabase.from('notifications').insert([payload]);
+      if (error) throw error;
       return true;
     } catch (error) {
       console.error('알림 생성 오류:', error);
@@ -110,84 +112,45 @@ export function useRealtimeNotifications() {
     }
   }, []);
 
-  // 주문 이관 알림 생성 (신청 시)
-  const createOrderTransferNotification = useCallback(async (
-    orderBranchName: string,
-    processBranchName: string,
-    orderNumber: string,
-    transferId: string
-  ) => {
-    if (!settings?.orderTransferSettings?.autoNotification) {
-      return false;
-    }
-
-    // 1. 수주지점 (받는 곳) 알림
+  const createOrderTransferNotification = useCallback(async (orderBranchName: string, processBranchName: string, orderNumber: string, transferId: string) => {
+    if (!settings?.orderTransferSettings?.autoNotification) return false;
     const processBranch = branches.find(b => b.name === processBranchName);
-    const processMsg = `${orderBranchName}지점에서 주문이관 신청을 하였습니다`;
-
-    const noti1 = createNotification({
-      title: '주문 이관 신청',
-      message: processMsg,
-      type: 'order_transfer',
-      isRead: false,
-      relatedId: transferId,
-      branchId: processBranch?.id || '',
-      userId: ''
-    });
-
-    // 2. 발주지점 (보내는 곳) 알림 - 확인용
     const orderBranch = branches.find(b => b.name === orderBranchName);
-    const orderMsg = `${processBranchName}지점으로 주문이관 신청을 했습니다.`;
 
-    const noti2 = createNotification({
-      title: '주문 이관 신청 완료',
-      message: orderMsg,
+    const n1 = createNotification({
+      title: '주문 이관 신청',
+      message: `${orderBranchName}지점에서 주문이관 신청을 하였습니다`,
       type: 'order_transfer',
-      isRead: false,
       relatedId: transferId,
-      branchId: orderBranch?.id || '',
-      userId: ''
+      branchId: processBranch?.id || ''
     });
-
-    await Promise.all([noti1, noti2]);
+    const n2 = createNotification({
+      title: '주문 이관 신청 완료',
+      message: `${processBranchName}지점으로 주문이관 신청을 했습니다.`,
+      type: 'order_transfer',
+      relatedId: transferId,
+      branchId: orderBranch?.id || ''
+    });
+    await Promise.all([n1, n2]);
     return true;
   }, [createNotification, settings?.orderTransferSettings, branches]);
 
-  // 주문 이관 취소 알림 생성
-  const createOrderTransferCancelNotification = useCallback(async (
-    orderBranchName: string,
-    processBranchName: string,
-    orderNumber: string,
-    transferId: string,
-    cancelReason?: string
-  ) => {
-    if (!settings?.orderTransferSettings?.autoNotification) {
-      return false;
-    }
-
-    const message = `${orderBranchName}지점에서 주문 이관을 취소했습니다.${cancelReason ? ` 사유: ${cancelReason}` : ''}`;
-
-    // 수주지점의 사용자들에게 취소 알림을 보내기 위해 지점 ID를 사용
+  const createOrderTransferCancelNotification = useCallback(async (orderBranchName: string, processBranchName: string, orderNumber: string, transferId: string, cancelReason?: string) => {
+    if (!settings?.orderTransferSettings?.autoNotification) return false;
     const processBranch = branches.find(b => b.name === processBranchName);
-
     return await createNotification({
       title: '주문 이관 취소 알림',
-      message,
+      message: `${orderBranchName}지점에서 주문 이관을 취소했습니다.${cancelReason ? ` 사유: ${cancelReason}` : ''}`,
       type: 'order_transfer',
-      isRead: false,
       relatedId: transferId,
-      branchId: processBranch?.id || '',
-      userId: '' // 지점별 알림이므로 userId는 비워둠
+      branchId: processBranch?.id || ''
     });
   }, [createNotification, settings?.orderTransferSettings, branches]);
 
-  // 알림 읽음 처리
   const markAsRead = useCallback(async (notificationId: string) => {
     try {
-      const notificationRef = doc(db, 'notifications', notificationId);
-      await updateDoc(notificationRef, {
-        isRead: true
-      });
+      const { error } = await supabase.from('notifications').update({ is_read: true, read_at: new Date().toISOString() }).eq('id', notificationId);
+      if (error) throw error;
       return true;
     } catch (error) {
       console.error('알림 읽음 처리 오류:', error);
@@ -195,147 +158,69 @@ export function useRealtimeNotifications() {
     }
   }, []);
 
-  // 모든 알림 읽음 처리
   const markAllAsRead = useCallback(async () => {
     try {
-      const unreadNotifications = notifications.filter(n => !n.isRead);
-      const updatePromises = unreadNotifications.map(notification =>
-        updateDoc(doc(db, 'notifications', notification.id), {
-          isRead: true
-        })
-      );
-
-      await Promise.all(updatePromises);
+      const { error } = await supabase.from('notifications').update({ is_read: true, read_at: new Date().toISOString() }).eq('is_read', false);
+      if (error) throw error;
       return true;
     } catch (error) {
       console.error('모든 알림 읽음 처리 오류:', error);
       return false;
     }
-  }, [notifications]);
+  }, []);
 
-  // 만료된 알림 정리 (30일 이상 된 알림)
   const cleanupExpiredNotifications = useCallback(async () => {
-    try {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    // This could be implemented with a delete query based on date
+    return true;
+  }, []);
 
-      const expiredNotifications = notifications.filter(
-        notification => notification.createdAt.toDate() < thirtyDaysAgo
-      );
-
-      // 실제 삭제는 서버 사이드에서 처리하는 것이 좋습니다
-      // 여기서는 클라이언트에서만 필터링
-
-      return true;
-    } catch (error) {
-      console.error('만료된 알림 정리 오류:', error);
-      return false;
-    }
-  }, [notifications]);
-
-  // 읽지 않은 알림 개수
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
-
-
-  // 주문 이관 완료 알림 생성
-  const createOrderTransferCompleteNotification = useCallback(async (
-    processBranchName: string, // 이관 수행한 지점 (수주지점)
-    orderBranchName: string,   // 알림 받을 지점 (발주지점)
-    messageContent: string,    // 메시지 내용 (선택적)
-    transferId: string
-  ) => {
-    if (settings?.orderTransferSettings?.autoNotification === false) {
-      return false;
-    }
-
-    // 1. 발주지점 (신청했던 곳) 알림 - 배송 완료 통보
+  const createOrderTransferCompleteNotification = useCallback(async (processBranchName: string, orderBranchName: string, messageContent: string, transferId: string) => {
+    if (settings?.orderTransferSettings?.autoNotification === false) return false;
     const orderBranch = branches.find(b => b.name === orderBranchName);
-    const orderMsg = `${processBranchName}지점으로 주문이관된 상품의 배송이 완료처리 되었습니다.`;
-
-    const noti1 = createNotification({
-      title: '이관 주문 완료',
-      message: orderMsg,
-      type: 'order_complete',
-      isRead: false,
-      relatedId: transferId,
-      branchId: orderBranch?.id || '',
-      userId: ''
-    });
-
-    // 2. 수주지점 (완료 처리한 곳) 알림 - 처리 확인
     const processBranch = branches.find(b => b.name === processBranchName);
-    const processMsg = `이관된 주문의 배송이 완료되어 ${orderBranchName}지점으로 알림을 보냅니다.`;
-
-    const noti2 = createNotification({
-      title: '이관 주문 완료 처리됨',
-      message: processMsg,
+    const n1 = createNotification({
+      title: '이관 주문 완료',
+      message: `${processBranchName}지점으로 주문이관된 상품의 배송이 완료처리 되었습니다.`,
       type: 'order_complete',
-      isRead: false,
       relatedId: transferId,
-      branchId: processBranch?.id || '',
-      userId: ''
+      branchId: orderBranch?.id || ''
     });
-
-    await Promise.all([noti1, noti2]);
+    const n2 = createNotification({
+      title: '이관 주문 완료 처리됨',
+      message: `이관된 주문의 배송이 완료되어 ${orderBranchName}지점으로 알림을 보냅니다.`,
+      type: 'order_complete',
+      relatedId: transferId,
+      branchId: processBranch?.id || ''
+    });
+    await Promise.all([n1, n2]);
     return true;
   }, [createNotification, settings?.orderTransferSettings, branches]);
 
-  // 주문 이관 수락 알림 생성 (발주/수주 지점 모두에게)
-  const createOrderTransferAcceptedNotification = useCallback(async (
-    processBranchName: string, // 수락한 지점 (수주지점)
-    orderBranchName: string,   // 요청한 지점 (발주지점)
-    transferId: string
-  ) => {
-    if (settings?.orderTransferSettings?.autoNotification === false) {
-      return false;
-    }
-
-    // 1. 발주지점 (신청했던 곳) 알림
+  const createOrderTransferAcceptedNotification = useCallback(async (processBranchName: string, orderBranchName: string, transferId: string) => {
+    if (settings?.orderTransferSettings?.autoNotification === false) return false;
     const orderBranch = branches.find(b => b.name === orderBranchName);
-    const orderMsg = `${processBranchName}지점에서 이관된 주문을 수락하였습니다`;
-
-    const noti1 = createNotification({
-      title: '이관 요청 수락됨',
-      message: orderMsg,
-      type: 'order_transfer',
-      isRead: false,
-      relatedId: transferId,
-      branchId: orderBranch?.id || '',
-      userId: ''
-    });
-
-    // 2. 수주지점 (수락한 곳) 알림
     const processBranch = branches.find(b => b.name === processBranchName);
-    const processMsg = `${processBranchName}지점의 이관주문이 수락되었습니다. 상품을 제작하여 배송해주세요`;
-
-    const noti2 = createNotification({
-      title: '이관 주문 수락함',
-      message: processMsg,
+    const n1 = createNotification({
+      title: '이관 요청 수락됨',
+      message: `${processBranchName}지점에서 이관된 주문을 수락하였습니다`,
       type: 'order_transfer',
-      isRead: false,
       relatedId: transferId,
-      branchId: processBranch?.id || '',
-      userId: ''
+      branchId: orderBranch?.id || ''
     });
-
-    await Promise.all([noti1, noti2]);
+    const n2 = createNotification({
+      title: '이관 주문 수락함',
+      message: `${processBranchName}지점의 이관주문이 수락되었습니다. 상품을 제작하여 배송해주세요`,
+      type: 'order_transfer',
+      relatedId: transferId,
+      branchId: processBranch?.id || ''
+    });
+    await Promise.all([n1, n2]);
     return true;
   }, [createNotification, settings?.orderTransferSettings, branches]);
 
   return {
-    notifications,
-    loading,
-    error,
-    unreadCount,
-    createNotification,
-    createOrderTransferNotification,
-    createOrderTransferAcceptedNotification,
-    createOrderTransferCompleteNotification,
-    createOrderTransferCancelNotification,
-    markAsRead,
-    markAllAsRead,
-    cleanupExpiredNotifications
-
+    notifications, loading, error, unreadCount, createNotification, createOrderTransferNotification, createOrderTransferAcceptedNotification, createOrderTransferCompleteNotification, createOrderTransferCancelNotification, markAsRead, markAllAsRead, cleanupExpiredNotifications
   };
 }

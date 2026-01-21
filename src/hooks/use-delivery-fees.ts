@@ -1,8 +1,8 @@
 "use client";
 import { useState, useEffect, useCallback } from 'react';
-import { collection, getDocs, doc, setDoc, query, where, writeBatch } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { useToast } from './use-toast';
+
 export interface DeliveryFeeData {
   id: string;
   branchId: string;
@@ -10,26 +10,35 @@ export interface DeliveryFeeData {
   district: string;
   fee: number;
   isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
 }
+
 export function useDeliveryFees() {
   const [deliveryFees, setDeliveryFees] = useState<DeliveryFeeData[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+
+  const mapRowToFee = useCallback((row: any): DeliveryFeeData => ({
+    id: row.id,
+    branchId: row.branch_id,
+    branchName: row.branch_name,
+    district: row.district,
+    fee: Number(row.fee),
+    isActive: row.is_active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }), []);
+
   const fetchDeliveryFees = useCallback(async () => {
     try {
       setLoading(true);
-      const deliveryFeesCollection = collection(db, 'deliveryFees');
-      const q = query(deliveryFeesCollection, where("isActive", "==", true));
-      const querySnapshot = await getDocs(q);
-      const feesData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate(),
-        updatedAt: doc.data().updatedAt?.toDate(),
-      } as DeliveryFeeData));
-      setDeliveryFees(feesData);
+      const { data, error } = await supabase.from('delivery_fees')
+        .select('*')
+        .eq('is_active', true);
+
+      if (error) throw error;
+      setDeliveryFees((data || []).map(mapRowToFee));
     } catch (error) {
       console.error("Error fetching delivery fees:", error);
       toast({
@@ -40,17 +49,26 @@ export function useDeliveryFees() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, mapRowToFee]);
+
   const getDeliveryFeesByBranch = useCallback((branchId: string) => {
     return deliveryFees.filter(fee => fee.branchId === branchId);
   }, [deliveryFees]);
+
   const updateDeliveryFee = async (feeId: string, updates: Partial<DeliveryFeeData>) => {
     try {
-      const feeDoc = doc(db, 'deliveryFees', feeId);
-      await setDoc(feeDoc, {
-        ...updates,
-        updatedAt: new Date()
-      }, { merge: true });
+      const payload: any = {
+        updated_at: new Date().toISOString()
+      };
+      if (updates.district) payload.district = updates.district;
+      if (updates.fee !== undefined) payload.fee = updates.fee;
+      if (updates.isActive !== undefined) payload.is_active = updates.isActive;
+      if (updates.branchId) payload.branch_id = updates.branchId;
+      if (updates.branchName) payload.branch_name = updates.branchName;
+
+      const { error } = await supabase.from('delivery_fees').update(payload).eq('id', feeId);
+      if (error) throw error;
+
       toast({
         title: '성공',
         description: '배송비가 성공적으로 수정되었습니다.',
@@ -65,26 +83,32 @@ export function useDeliveryFees() {
       });
     }
   };
+
   const initializeDeliveryFees = async (branches: any[]) => {
     try {
-      const batch = writeBatch(db);
+      const payloads: any[] = [];
       branches.forEach(branch => {
         if (branch.deliveryFees) {
           branch.deliveryFees.forEach((fee: any) => {
-            const docRef = doc(collection(db, 'deliveryFees'));
-            batch.set(docRef, {
-              branchId: branch.id,
-              branchName: branch.name,
+            payloads.push({
+              id: crypto.randomUUID(),
+              branch_id: branch.id,
+              branch_name: branch.name,
               district: fee.district,
               fee: fee.fee,
-              isActive: true,
-              createdAt: new Date(),
-              updatedAt: new Date()
+              is_active: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
             });
           });
         }
       });
-      await batch.commit();
+
+      if (payloads.length > 0) {
+        const { error } = await supabase.from('delivery_fees').insert(payloads);
+        if (error) throw error;
+      }
+
       await fetchDeliveryFees();
       toast({
         title: '성공',
@@ -99,9 +123,11 @@ export function useDeliveryFees() {
       });
     }
   };
+
   useEffect(() => {
     fetchDeliveryFees();
   }, [fetchDeliveryFees]);
+
   return {
     deliveryFees,
     loading,

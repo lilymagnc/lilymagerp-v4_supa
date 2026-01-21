@@ -1,10 +1,6 @@
-
 "use client";
-
 import { useState, useCallback } from 'react';
-import { collection, getDocs, doc, setDoc, addDoc, writeBatch, serverTimestamp, runTransaction, query, where, limit, deleteDoc, getDoc, startAfter, getCountFromServer, getAggregateFromServer, sum, orderBy } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-
+import { supabase } from '@/lib/supabase';
 import { useToast } from './use-toast';
 import type { Material as MaterialData } from "@/app/dashboard/materials/components/material-table";
 import type { MaterialFormValues } from '@/app/dashboard/materials/components/material-form';
@@ -15,7 +11,7 @@ export function useMaterials() {
     const [materials, setMaterials] = useState<Material[]>([]);
     const [loading, setLoading] = useState(false);
     const [hasMore, setHasMore] = useState(true);
-    const [lastDoc, setLastDoc] = useState<any>(null);
+    const [lastIndex, setLastIndex] = useState(0);
     const [stats, setStats] = useState({
         totalTypes: 0,
         totalStock: 0,
@@ -30,41 +26,47 @@ export function useMaterials() {
         return 'active';
     }
 
-    // 통계 정보 가져오기 (색인 오류에 유연하게 대응)
+    const mapRowToMaterial = (row: any): Material => ({
+        id: row.id,
+        docId: row.id,
+        name: row.name,
+        mainCategory: row.main_category,
+        midCategory: row.mid_category,
+        unit: row.unit,
+        spec: row.spec,
+        price: Number(row.price),
+        stock: Number(row.stock),
+        size: row.size,
+        branch: row.branch,
+        memo: row.memo,
+        status: getStatus(Number(row.stock))
+    });
+
     const fetchStats = useCallback(async (branch?: string) => {
         try {
-            const materialsRef = collection(db, 'materials');
-            let q = query(materialsRef);
-            if (branch && branch !== 'all') {
-                q = query(q, where('branch', '==', branch));
-            }
+            let query = supabase.from('materials').select('*', { count: 'exact', head: true });
+            if (branch && branch !== 'all') query = query.eq('branch', branch);
+            const { count: totalTypes } = await query;
 
-            const countSnapshot = await getCountFromServer(q);
-            const totalTypes = countSnapshot.data().count;
+            let sumQuery = supabase.from('materials').select('stock');
+            if (branch && branch !== 'all') sumQuery = sumQuery.eq('branch', branch);
+            const { data: stockData } = await sumQuery;
+            const totalStock = stockData?.reduce((acc, curr) => acc + (curr.stock || 0), 0) || 0;
 
-            const stockSumSnapshot = await getAggregateFromServer(q, {
-                totalInventory: sum('stock')
+            let lowQuery = supabase.from('materials').select('*', { count: 'exact', head: true }).gt('stock', 0).lt('stock', 10);
+            if (branch && branch !== 'all') lowQuery = lowQuery.eq('branch', branch);
+            const { count: lowStock } = await lowQuery;
+
+            let outQuery = supabase.from('materials').select('*', { count: 'exact', head: true }).eq('stock', 0);
+            if (branch && branch !== 'all') outQuery = outQuery.eq('branch', branch);
+            const { count: outOfStock } = await outQuery;
+
+            setStats({
+                totalTypes: totalTypes || 0,
+                totalStock,
+                lowStock: lowStock || 0,
+                outOfStock: outOfStock || 0
             });
-
-            const newStats = {
-                totalTypes,
-                totalStock: stockSumSnapshot.data().totalInventory || 0,
-                lowStock: 0,
-                outOfStock: 0
-            };
-
-            try {
-                const lowStockQ = query(q, where('stock', '>', 0), where('stock', '<', 10));
-                const lowSnap = await getCountFromServer(lowStockQ);
-                newStats.lowStock = lowSnap.data().count;
-
-                const outSnap = await getCountFromServer(query(q, where('stock', '==', 0)));
-                newStats.outOfStock = outSnap.data().count;
-            } catch (e) {
-                console.warn("Complex stats require more indexes, skipping... ", e);
-            }
-
-            setStats(newStats);
         } catch (error) {
             console.error("Error fetching stats:", error);
         }
@@ -79,42 +81,24 @@ export function useMaterials() {
     }) => {
         try {
             setLoading(true);
-            const materialsCollection = collection(db, 'materials');
-
             fetchStats(filters?.branch);
 
-            let q = query(materialsCollection);
-
-            if (filters?.branch && filters.branch !== 'all') {
-                q = query(q, where('branch', '==', filters.branch));
-            }
-            if (filters?.mainCategory && filters.mainCategory !== 'all') {
-                q = query(q, where('mainCategory', '==', filters.mainCategory));
-            }
-            if (filters?.midCategory && filters.midCategory !== 'all') {
-                q = query(q, where('midCategory', '==', filters.midCategory));
-            }
+            let query = supabase.from('materials').select('*');
+            if (filters?.branch && filters.branch !== 'all') query = query.eq('branch', filters.branch);
+            if (filters?.mainCategory && filters.mainCategory !== 'all') query = query.eq('main_category', filters.mainCategory);
+            if (filters?.midCategory && filters.midCategory !== 'all') query = query.eq('mid_category', filters.midCategory);
+            if (filters?.searchTerm) query = query.ilike('name', `%${filters.searchTerm}%`);
 
             const pageSize = filters?.pageSize || 50;
-            q = query(q, limit(pageSize));
+            const { data, error } = await query
+                .order('id', { ascending: true })
+                .range(0, pageSize - 1);
 
-            const querySnapshot = await getDocs(q);
+            if (error) throw error;
 
-            const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1];
-            setLastDoc(lastVisible);
-            setHasMore(querySnapshot.size >= pageSize);
-
-            const materialsData = querySnapshot.docs
-                .filter(doc => doc.id !== '_initialized')
-                .map((doc) => ({
-                    docId: doc.id,
-                    ...doc.data(),
-                    status: getStatus(doc.data().stock)
-                } as Material))
-                .sort((a, b) => (a.id && b.id) ? a.id.localeCompare(b.id) : 0);
-
-            setMaterials(materialsData);
-
+            setMaterials((data || []).map(mapRowToMaterial));
+            setLastIndex(pageSize);
+            setHasMore((data || []).length >= pageSize);
         } catch (error) {
             console.error("Error fetching materials: ", error);
             toast({ variant: 'destructive', title: '오류', description: '자재 정보를 불러오는 중 오류가 발생했습니다.' });
@@ -129,39 +113,25 @@ export function useMaterials() {
         midCategory?: string;
         pageSize?: number;
     }) => {
-        if (!lastDoc || !hasMore) return;
+        if (!hasMore) return;
         try {
             setLoading(true);
-            const materialsCollection = collection(db, 'materials');
-            let q = query(materialsCollection);
+            const pageSize = filters?.pageSize || 50;
+            let query = supabase.from('materials').select('*');
+            if (filters?.branch && filters.branch !== 'all') query = query.eq('branch', filters.branch);
+            if (filters?.mainCategory && filters.mainCategory !== 'all') query = query.eq('main_category', filters.mainCategory);
+            if (filters?.midCategory && filters.midCategory !== 'all') query = query.eq('mid_category', filters.midCategory);
 
-            if (filters?.branch && filters.branch !== 'all') {
-                q = query(q, where('branch', '==', filters.branch));
-            }
-            if (filters?.mainCategory && filters.mainCategory !== 'all') {
-                q = query(q, where('mainCategory', '==', filters.mainCategory));
-            }
-            if (filters?.midCategory && filters.midCategory !== 'all') {
-                q = query(q, where('midCategory', '==', filters.midCategory));
-            }
+            const { data, error } = await query
+                .order('id', { ascending: true })
+                .range(lastIndex, lastIndex + pageSize - 1);
 
-            q = query(q, startAfter(lastDoc), limit(filters?.pageSize || 50));
+            if (error) throw error;
 
-            const querySnapshot = await getDocs(q);
-            const newMaterials = querySnapshot.docs
-                .filter(doc => doc.id !== '_initialized')
-                .map(doc => ({
-                    docId: doc.id,
-                    ...doc.data(),
-                    status: getStatus(doc.data().stock)
-                })) as Material[];
-
-            setMaterials(prev => {
-                const combined = [...prev, ...newMaterials];
-                return combined.sort((a, b) => (a.id && b.id) ? a.id.localeCompare(b.id) : 0);
-            });
-            setLastDoc(querySnapshot.docs[querySnapshot.docs.length - 1]);
-            setHasMore(querySnapshot.size >= (filters?.pageSize || 50));
+            const newMaterials = (data || []).map(mapRowToMaterial);
+            setMaterials(prev => [...prev, ...newMaterials]);
+            setLastIndex(prev => prev + pageSize);
+            setHasMore(newMaterials.length >= pageSize);
         } catch (error) {
             console.error("Error loading more materials:", error);
         } finally {
@@ -170,11 +140,15 @@ export function useMaterials() {
     };
 
     const generateNewId = async () => {
-        const q = query(collection(db, "materials"), orderBy("id", "desc"), limit(1));
-        const querySnapshot = await getDocs(q);
+        const { data } = await supabase
+            .from('materials')
+            .select('id')
+            .order('id', { ascending: false })
+            .limit(1);
+
         let lastIdNumber = 0;
-        if (!querySnapshot.empty) {
-            const lastId = querySnapshot.docs[0].data().id;
+        if (data && data.length > 0) {
+            const lastId = data[0].id;
             if (lastId && lastId.startsWith('M')) {
                 lastIdNumber = parseInt(lastId.replace('M', ''), 10);
             }
@@ -182,49 +156,15 @@ export function useMaterials() {
         return `M${String(lastIdNumber + 1).padStart(5, '0')}`;
     }
 
-    const updateMaterialIds = async () => {
-        try {
-            setLoading(true);
-            const materialsCollection = collection(db, 'materials');
-            const querySnapshot = await getDocs(materialsCollection);
-            let updateCount = 0;
-            let currentNumber = 1;
-
-            for (const docSnapshot of querySnapshot.docs) {
-                if (docSnapshot.id === '_initialized') continue;
-                const data = docSnapshot.data();
-                if (data.id && data.id.match(/^M\d{5}$/)) continue;
-
-                const newId = `M${String(currentNumber).padStart(5, '0')}`;
-                await setDoc(docSnapshot.ref, { ...data, id: newId }, { merge: true });
-                updateCount++;
-                currentNumber++;
-            }
-
-            if (updateCount > 0) {
-                toast({ title: "ID 업데이트 완료", description: `${updateCount}개 자재의 ID가 업데이트되었습니다.` });
-                await fetchMaterials();
-            }
-        } catch (error) {
-            console.error("Error updating material IDs:", error);
-        } finally {
-            setLoading(false);
-        }
-    }
-
     const syncCategory = async (main: string, mid: string) => {
         try {
-            const catsRef = collection(db, 'categories');
-            const mainQuery = query(catsRef, where('name', '==', main), where('type', '==', 'main'));
-            const mainSnap = await getDocs(mainQuery);
-            if (mainSnap.empty) {
-                await addDoc(catsRef, { name: main, type: 'main', createdAt: serverTimestamp() });
+            const { data: existingMain } = await supabase.from('categories').select('id').eq('name', main).eq('type', 'main').maybeSingle();
+            if (!existingMain) {
+                await supabase.from('categories').insert([{ id: crypto.randomUUID(), name: main, type: 'main', created_at: new Date().toISOString() }]);
             }
-
-            const midQuery = query(catsRef, where('name', '==', mid), where('type', '==', 'mid'), where('parentCategory', '==', main));
-            const midSnap = await getDocs(midQuery);
-            if (midSnap.empty) {
-                await addDoc(catsRef, { name: mid, type: 'mid', parentCategory: main, createdAt: serverTimestamp() });
+            const { data: existingMid } = await supabase.from('categories').select('id').eq('name', mid).eq('type', 'mid').eq('parent_category', main).maybeSingle();
+            if (!existingMid) {
+                await supabase.from('categories').insert([{ id: crypto.randomUUID(), name: mid, type: 'mid', parent_category: main, created_at: new Date().toISOString() }]);
             }
         } catch (e) {
             console.error("Category sync error:", e);
@@ -235,13 +175,29 @@ export function useMaterials() {
         setLoading(true);
         try {
             const newId = await generateNewId();
-            const docRef = doc(collection(db, "materials"));
-            await setDoc(docRef, { ...data, id: newId, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+            const { error } = await supabase.from('materials').insert([{
+                id: newId,
+                name: data.name,
+                main_category: data.mainCategory,
+                mid_category: data.midCategory,
+                unit: data.unit,
+                spec: data.spec,
+                price: Number(data.price),
+                stock: Number(data.stock),
+                size: data.size,
+                branch: data.branch,
+                memo: data.memo,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            }]);
+
+            if (error) throw error;
             await syncCategory(data.mainCategory, data.midCategory);
             toast({ title: "성공", description: `새 자재가 추가되었습니다.` });
             await fetchMaterials();
         } catch (error) {
             console.error("Error adding material:", error);
+            toast({ variant: 'destructive', title: '오류', description: '자재 추가 중 오류 발생' });
         } finally {
             setLoading(false);
         }
@@ -250,13 +206,27 @@ export function useMaterials() {
     const updateMaterial = async (docId: string, materialId: string, data: MaterialFormValues) => {
         setLoading(true);
         try {
-            const docRef = doc(db, "materials", docId);
-            await setDoc(docRef, { ...data, id: materialId, updatedAt: serverTimestamp() }, { merge: true });
+            const { error } = await supabase.from('materials').update({
+                name: data.name,
+                main_category: data.mainCategory,
+                mid_category: data.midCategory,
+                unit: data.unit,
+                spec: data.spec,
+                price: Number(data.price),
+                stock: Number(data.stock),
+                size: data.size,
+                branch: data.branch,
+                memo: data.memo,
+                updated_at: new Date().toISOString()
+            }).eq('id', docId);
+
+            if (error) throw error;
             await syncCategory(data.mainCategory, data.midCategory);
             toast({ title: "성공", description: "자재 정보가 수정되었습니다." });
             await fetchMaterials();
         } catch (error) {
             console.error("Error updating material:", error);
+            toast({ variant: 'destructive', title: '오류', description: '자재 수정 중 오류 발생' });
         } finally {
             setLoading(false);
         }
@@ -265,11 +235,13 @@ export function useMaterials() {
     const deleteMaterial = async (docId: string) => {
         setLoading(true);
         try {
-            await deleteDoc(doc(db, "materials", docId));
+            const { error } = await supabase.from('materials').delete().eq('id', docId);
+            if (error) throw error;
             await fetchMaterials();
             toast({ title: "성공", description: "자재가 삭제되었습니다." });
         } catch (error) {
             console.error("Error deleting material:", error);
+            toast({ variant: 'destructive', title: '오류', description: '자재 삭제 중 오류 발생' });
         } finally {
             setLoading(false);
         }
@@ -281,74 +253,58 @@ export function useMaterials() {
         branchName: string,
         operator: string
     ) => {
-        const historyBatch = writeBatch(db);
         for (const item of items) {
             try {
-                await runTransaction(db, async (transaction) => {
-                    const materialQuery = query(collection(db, "materials"), where("id", "==", item.id), where("branch", "==", branchName));
-                    const materialSnapshot = await getDocs(materialQuery);
-
-                    if (materialSnapshot.empty) return;
-
-                    const materialDocRef = materialSnapshot.docs[0].ref;
-                    const materialDoc = await transaction.get(materialDocRef);
-                    const currentStock = materialDoc.data()?.stock || 0;
+                const { data: material } = await supabase.from('materials').select('stock').eq('id', item.id).eq('branch', branchName).single();
+                if (material) {
+                    const currentStock = material.stock || 0;
                     const change = type === 'in' ? item.quantity : -item.quantity;
                     const newStock = currentStock + change;
 
-                    transaction.update(materialDocRef, { stock: newStock, updatedAt: serverTimestamp() });
+                    await supabase.from('materials').update({ stock: newStock, updated_at: new Date().toISOString() }).eq('id', item.id).eq('branch', branchName);
 
-                    const historyDocRef = doc(collection(db, "stockHistory"));
-                    historyBatch.set(historyDocRef, {
-                        date: serverTimestamp(),
+                    await supabase.from('stock_history').insert([{
+                        id: crypto.randomUUID(),
+                        created_at: new Date().toISOString(),
                         type,
-                        itemType: "material",
-                        itemId: item.id,
-                        itemName: item.name,
+                        item_type: "material",
+                        item_id: item.id,
+                        item_name: item.name,
                         quantity: item.quantity,
-                        fromStock: currentStock,
-                        toStock: newStock,
-                        resultingStock: newStock,
+                        from_stock: currentStock,
+                        to_stock: newStock,
                         branch: branchName,
                         operator,
-                    });
-                });
+                    }]);
+                }
             } catch (error) {
                 console.error(error);
             }
         }
-        await historyBatch.commit();
         await fetchMaterials();
     };
 
     const manualUpdateStock = async (itemId: string, itemName: string, newStock: number, branchName: string, operator: string) => {
         try {
-            await runTransaction(db, async (transaction) => {
-                const materialQuery = query(collection(db, "materials"), where("id", "==", itemId), where("branch", "==", branchName));
-                const materialSnapshot = await getDocs(materialQuery);
-                if (materialSnapshot.empty) return;
+            const { data: material } = await supabase.from('materials').select('stock').eq('id', itemId).eq('branch', branchName).single();
+            if (!material) return;
 
-                const materialRef = materialSnapshot.docs[0].ref;
-                const materialDoc = await transaction.get(materialRef);
-                const currentStock = materialDoc.data()?.stock || 0;
+            const currentStock = material.stock || 0;
+            await supabase.from('materials').update({ stock: newStock, updated_at: new Date().toISOString() }).eq('id', itemId).eq('branch', branchName);
 
-                transaction.update(materialRef, { stock: newStock, updatedAt: serverTimestamp() });
-
-                const historyDocRef = doc(collection(db, "stockHistory"));
-                transaction.set(historyDocRef, {
-                    date: serverTimestamp(),
-                    type: "manual_update",
-                    itemType: "material",
-                    itemId,
-                    itemName,
-                    quantity: newStock - currentStock,
-                    fromStock: currentStock,
-                    toStock: newStock,
-                    resultingStock: newStock,
-                    branch: branchName,
-                    operator,
-                });
-            });
+            await supabase.from('stock_history').insert([{
+                id: crypto.randomUUID(),
+                created_at: new Date().toISOString(),
+                type: "manual_update",
+                item_type: "material",
+                item_id: itemId,
+                item_name: itemName,
+                quantity: newStock - currentStock,
+                from_stock: currentStock,
+                to_stock: newStock,
+                branch: branchName,
+                operator,
+            }]);
             await fetchMaterials();
         } catch (error) {
             console.error(error);
@@ -358,46 +314,37 @@ export function useMaterials() {
     const bulkAddMaterials = async (data: any[], currentBranch: string) => {
         setLoading(true);
         try {
-            const batch = writeBatch(db);
-            const materialsRef = collection(db, 'materials');
-            const catsRef = collection(db, 'categories');
-
-            const catsSnap = await getDocs(catsRef);
-            const existingCats = new Set(catsSnap.docs.map(d => {
-                const data = d.data();
-                return data.type === 'main' ? `main:${data.name}` : `mid:${data.parentCategory}>${data.name}`;
+            const materialsToInsert = data.map(item => ({
+                id: item.id || crypto.randomUUID(),
+                name: item.name,
+                main_category: item.mainCategory,
+                mid_category: item.midCategory,
+                unit: item.unit,
+                spec: item.spec,
+                price: Number(item.price || 0),
+                stock: Number(item.stock || 0),
+                size: item.size,
+                branch: currentBranch || item.branch,
+                memo: item.memo,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
             }));
 
-            for (const item of data) {
-                const newDocRef = doc(materialsRef);
-                const materialId = await generateNewId();
-                const materialData = {
-                    ...item,
-                    id: materialId,
-                    branch: currentBranch || item.branch,
-                    createdAt: serverTimestamp(),
-                    updatedAt: serverTimestamp()
-                };
-                batch.set(newDocRef, materialData);
+            const { error } = await supabase.from('materials').upsert(materialsToInsert);
+            if (error) throw error;
 
-                if (item.mainCategory && !existingCats.has(`main:${item.mainCategory}`)) {
-                    const cRef = doc(catsRef);
-                    batch.set(cRef, { name: item.mainCategory, type: 'main', createdAt: serverTimestamp() });
-                    existingCats.add(`main:${item.mainCategory}`);
-                }
-                if (item.mainCategory && item.midCategory && !existingCats.has(`mid:${item.mainCategory}>${item.midCategory}`)) {
-                    const cRef = doc(catsRef);
-                    batch.set(cRef, { name: item.midCategory, type: 'mid', parentCategory: item.mainCategory, createdAt: serverTimestamp() });
-                    existingCats.add(`mid:${item.mainCategory}>${item.midCategory}`);
+            // Category sync for all inserted items
+            for (const item of data) {
+                if (item.mainCategory && item.midCategory) {
+                    await syncCategory(item.mainCategory, item.midCategory);
                 }
             }
 
-            await batch.commit();
             toast({ title: "성공", description: `${data.length}개의 자재가 등록되었습니다.` });
             await fetchMaterials();
         } catch (error) {
             console.error("Bulk add error:", error);
-            toast({ variant: 'destructive', title: '오류', description: '대량 등록 중 오류가 발생했습니다.' });
+            toast({ variant: 'destructive', title: '오류', description: '대량 등록 중 오류 발생' });
         } finally {
             setLoading(false);
         }
@@ -406,31 +353,14 @@ export function useMaterials() {
     const rebuildCategories = async () => {
         try {
             setLoading(true);
-            const materialsRef = collection(db, 'materials');
-            const catsRef = collection(db, 'categories');
+            const { data: materialsData } = await supabase.from('materials').select('main_category, mid_category');
+            if (!materialsData) return;
 
-            const allMaterials = await getDocs(materialsRef);
-            const mainCats = new Set<string>();
-            const midCats = new Set<string>();
-
-            allMaterials.docs.forEach(d => {
-                const data = d.data();
-                if (data.mainCategory) mainCats.add(data.mainCategory);
-                if (data.mainCategory && data.midCategory) midCats.add(`${data.mainCategory}>${data.midCategory}`);
-            });
-
-            for (const cat of mainCats) {
-                const q = query(catsRef, where('name', '==', cat), where('type', '==', 'main'));
-                const snap = await getDocs(q);
-                if (snap.empty) await addDoc(catsRef, { name: cat, type: 'main', createdAt: serverTimestamp() });
+            for (const row of materialsData) {
+                if (row.main_category && row.mid_category) {
+                    await syncCategory(row.main_category, row.mid_category);
+                }
             }
-            for (const catKey of midCats) {
-                const [parent, name] = catKey.split('>');
-                const q = query(catsRef, where('name', '==', name), where('type', '==', 'mid'), where('parentCategory', '==', parent));
-                const snap = await getDocs(q);
-                if (snap.empty) await addDoc(catsRef, { name, type: 'mid', parentCategory: parent, createdAt: serverTimestamp() });
-            }
-
             toast({ title: "카테고리 복구 완료", description: "모든 자재를 바탕으로 카테고리 목록을 재구축했습니다." });
         } catch (error) {
             console.error(error);
@@ -453,7 +383,6 @@ export function useMaterials() {
         updateMaterial,
         deleteMaterial,
         bulkAddMaterials,
-        updateMaterialIds,
         rebuildCategories
     };
 }

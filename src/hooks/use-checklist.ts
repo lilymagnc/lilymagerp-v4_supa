@@ -1,30 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
-import { 
-  collection, 
-  doc, 
-  getDocs, 
-  getDoc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where, 
-  orderBy, 
-  limit,
-  serverTimestamp,
-  Timestamp 
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+"use client";
+import { useState, useCallback } from 'react';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from './use-auth';
 import { useUserRole } from './use-user-role';
-import { 
-  ChecklistTemplate, 
-  ChecklistRecord, 
-  ChecklistItem, 
+import {
+  ChecklistTemplate,
+  ChecklistRecord,
+  ChecklistItem,
   ChecklistItemRecord,
   Worker,
   ChecklistStats,
-  ChecklistFilter 
+  ChecklistFilter
 } from '@/types/checklist';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 
@@ -34,13 +20,48 @@ export const useChecklist = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 함수들을 useCallback으로 메모이제이션하여 불필요한 재생성 방지
+  const mapRowToTemplate = (row: any): ChecklistTemplate => ({
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    items: row.items || [],
+    branchId: row.branch_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  });
 
-  // 기본 체크리스트 템플릿 생성
+  const mapRowToRecord = (row: any): ChecklistRecord => ({
+    id: row.id,
+    templateId: row.template_id,
+    branchId: row.branch_id,
+    branchName: row.branch_name,
+    date: row.record_date,
+    week: row.week,
+    month: row.month,
+    category: row.category,
+    openWorker: row.open_worker,
+    closeWorker: row.close_worker,
+    responsiblePerson: row.responsible_person,
+    items: row.items || [],
+    completedBy: row.completed_by,
+    completedAt: row.completed_at,
+    status: row.status,
+    notes: row.notes,
+    weather: row.weather,
+    specialEvents: row.special_events
+  });
+
+  const mapRowToWorker = (row: any): Worker => ({
+    id: row.id,
+    name: row.name,
+    branchId: row.branch_id,
+    createdAt: row.created_at,
+    lastUsed: row.last_used
+  });
+
   const createDefaultTemplate = useCallback(async (branchId: string): Promise<string> => {
     try {
       const defaultItems: ChecklistItem[] = [
-        // Daily 항목들
         { id: '1', order: 1, title: '1. 오픈준비 및 청소', category: 'daily', required: true },
         { id: '2', order: 2, title: '2. 식물상태체크 및 관수', category: 'daily', required: true },
         { id: '3', order: 3, title: '3. 꽃냉장고안 꽃상태점검', category: 'daily', required: true },
@@ -55,15 +76,11 @@ export const useChecklist = () => {
         { id: '12', order: 12, title: '12. 마감전 매장바닥 및 작업대청소', category: 'daily', required: true },
         { id: '13', order: 13, title: '13. 사용한걸레는 빨아서 널어둠', category: 'daily', required: true },
         { id: '14', order: 14, title: '14. 싱크대 및 싱크볼 청소 및 정리', category: 'daily', required: true },
-        
-        // Weekly 항목들
         { id: '15', order: 15, title: '1. 주간 매출 정리', category: 'weekly', required: true },
         { id: '16', order: 16, title: '2. 재고 점검', category: 'weekly', required: true },
         { id: '17', order: 17, title: '3. 주간 업무 계획 수립', category: 'weekly', required: true },
         { id: '18', order: 18, title: '4. 직원 교육 및 훈련', category: 'weekly', required: false },
         { id: '19', order: 19, title: '5. 고객 피드백 검토', category: 'weekly', required: false },
-        
-        // Monthly 항목들
         { id: '20', order: 20, title: '1. 월간 매출 분석', category: 'monthly', required: true },
         { id: '21', order: 21, title: '2. 월간 예산 검토', category: 'monthly', required: true },
         { id: '22', order: 22, title: '3. 직원 평가', category: 'monthly', required: true },
@@ -71,227 +88,175 @@ export const useChecklist = () => {
         { id: '24', order: 24, title: '5. 다음 달 계획 수립', category: 'monthly', required: true },
       ];
 
-      const template: Omit<ChecklistTemplate, 'id'> = {
+      const id = crypto.randomUUID();
+      const payload = {
+        id,
         name: '릴리맥 매장업무 체크리스트',
         category: 'daily',
         items: defaultItems,
-        branchId,
-        createdAt: serverTimestamp() as Timestamp,
+        branch_id: branchId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
 
-      const docRef = await addDoc(collection(db, 'checklistTemplates'), template);
-      return docRef.id;
+      const { error } = await supabase.from('checklist_templates').insert([payload]);
+      if (error) throw error;
+      return id;
     } catch (err) {
       console.error('Error creating default template:', err);
       throw err;
     }
   }, []);
 
-  // 템플릿 가져오기
   const getTemplate = useCallback(async (branchId: string): Promise<ChecklistTemplate | null> => {
     try {
-      const q = query(
-        collection(db, 'checklistTemplates'),
-        where('branchId', '==', branchId),
-        limit(1)
-      );
-      const snapshot = await getDocs(q);
-      
-      if (snapshot.empty) {
-        // 템플릿이 없으면 기본 템플릿 생성
+      const { data, error } = await supabase.from('checklist_templates')
+        .select('*')
+        .eq('branch_id', branchId)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) {
         const templateId = await createDefaultTemplate(branchId);
-        const docRef = doc(db, 'checklistTemplates', templateId);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-          return { id: docSnap.id, ...docSnap.data() } as ChecklistTemplate;
-        }
-        return null;
+        const { data: newData } = await supabase.from('checklist_templates').select('*').eq('id', templateId).single();
+        return newData ? mapRowToTemplate(newData) : null;
       }
 
-      const docSnapshot = snapshot.docs[0];
-      return { id: docSnapshot.id, ...docSnapshot.data() } as ChecklistTemplate;
+      return mapRowToTemplate(data);
     } catch (err) {
       console.error('Error getting template:', err);
       throw err;
     }
   }, [createDefaultTemplate]);
 
-  // 템플릿 업데이트
   const updateTemplate = useCallback(async (templateId: string, template: ChecklistTemplate): Promise<void> => {
     try {
-      const docRef = doc(db, 'checklistTemplates', templateId);
-      await updateDoc(docRef, {
+      const { error } = await supabase.from('checklist_templates').update({
         items: template.items,
-        updatedAt: serverTimestamp(),
-      });
+        updated_at: new Date().toISOString()
+      }).eq('id', templateId);
+      if (error) throw error;
     } catch (err) {
       console.error('Error updating template:', err);
       throw err;
     }
   }, []);
 
-  // 체크리스트 생성
   const createChecklist = useCallback(async (
     templateId: string,
     date: string,
     category: 'daily' | 'weekly' | 'monthly',
-    workerInfo: {
-      openWorker: string;
-      closeWorker: string;
-      responsiblePerson: string;
-    },
-    metaInfo?: {
-      notes?: string;
-      weather?: string;
-      specialEvents?: string;
-    }
+    workerInfo: { openWorker: string; closeWorker: string; responsiblePerson: string; },
+    metaInfo?: { notes?: string; weather?: string; specialEvents?: string; }
   ): Promise<string> => {
     try {
-      // 사용자의 지점 ID 가져오기
       const branchId = userRole?.branchId || user?.franchise || '';
-      if (!branchId) {
-        throw new Error('Branch ID not found for user');
-      }
+      if (!branchId) throw new Error('Branch ID not found');
 
       const template = await getTemplate(branchId);
       if (!template) throw new Error('Template not found');
 
-      // 날짜 정보 계산
       const dateObj = new Date(date);
       const week = format(dateObj, 'yyyy-\'W\'ww');
       const month = format(dateObj, 'yyyy-MM');
 
-      // 항목들 초기화
       const items: ChecklistItemRecord[] = template.items
         .filter(item => item.category === category)
-        .map(item => ({
-          itemId: item.id,
-          checked: false,
-        }));
+        .map(item => ({ itemId: item.id, checked: false }));
 
-      const checklist: Omit<ChecklistRecord, 'id'> = {
-        templateId,
-        branchId,
-        branchName: userRole?.branchName || user?.franchise || '',
-        date,
+      const id = crypto.randomUUID();
+      const payload = {
+        id,
+        template_id: templateId,
+        branch_id: branchId,
+        branch_name: userRole?.branchName || user?.franchise || '',
+        record_date: date,
         week,
         month,
         category,
-        openWorker: workerInfo.openWorker,
-        closeWorker: workerInfo.closeWorker,
-        responsiblePerson: workerInfo.responsiblePerson,
+        open_worker: workerInfo.openWorker,
+        close_worker: workerInfo.closeWorker,
+        responsible_person: workerInfo.responsiblePerson,
         items,
-        completedBy: user?.uid || '',
-        completedAt: serverTimestamp() as Timestamp,
+        completed_by: user?.id || (user as any).uid || '',
+        completed_at: new Date().toISOString(),
         status: 'pending',
         notes: metaInfo?.notes || '',
         weather: metaInfo?.weather || '',
-        specialEvents: metaInfo?.specialEvents || '',
+        special_events: metaInfo?.specialEvents || ''
       };
 
-      const docRef = await addDoc(collection(db, 'checklists'), checklist);
-      return docRef.id;
+      const { error } = await supabase.from('checklists').insert([payload]);
+      if (error) throw error;
+      return id;
     } catch (err) {
       console.error('Error creating checklist:', err);
       throw err;
     }
   }, [getTemplate, user, userRole]);
 
-  // 체크리스트 가져오기
   const getChecklist = useCallback(async (id: string): Promise<ChecklistRecord | null> => {
     try {
-      const docRef = doc(db, 'checklists', id);
-      const docSnap = await getDoc(docRef);
-      
-      if (docSnap.exists()) {
-        return { id: docSnap.id, ...docSnap.data() } as ChecklistRecord;
-      }
-      return null;
+      const { data, error } = await supabase.from('checklists').select('*').eq('id', id).single();
+      if (error) throw error;
+      return data ? mapRowToRecord(data) : null;
     } catch (err) {
       console.error('Error getting checklist:', err);
       throw err;
     }
   }, []);
 
-  // 체크리스트 목록 가져오기
   const getChecklists = useCallback(async (filter: ChecklistFilter = {}): Promise<ChecklistRecord[]> => {
     try {
-      let q;
-      
-      // 본사 관리자는 모든 체크리스트를 볼 수 있음
-      if (isHQManager() || user?.role === '본사 관리자') {
-        q = query(collection(db, 'checklists'));
-      } else {
-        // 지점 사용자는 자신의 지점 체크리스트만 볼 수 있음
+      let query = supabase.from('checklists').select('*');
+
+      if (!(isHQManager() || user?.role === '본사 관리자')) {
         const branchId = userRole?.branchId || user?.franchise || '';
-        if (!branchId) {
-          console.error('Branch ID not found for user');
-          return [];
-        }
-        q = query(
-          collection(db, 'checklists'),
-          where('branchId', '==', branchId)
-        );
+        if (branchId) query = query.eq('branch_id', branchId);
+      } else if (filter.branchId) {
+        query = query.eq('branch_id', filter.branchId);
       }
-      
-      const snapshot = await getDocs(q);
-      let checklists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as ChecklistRecord);
-      
-      // 클라이언트 사이드에서 필터링 및 정렬
-      if (filter.date) {
-        checklists = checklists.filter(c => c.date === filter.date);
-      }
-      if (filter.week) {
-        checklists = checklists.filter(c => c.week === filter.week);
-      }
-      if (filter.month) {
-        checklists = checklists.filter(c => c.month === filter.month);
-      }
-      if (filter.status) {
-        checklists = checklists.filter(c => c.status === filter.status);
-      }
-      if (filter.worker) {
-        checklists = checklists.filter(c => c.responsiblePerson === filter.worker);
-      }
-      if (filter.branchId && isHQManager()) {
-        checklists = checklists.filter(c => c.branchId === filter.branchId);
-      }
-      
-      // 날짜별 내림차순 정렬
-      const sortedChecklists = checklists.sort((a, b) => b.date.localeCompare(a.date));
-      
-      return sortedChecklists;
+
+      if (filter.date) query = query.eq('record_date', filter.date);
+      if (filter.week) query = query.eq('week', filter.week);
+      if (filter.month) query = query.eq('month', filter.month);
+      if (filter.status) query = query.eq('status', filter.status);
+      if (filter.worker) query = query.eq('responsible_person', filter.worker);
+
+      const { data, error } = await query.order('record_date', { ascending: false });
+      if (error) throw error;
+      return (data || []).map(mapRowToRecord);
     } catch (err) {
       console.error('Error getting checklists:', err);
       throw err;
     }
   }, [user, userRole, isHQManager]);
 
-  // 체크리스트 업데이트
-  const updateChecklist = useCallback(async (
-    id: string,
-    updates: Partial<ChecklistRecord>
-  ): Promise<void> => {
+  const updateChecklist = useCallback(async (id: string, updates: Partial<ChecklistRecord>): Promise<void> => {
     try {
-      const docRef = doc(db, 'checklists', id);
-      await updateDoc(docRef, {
-        ...updates,
-        completedAt: serverTimestamp(),
-      });
+      const payload: any = {
+        updated_at: new Date().toISOString()
+      };
+
+      if (updates.status) payload.status = updates.status;
+      if (updates.items) payload.items = updates.items;
+      if (updates.notes) payload.notes = updates.notes;
+      if (updates.weather) payload.weather = updates.weather;
+      if (updates.specialEvents) payload.special_events = updates.specialEvents;
+      if (updates.completedBy) payload.completed_by = updates.completedBy;
+      if (updates.completedAt) payload.completed_at = updates.completedAt;
+
+      const { error } = await supabase.from('checklists').update(payload).eq('id', id);
+      if (error) throw error;
     } catch (err) {
       console.error('Error updating checklist:', err);
       throw err;
     }
   }, []);
 
-  // 항목 체크/언체크
   const toggleItem = useCallback(async (
-    checklistId: string,
-    itemId: string,
-    checked: boolean,
-    workerName?: string,
-    notes?: string
+    checklistId: string, itemId: string, checked: boolean, workerName?: string, notes?: string
   ): Promise<void> => {
     try {
       const checklist = await getChecklist(checklistId);
@@ -302,7 +267,7 @@ export const useChecklist = () => {
           return {
             ...item,
             checked,
-            checkedAt: checked ? new Date() : undefined,
+            checkedAt: checked ? new Date().toISOString() : undefined,
             checkedBy: checked ? workerName || user?.displayName || 'Unknown' : undefined,
             notes: notes || item.notes,
           };
@@ -310,104 +275,75 @@ export const useChecklist = () => {
         return item;
       });
 
-      // 템플릿에서 해당 항목의 required 정보 가져오기
       const template = await getTemplate(checklist.branchId);
       if (!template) throw new Error('Template not found');
 
-      // 필수 항목만으로 완료율 계산
       const requiredItems = template.items.filter(item => item.required && item.category === checklist.category);
       const requiredItemIds = requiredItems.map(item => item.id);
-      
-      const completedRequiredItems = updatedItems.filter(item => 
-        item.checked && requiredItemIds.includes(item.itemId)
-      ).length;
-      
+      const completedRequiredItems = updatedItems.filter(item => item.checked && requiredItemIds.includes(item.itemId)).length;
       const totalRequiredItems = requiredItemIds.length;
       const completionRate = totalRequiredItems > 0 ? (completedRequiredItems / totalRequiredItems) * 100 : 0;
-      
+
       let status: 'pending' | 'completed' | 'partial' = 'pending';
       if (completionRate === 100) status = 'completed';
       else if (completionRate > 0) status = 'partial';
 
-      await updateChecklist(checklistId, {
-        items: updatedItems,
-        status,
-      });
+      await updateChecklist(checklistId, { items: updatedItems, status });
     } catch (err) {
       console.error('Error toggling item:', err);
       throw err;
     }
   }, [getChecklist, updateChecklist, getTemplate, user]);
 
-  // 체크리스트 삭제
   const deleteChecklist = useCallback(async (id: string): Promise<void> => {
     try {
-      const docRef = doc(db, 'checklists', id);
-      await deleteDoc(docRef);
+      const { error } = await supabase.from('checklists').delete().eq('id', id);
+      if (error) throw error;
     } catch (err) {
       console.error('Error deleting checklist:', err);
       throw err;
     }
   }, []);
 
-  // 근무자 목록 가져오기
   const getWorkers = useCallback(async (): Promise<Worker[]> => {
     try {
-      // 사용자의 지점 ID 가져오기
       const branchId = userRole?.branchId || user?.franchise || '';
-      if (!branchId) {
-        console.error('Branch ID not found for user');
-        return [];
-      }
+      if (!branchId) return [];
 
-      const q = query(
-        collection(db, 'workers'),
-        where('branchId', '==', branchId)
-      );
-      const snapshot = await getDocs(q);
-      const workers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Worker);
-      
-      // 클라이언트 사이드에서 정렬 (임시 해결책)
-      return workers.sort((a, b) => {
-        if (!a.lastUsed || !b.lastUsed) return 0;
-        return b.lastUsed.toDate().getTime() - a.lastUsed.toDate().getTime();
-      });
+      const { data, error } = await supabase.from('workers')
+        .select('*')
+        .eq('branch_id', branchId)
+        .order('last_used', { ascending: false });
+
+      if (error) throw error;
+      return (data || []).map(mapRowToWorker);
     } catch (err) {
       console.error('Error getting workers:', err);
       throw err;
     }
   }, [user, userRole]);
 
-  // 근무자 추가/업데이트
   const addWorker = useCallback(async (name: string): Promise<void> => {
     try {
-      // 사용자의 지점 ID 가져오기
       const branchId = userRole?.branchId || user?.franchise || '';
-      if (!branchId) {
-        throw new Error('Branch ID not found for user');
-      }
+      if (!branchId) throw new Error('Branch ID not found');
 
-      const q = query(
-        collection(db, 'workers'),
-        where('branchId', '==', branchId),
-        where('name', '==', name)
-      );
-      const snapshot = await getDocs(q);
-      
-      if (snapshot.empty) {
-        // 새 근무자 추가
-        await addDoc(collection(db, 'workers'), {
+      const { data: existing } = await supabase.from('workers')
+        .select('id')
+        .eq('branch_id', branchId)
+        .eq('name', name)
+        .maybeSingle();
+
+      if (!existing) {
+        await supabase.from('workers').insert([{
+          id: crypto.randomUUID(),
           name,
-          branchId,
-          createdAt: serverTimestamp(),
-          lastUsed: serverTimestamp(),
-        });
+          branch_id: branchId,
+          created_at: new Date().toISOString(),
+          last_used: new Date().toISOString()
+        }]);
       } else {
-        // 기존 근무자 lastUsed 업데이트
-        const docRef = doc(db, 'workers', snapshot.docs[0].id);
-        await updateDoc(docRef, {
-          lastUsed: serverTimestamp(),
-        });
+        await supabase.from('workers').update({ last_used: new Date().toISOString() }).eq('id', existing.id);
       }
     } catch (err) {
       console.error('Error adding worker:', err);
@@ -415,65 +351,44 @@ export const useChecklist = () => {
     }
   }, [user, userRole]);
 
-  // 통계 가져오기
   const getStats = useCallback(async (period: 'daily' | 'weekly' | 'monthly' = 'daily'): Promise<ChecklistStats[]> => {
     try {
       const now = new Date();
-      let startDate: Date;
-      let endDate: Date;
+      let startDate: string;
 
       switch (period) {
         case 'daily':
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
-          endDate = now;
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7).toISOString().split('T')[0];
           break;
         case 'weekly':
-          startDate = startOfWeek(now, { weekStartsOn: 1 });
-          endDate = endOfWeek(now, { weekStartsOn: 1 });
+          startDate = startOfWeek(now, { weekStartsOn: 1 }).toISOString().split('T')[0];
           break;
         case 'monthly':
-          startDate = startOfMonth(now);
-          endDate = endOfMonth(now);
+          startDate = startOfMonth(now).toISOString().split('T')[0];
           break;
+        default:
+          startDate = format(now, 'yyyy-MM-dd');
       }
 
-      let q;
-      
-      // 본사 관리자는 모든 체크리스트를 볼 수 있음
-      if (isHQManager() || user?.role === '본사 관리자') {
-        q = query(collection(db, 'checklists'));
-      } else {
-        // 지점 사용자는 자신의 지점 체크리스트만 볼 수 있음
+      let query = supabase.from('checklists').select('*');
+      if (!(isHQManager() || user?.role === '본사 관리자')) {
         const branchId = userRole?.branchId || user?.franchise || '';
-        if (!branchId) {
-          console.error('Branch ID not found for user');
-          return [];
-        }
-        q = query(
-          collection(db, 'checklists'),
-          where('branchId', '==', branchId)
-        );
+        if (branchId) query = query.eq('branch_id', branchId);
       }
+      query = query.gte('record_date', startDate);
 
-      const snapshot = await getDocs(q);
-      let checklists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as ChecklistRecord);
-      
-      // 클라이언트 사이드에서 날짜 필터링
-      checklists = checklists.filter(checklist => {
-        const checklistDate = new Date(checklist.date);
-        return checklistDate >= startDate && checklistDate <= endDate;
-      });
+      const { data, error } = await query;
+      if (error) throw error;
 
-      return checklists.map(checklist => {
+      return (data || []).map(checklist => {
         const totalItems = checklist.items.length;
-        const completedItems = checklist.items.filter(item => item.checked).length;
+        const completedItems = checklist.items.filter((item: any) => item.checked).length;
         const completionRate = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
-
         return {
           totalItems,
           completedItems,
           completionRate,
-          lastUpdated: checklist.completedAt,
+          lastUpdated: checklist.completed_at
         };
       });
     } catch (err) {
@@ -483,19 +398,6 @@ export const useChecklist = () => {
   }, [user, userRole, isHQManager]);
 
   return {
-    loading,
-    error,
-    createDefaultTemplate,
-    getTemplate,
-    updateTemplate,
-    createChecklist,
-    getChecklist,
-    getChecklists,
-    updateChecklist,
-    toggleItem,
-    deleteChecklist,
-    getWorkers,
-    addWorker,
-    getStats,
+    loading, error, createDefaultTemplate, getTemplate, updateTemplate, createChecklist, getChecklist, getChecklists, updateChecklist, toggleItem, deleteChecklist, getWorkers, addWorker, getStats,
   };
 };

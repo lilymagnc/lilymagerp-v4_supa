@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from 'react';
-import { collection, getDocs, query, where, orderBy, Timestamp, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
+
 export interface Recipient {
   id: string;
   name: string;
@@ -10,91 +10,102 @@ export interface Recipient {
   district: string;
   branchName: string;
   orderCount: number;
-  lastOrderDate: Timestamp;
+  lastOrderDate: string;
   email?: string;
   marketingConsent?: boolean;
   source?: string;
-  createdAt?: Timestamp;
-  updatedAt?: Timestamp;
+  createdAt?: string;
+  updatedAt?: string;
 }
+
 export function useRecipients() {
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const mapRowToRecipient = useCallback((row: any): Recipient => ({
+    id: row.id,
+    name: row.name,
+    contact: row.contact,
+    address: row.address,
+    district: row.district,
+    branchName: row.branch_name,
+    orderCount: row.order_count,
+    lastOrderDate: row.last_order_date,
+    email: row.email,
+    marketingConsent: row.marketing_consent,
+    source: row.source,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }), []);
+
   const fetchRecipients = useCallback(async (branchName?: string) => {
     setLoading(true);
     try {
-      let recipientsQuery = query(
-        collection(db, 'recipients')
-      );
-      if (branchName) {
-        recipientsQuery = query(
-          collection(db, 'recipients'),
-          where('branchName', '==', branchName)
-        );
-      }
-      const snapshot = await getDocs(recipientsQuery);
-      const recipientsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Recipient[];
-      // 클라이언트 사이드에서 정렬
-      recipientsData.sort((a, b) => {
-        if (!a.lastOrderDate || !b.lastOrderDate) return 0;
-        return b.lastOrderDate.toMillis() - a.lastOrderDate.toMillis();
-      });
-      setRecipients(recipientsData);
+      let query = supabase.from('recipients').select('*');
+      if (branchName) query = query.eq('branch_name', branchName);
+
+      const { data, error } = await query.order('last_order_date', { ascending: false });
+      if (error) throw error;
+      setRecipients((data || []).map(mapRowToRecipient));
     } catch (error) {
       console.error('Error fetching recipients:', error);
     } finally {
       setLoading(false);
     }
-  }, []);
-  // 지역별 수령자 통계
+  }, [mapRowToRecipient]);
+
   const getRecipientsByDistrict = useCallback(() => {
     const districtStats = recipients.reduce((acc, recipient) => {
       const district = recipient.district;
       if (!acc[district]) {
-        acc[district] = {
-          count: 0,
-          totalOrders: 0,
-          recipients: []
-        };
+        acc[district] = { count: 0, totalOrders: 0, recipients: [] };
       }
       acc[district].count++;
-      acc[district].totalOrders += recipient.orderCount;
+      acc[district].totalOrders += Number(recipient.orderCount);
       acc[district].recipients.push(recipient);
       return acc;
     }, {} as Record<string, { count: number; totalOrders: number; recipients: Recipient[] }>);
     return districtStats;
   }, [recipients]);
-  // 단골 수령자 (주문 횟수 3회 이상)
+
   const getFrequentRecipients = useCallback(() => {
-    return recipients.filter(recipient => recipient.orderCount >= 3);
+    return recipients.filter(recipient => Number(recipient.orderCount) >= 3);
   }, [recipients]);
+
   useEffect(() => {
     fetchRecipients();
   }, [fetchRecipients]);
-  // 수령자 정보 수정
+
   const updateRecipient = useCallback(async (recipientId: string, updatedData: Partial<Recipient>) => {
     try {
-      const recipientRef = doc(db, 'recipients', recipientId);
-      await updateDoc(recipientRef, {
-        ...updatedData,
-        updatedAt: serverTimestamp()
-      });
-      await fetchRecipients(); // 목록 새로고침
+      const payload: any = {
+        updated_at: new Date().toISOString()
+      };
+      if (updatedData.name) payload.name = updatedData.name;
+      if (updatedData.contact) payload.contact = updatedData.contact;
+      if (updatedData.address) payload.address = updatedData.address;
+      if (updatedData.district) payload.district = updatedData.district;
+      if (updatedData.branchName) payload.branch_name = updatedData.branchName;
+      if (updatedData.orderCount !== undefined) payload.order_count = updatedData.orderCount;
+      if (updatedData.lastOrderDate) payload.last_order_date = updatedData.lastOrderDate;
+      if (updatedData.email !== undefined) payload.email = updatedData.email;
+      if (updatedData.marketingConsent !== undefined) payload.marketing_consent = updatedData.marketing_consent;
+      if (updatedData.source) payload.source = updatedData.source;
+
+      const { error } = await supabase.from('recipients').update(payload).eq('id', recipientId);
+      if (error) throw error;
+      await fetchRecipients();
     } catch (error) {
       console.error('Error updating recipient:', error);
       throw error;
     }
   }, [fetchRecipients]);
 
-  // 수령자 삭제
   const deleteRecipient = useCallback(async (recipientId: string) => {
     try {
-      const recipientRef = doc(db, 'recipients', recipientId);
-      await deleteDoc(recipientRef);
-      await fetchRecipients(); // 목록 새로고침
+      const { error } = await supabase.from('recipients').delete().eq('id', recipientId);
+      if (error) throw error;
+      await fetchRecipients();
     } catch (error) {
       console.error('Error deleting recipient:', error);
       throw error;
@@ -102,12 +113,6 @@ export function useRecipients() {
   }, [fetchRecipients]);
 
   return {
-    recipients,
-    loading,
-    fetchRecipients,
-    getRecipientsByDistrict,
-    getFrequentRecipients,
-    updateRecipient,
-    deleteRecipient
+    recipients, loading, fetchRecipients, getRecipientsByDistrict, getFrequentRecipients, updateRecipient, deleteRecipient
   };
 }

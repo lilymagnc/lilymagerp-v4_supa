@@ -1,33 +1,35 @@
 "use client";
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  query, 
-  where, 
-  getDocs,
-  getDoc,
-  serverTimestamp 
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { useToast } from './use-toast';
 import { useAuth } from './use-auth';
-import { 
-  UserRole, 
-  UserRoleType, 
-  Permission, 
+import {
+  UserRole,
+  UserRoleType,
+  Permission,
   CreateUserRoleData,
-  ROLE_PERMISSIONS 
+  ROLE_PERMISSIONS
 } from '@/types/user-role';
 
 export function useUserRole() {
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
-  const { user } = useAuth(); // 실제 로그인한 사용자 정보 가져오기
+  const { user } = useAuth();
 
-  // 사용자 역할 조회
+  const mapRowToUserRole = (row: any): UserRole => ({
+    id: row.id,
+    userId: row.user_id,
+    email: row.email,
+    role: row.role,
+    permissions: row.permissions || [],
+    branchId: row.branch_id,
+    branchName: row.branch_name,
+    isActive: row.is_active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  });
+
   const fetchUserRole = useCallback(async () => {
     if (!user?.email) {
       setLoading(false);
@@ -36,197 +38,112 @@ export function useUserRole() {
 
     try {
       setLoading(true);
-      
-      // 1. 먼저 users 컬렉션에서 사용자 정보 확인
-      const userDocRef = doc(db, 'users', user.email);
-      const userDoc = await getDoc(userDocRef);
-      
-      if (!userDoc.exists()) {
-        setLoading(false);
-        return;
-      }
-      
-      const userData = userDoc.data();
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('*')
+        .eq('email', user.email)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      // 2. userRoles 컬렉션에서 역할 정보 확인
-      const q = query(
-        collection(db, 'userRoles'),
-        where('email', '==', user.email),
-        where('isActive', '==', true)
-      );
-      const querySnapshot = await getDocs(q);
+      if (error) throw error;
 
-      if (!querySnapshot.empty) {
-        const roleDoc = querySnapshot.docs[0];
-        const roleData = roleDoc.data();
-        
-        // 권한과 소속은 별개로 처리 - 본사 관리자도 특정 지점에 소속될 수 있음
-
-        const role: UserRole = {
-          id: roleDoc.id,
-          ...roleData,
-          createdAt: roleData.createdAt,
-          updatedAt: roleData.updatedAt,
-        } as UserRole;
-        setUserRole(role);
+      if (data) {
+        setUserRole(mapRowToUserRole(data));
       } else {
-        // userRoles에 없으면 users 컬렉션의 role을 기반으로 생성
-        await createDefaultUserRole(user.email, userData.role);
+        // Create default if not exists (matching original logic)
+        await createDefaultUserRole(user.email, user.role || '직원');
       }
     } catch (error) {
-      console.error('사용자 역할 조회 오류:', error);
-      toast({
-        variant: 'destructive',
-        title: '역할 조회 실패',
-        description: '사용자 역할을 조회하는 중 오류가 발생했습니다.',
-      });
+      console.error('Error fetching user role:', error);
+      toast({ variant: 'destructive', title: '역할 조회 실패', description: '오류가 발생했습니다.' });
     } finally {
       setLoading(false);
     }
   }, [user, toast]);
 
-  // 기본 사용자 역할 생성 (기존 인증 시스템 역할 기반)
   const createDefaultUserRole = async (email: string, existingRole: string) => {
     try {
-      // 기존 역할을 새로운 시스템에 맞게 매핑
       const roleMapping = {
         "본사 관리자": UserRoleType.HQ_MANAGER,
-        "가맹점 관리자": UserRoleType.BRANCH_MANAGER, 
+        "가맹점 관리자": UserRoleType.BRANCH_MANAGER,
         "직원": UserRoleType.BRANCH_USER
       };
-      
       const mappedRole = roleMapping[existingRole as keyof typeof roleMapping] || UserRoleType.BRANCH_USER;
-      
-      // 권한 확인
-      const permissions = ROLE_PERMISSIONS[mappedRole];
-      if (!permissions) {
-        console.error('권한을 찾을 수 없음:', mappedRole);
-        return;
-      }
 
-      // 사용자의 실제 franchise 정보 가져오기
-      const userDocRef = doc(db, 'users', email);
-      const userDoc = await getDoc(userDocRef);
-      let branchName = "본사"; // 기본값
-      
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        // 소속은 실제 franchise 사용 (권한과 별개)
-        branchName = userData.franchise || "본사";
-      }
+      const { data: userData } = await supabase.from('users').select('franchise').eq('email', email).maybeSingle();
+      const branchName = userData?.franchise || user?.franchise || "본사";
 
-      const defaultRoleData: CreateUserRoleData = {
-        userId: email,
+      await createUserRole({
+        userId: user?.id || email,
         email: email,
         role: mappedRole,
         branchName: branchName,
-      };
-      
-      await createUserRole(defaultRoleData);
+      });
     } catch (error) {
-      console.error('기본 역할 생성 오류:', error);
+      console.error('Error creating default role:', error);
     }
   };
 
-  // 사용자 역할 생성
   const createUserRole = async (roleData: CreateUserRoleData): Promise<string> => {
     try {
-      const now = serverTimestamp();
-      
-      // 권한 확인
       const permissions = ROLE_PERMISSIONS[roleData.role];
-      if (!permissions) {
-        console.error('권한을 찾을 수 없음:', roleData.role);
-        throw new Error(`권한을 찾을 수 없음: ${roleData.role}`);
-      }
+      if (!permissions) throw new Error(`Permissions not found for: ${roleData.role}`);
 
-      const userRoleDoc: any = {
-        userId: roleData.userId,
+      const id = crypto.randomUUID();
+      const payload = {
+        id,
+        user_id: roleData.userId,
         email: roleData.email,
         role: roleData.role,
         permissions: permissions,
-        createdAt: now as any,
-        updatedAt: now as any,
-        isActive: true
+        branch_id: roleData.branchId,
+        branch_name: roleData.branchName,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
 
-      // branchId와 branchName이 있는 경우에만 추가 (undefined 방지)
-      if (roleData.branchId) {
-        userRoleDoc.branchId = roleData.branchId;
-      }
-      if (roleData.branchName) {
-        userRoleDoc.branchName = roleData.branchName;
-      }
+      const { error } = await supabase.from('user_roles').insert([payload]);
+      if (error) throw error;
 
-      const docRef = doc(collection(db, 'userRoles'));
-      await setDoc(docRef, userRoleDoc);
-
-      // 현재 사용자의 역할을 생성한 경우 상태 업데이트
       if (roleData.email === user?.email) {
-        setUserRole({
-          id: docRef.id,
-          ...userRoleDoc,
-          createdAt: new Date() as any,
-          updatedAt: new Date() as any,
-        });
+        setUserRole(mapRowToUserRole(payload));
       }
 
-      toast({
-        title: '역할 생성 완료',
-        description: '사용자 역할이 성공적으로 생성되었습니다.',
-      });
-      
-      return docRef.id;
+      toast({ title: '역할 생성 완료', description: '성공적으로 생성되었습니다.' });
+      return id;
     } catch (error) {
-      console.error('사용자 역할 생성 오류:', error);
-      toast({
-        variant: 'destructive',
-        title: '역할 생성 실패',
-        description: '사용자 역할 생성 중 오류가 발생했습니다.',
-      });
+      console.error(error);
+      toast({ variant: 'destructive', title: '역할 생성 실패', description: '오류 발생' });
       throw error;
     }
   };
 
-  // 사용자 역할 업데이트
-  const updateUserRole = async (
-    roleId: string, 
-    updates: Partial<Pick<UserRole, 'role' | 'branchId' | 'branchName' | 'permissions' | 'isActive'>>
-  ): Promise<void> => {
+  const updateUserRole = async (roleId: string, updates: Partial<Pick<UserRole, 'role' | 'branchId' | 'branchName' | 'permissions' | 'isActive'>>): Promise<void> => {
     try {
-      const docRef = doc(db, 'userRoles', roleId);
-      const updateData = {
-        ...updates,
-        updatedAt: serverTimestamp()
-      };
-      
-      await setDoc(docRef, updateData, { merge: true });
-      
-      // 현재 사용자의 역할을 업데이트한 경우 상태 업데이트
+      const updatePayload: any = { updated_at: new Date().toISOString() };
+      if (updates.role !== undefined) updatePayload.role = updates.role;
+      if (updates.branchId !== undefined) updatePayload.branch_id = updates.branchId;
+      if (updates.branchName !== undefined) updatePayload.branch_name = updates.branchName;
+      if (updates.permissions !== undefined) updatePayload.permissions = updates.permissions;
+      if (updates.isActive !== undefined) updatePayload.is_active = updates.isActive;
+
+      const { error } = await supabase.from('user_roles').update(updatePayload).eq('id', roleId);
+      if (error) throw error;
+
       if (userRole && userRole.id === roleId) {
-        setUserRole({
-          ...userRole,
-          ...updates,
-          updatedAt: new Date() as any,
-        });
+        setUserRole({ ...userRole, ...updates, updatedAt: new Date().toISOString() as any });
       }
-      
-      toast({
-        title: '역할 업데이트 완료',
-        description: '사용자 역할이 성공적으로 업데이트되었습니다.',
-      });
+      toast({ title: '역할 업데이트 완료', description: '성공적으로 업데이트되었습니다.' });
     } catch (error) {
-      console.error('사용자 역할 업데이트 오류:', error);
-      toast({
-        variant: 'destructive',
-        title: '역할 업데이트 실패',
-        description: '사용자 역할 업데이트 중 오류가 발생했습니다.',
-      });
+      console.error(error);
+      toast({ variant: 'destructive', title: '업데이트 실패', description: '오류 발생' });
       throw error;
     }
   };
 
-  // 권한 확인 함수들
   const hasPermission = (permission: Permission): boolean => {
     if (!userRole || !userRole.isActive) return false;
     return userRole.permissions.includes(permission);
@@ -237,8 +154,6 @@ export function useUserRole() {
     return permissions.some(permission => userRole.permissions.includes(permission));
   };
 
-  // 본사 관리자 권한 확인 (hq_manager 또는 admin, 또는 기존 시스템의 본사 관리자)
-  // 권한은 소속과 상관없이 작동
   const isHQManager = (): boolean => {
     return (
       (userRole?.role === 'hq_manager' && userRole.isActive) ||
@@ -247,45 +162,16 @@ export function useUserRole() {
     );
   };
 
-  const isBranchUser = (): boolean => {
-    return userRole?.role === 'branch_user' && userRole.isActive;
-  };
+  const isBranchUser = (): boolean => userRole?.role === 'branch_user' && userRole.isActive;
+  const isBranchManager = (): boolean => userRole?.role === 'branch_manager' && userRole.isActive;
+  const isAdmin = (): boolean => userRole?.role === 'admin' && userRole.isActive;
+  const isHeadOfficeAdmin = (): boolean => isHQManager();
 
-  const isBranchManager = (): boolean => {
-    return userRole?.role === 'branch_manager' && userRole.isActive;
-  };
-
-  const isAdmin = (): boolean => {
-    return userRole?.role === 'admin' && userRole.isActive;
-  };
-  
-  // 본사 관리자 권한 확인 (hq_manager 또는 admin)
-  // 권한은 소속과 상관없이 작동
-  const isHeadOfficeAdmin = (): boolean => {
-    return (
-      (userRole?.role === 'hq_manager' && userRole.isActive) ||
-      (userRole?.role === 'admin' && userRole.isActive) ||
-      user?.role === '본사 관리자'
-    );
-  };
-
-  // 컴포넌트 마운트 시 사용자 역할 조회
   useEffect(() => {
     fetchUserRole();
   }, [fetchUserRole]);
 
   return {
-    userRole,
-    loading,
-    fetchUserRole,
-    createUserRole,
-    updateUserRole,
-    hasPermission,
-    hasAnyPermission,
-    isHQManager,
-    isBranchUser,
-    isBranchManager,
-    isAdmin,
-    isHeadOfficeAdmin,
+    userRole, loading, fetchUserRole, createUserRole, updateUserRole, hasPermission, hasAnyPermission, isHQManager, isBranchUser, isBranchManager, isAdmin, isHeadOfficeAdmin,
   };
 }

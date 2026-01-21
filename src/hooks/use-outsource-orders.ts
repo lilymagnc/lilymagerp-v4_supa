@@ -1,18 +1,6 @@
 "use client";
-
 import { useState, useCallback, useEffect } from 'react';
-import {
-    collection,
-    getDocs,
-    query,
-    where,
-    orderBy,
-    Timestamp,
-    doc,
-    updateDoc,
-    serverTimestamp
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { Order } from './use-orders';
 import { useAuth } from './use-auth';
 import { useSimpleExpenses } from './use-simple-expenses';
@@ -41,34 +29,48 @@ export function useOutsourceOrders() {
     const isAdmin = user?.role === '본사 관리자';
     const branchName = user?.franchise;
 
+    const mapRowToOrder = (row: any): Order => ({
+        id: row.id,
+        orderNumber: row.order_number,
+        status: row.status,
+        receiptType: row.receipt_type,
+        branchId: row.branch_id,
+        branchName: row.branch_name,
+        orderDate: row.order_date,
+        orderer: row.orderer,
+        deliveryInfo: row.delivery_info,
+        pickupInfo: row.pickup_info,
+        summary: row.summary,
+        payment: row.payment,
+        items: row.items,
+        memo: row.memo,
+        transferInfo: row.transfer_info,
+        outsourceInfo: row.outsource_info,
+        extraData: row.extra_data,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        completedAt: row.completed_at,
+        completedBy: row.completed_by
+    });
+
     const fetchOutsourceOrders = useCallback(async () => {
         try {
             setLoading(true);
-            const ordersRef = collection(db, 'orders');
 
-            let q = query(
-                ordersRef,
-                where('outsourceInfo.isOutsourced', '==', true)
-            );
+            let query = supabase.from('orders')
+                .select('*')
+                .not('outsource_info', 'is', null)
+                .eq('outsource_info->isOutsourced', true)
+                .order('order_date', { ascending: false });
 
-            const querySnapshot = await getDocs(q);
-            let ordersData = querySnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            })) as Order[];
-
-            // Client-side sorting (since where + orderBy requires composite index)
-            ordersData.sort((a, b) => {
-                const dateA = a.orderDate instanceof Timestamp ? a.orderDate.toMillis() : new Date(a.orderDate).getTime();
-                const dateB = b.orderDate instanceof Timestamp ? b.orderDate.toMillis() : new Date(b.orderDate).getTime();
-                return dateB - dateA;
-            });
-
-            // Permission filtering
             if (!isAdmin && branchName) {
-                ordersData = ordersData.filter(order => order.branchName === branchName);
+                query = query.eq('branch_name', branchName);
             }
 
+            const { data, error } = await query;
+            if (error) throw error;
+
+            const ordersData = (data || []).map(mapRowToOrder);
             setOrders(ordersData);
 
             // Calculate Stats
@@ -85,7 +87,6 @@ export function useOutsourceOrders() {
                 totalProfit,
                 averageMargin
             });
-
         } catch (error) {
             console.error('외부 발주 내역 조회 오류:', error);
         } finally {
@@ -99,15 +100,18 @@ export function useOutsourceOrders() {
         }
     }, [user, fetchOutsourceOrders]);
 
-    const updateOutsourceStatus = async (orderId: string, status: Order['outsourceInfo']['status']) => {
+    const updateOutsourceStatus = async (orderId: string, status: string) => {
         try {
-            const orderRef = doc(db, 'orders', orderId);
-            await updateDoc(orderRef, {
-                'outsourceInfo.status': status,
-                'outsourceInfo.updatedAt': serverTimestamp()
-            });
+            const { error } = await supabase.from('orders').update({
+                'outsource_info': {
+                    ...(await supabase.from('orders').select('outsource_info').eq('id', orderId).single()).data?.outsource_info,
+                    status: status,
+                    updatedAt: new Date().toISOString()
+                }
+            }).eq('id', orderId);
 
-            // 발주 취소 시 간편지출 내역 자동 삭제
+            if (error) throw error;
+
             if (status === 'canceled') {
                 await deleteExpenseByOrderId(orderId);
             }
@@ -120,10 +124,6 @@ export function useOutsourceOrders() {
     };
 
     return {
-        orders,
-        loading,
-        stats,
-        fetchOutsourceOrders,
-        updateOutsourceStatus
+        orders, loading, stats, fetchOutsourceOrders, updateOutsourceStatus
     };
 }

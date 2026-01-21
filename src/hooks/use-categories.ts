@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from 'react';
-import { collection, getDocs, doc, setDoc, addDoc, serverTimestamp, query, where, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { useToast } from './use-toast';
 
 export interface Category {
@@ -12,26 +11,29 @@ export interface Category {
   createdAt: string;
 }
 
-// Supabase 동기화
-
-
 export function useCategories() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+
+  const mapRowToCategory = (row: any): Category => ({
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    parentCategory: row.parent_category,
+    createdAt: row.created_at
+  });
+
   const fetchCategories = useCallback(async () => {
     try {
       setLoading(true);
-      const categoriesCollection = collection(db, 'categories');
-      const categoriesData = (await getDocs(categoriesCollection)).docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
-        } as Category;
-      });
-      setCategories(categoriesData);
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      setCategories((data || []).map(mapRowToCategory));
     } catch (error) {
       console.error("Error fetching categories: ", error);
       toast({
@@ -43,30 +45,33 @@ export function useCategories() {
       setLoading(false);
     }
   }, [toast]);
+
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
+
   const addCategory = async (name: string, type: 'main' | 'mid', parentCategory?: string) => {
     try {
-      // 중복 확인
-      const existingQuery = query(
-        collection(db, 'categories'),
-        where('name', '==', name),
-        where('type', '==', type)
-      );
-      const existingSnapshot = await getDocs(existingQuery);
-      if (!existingSnapshot.empty) {
-        return false; // 이미 존재함
-      }
-      const categoryData = {
-        name,
-        type,
-        parentCategory,
-        createdAt: serverTimestamp(),
-      };
-      const docRef = await addDoc(collection(db, 'categories'), categoryData);
+      const { data: existing } = await supabase
+        .from('categories')
+        .select('id')
+        .eq('name', name)
+        .eq('type', type)
+        .maybeSingle();
 
+      if (existing) return false;
 
+      const { error } = await supabase
+        .from('categories')
+        .insert([{
+          id: crypto.randomUUID(),
+          name,
+          type,
+          parent_category: parentCategory,
+          created_at: new Date().toISOString()
+        }]);
+
+      if (error) throw error;
       await fetchCategories();
       return true;
     } catch (error) {
@@ -75,15 +80,18 @@ export function useCategories() {
       return false;
     }
   };
+
   const getMainCategories = () => {
     return categories.filter(cat => cat.type === 'main').map(cat => cat.name);
   };
+
   const getMidCategories = (mainCategory?: string) => {
     if (mainCategory) {
       return categories.filter(cat => cat.type === 'mid' && cat.parentCategory === mainCategory).map(cat => cat.name);
     }
     return categories.filter(cat => cat.type === 'mid').map(cat => cat.name);
   };
+
   return {
     categories,
     loading,

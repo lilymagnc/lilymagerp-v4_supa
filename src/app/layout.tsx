@@ -1,6 +1,7 @@
 
 import type { Metadata } from "next";
 import { AuthProvider } from "@/context/auth-context";
+import { SyncBridgeProvider } from "@/components/sync-bridge-provider";
 import { Toaster } from "@/components/ui/toaster";
 import "./globals.css";
 
@@ -24,9 +25,11 @@ export default function RootLayout({
         <script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js" async></script>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
-      <body className="font-body antialiased min-h-screen bg-background text-foreground">
+      <body className="font-body antialiased min-h-screen bg-background text-foreground" suppressHydrationWarning>
         <AuthProvider>
+          {/* <SyncBridgeProvider> */}
           {children}
+          {/* </SyncBridgeProvider> */}
           <Toaster />
         </AuthProvider>
       </body>

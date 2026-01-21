@@ -35,6 +35,8 @@ const productSchema = z.object({
   size: z.string().min(1, "규격을 입력해주세요."),
   color: z.string().min(1, "색상을 입력해주세요."),
   branch: z.string().min(1, "지점을 선택해주세요."),
+  code: z.string().optional(),
+  category: z.string().optional(),
   stock: z.coerce.number().min(0, "재고는 0 이상이어야 합니다.").default(0),
 })
 export type ProductFormValues = z.infer<typeof productSchema>
@@ -55,6 +57,8 @@ const defaultValues: ProductFormValues = {
   supplier: "",
   size: "",
   color: "",
+  code: "",
+  category: "",
   branch: "",
   stock: 0,
 }
@@ -76,7 +80,7 @@ export function ProductForm({ isOpen, onOpenChange, onSubmit, product, initialDa
     defaultValues,
   })
   useEffect(() => {
-    if(isOpen) {
+    if (isOpen) {
       form.reset(product || defaultValues);
     }
   }, [isOpen, product, form]);
@@ -92,7 +96,7 @@ export function ProductForm({ isOpen, onOpenChange, onSubmit, product, initialDa
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 py-4">
-             <FormField
+            <FormField
               control={form.control}
               name="name"
               render={({ field }) => (
@@ -105,6 +109,35 @@ export function ProductForm({ isOpen, onOpenChange, onSubmit, product, initialDa
                 </FormItem>
               )}
             />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="code"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>상품 코드 (SKU)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="LM-001" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="category"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>상세 카테고리</FormLabel>
+                    <FormControl>
+                      <Input placeholder="장미/계절꽃" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -128,13 +161,13 @@ export function ProductForm({ isOpen, onOpenChange, onSubmit, product, initialDa
                   </FormItem>
                 )}
               />
-               <FormField
+              <FormField
                 control={form.control}
                 name="midCategory"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>중분류</FormLabel>
-                     <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger><SelectValue placeholder="중분류 선택" /></SelectTrigger>
                       </FormControl>
@@ -151,7 +184,7 @@ export function ProductForm({ isOpen, onOpenChange, onSubmit, product, initialDa
                 )}
               />
             </div>
-             <FormField
+            <FormField
               control={form.control}
               name="price"
               render={({ field }) => (
@@ -165,32 +198,32 @@ export function ProductForm({ isOpen, onOpenChange, onSubmit, product, initialDa
               )}
             />
             <div className="grid grid-cols-2 gap-4">
-                <FormField
-                    control={form.control}
-                    name="size"
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>규격</FormLabel>
-                        <FormControl>
-                        <Input placeholder="S, M, L / 95, 100" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="color"
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>색상</FormLabel>
-                        <FormControl>
-                        <Input placeholder="White, Black" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                />
+              <FormField
+                control={form.control}
+                name="size"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>규격</FormLabel>
+                    <FormControl>
+                      <Input placeholder="S, M, L / 95, 100" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="color"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>색상</FormLabel>
+                    <FormControl>
+                      <Input placeholder="White, Black" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
             <FormField
               control={form.control}
@@ -213,7 +246,7 @@ export function ProductForm({ isOpen, onOpenChange, onSubmit, product, initialDa
                 </FormItem>
               )}
             />
-             <FormField
+            <FormField
               control={form.control}
               name="branch"
               render={({ field }) => (
@@ -233,7 +266,7 @@ export function ProductForm({ isOpen, onOpenChange, onSubmit, product, initialDa
                 </FormItem>
               )}
             />
-             {product && (
+            {product && (
               <FormField
                 control={form.control}
                 name="stock"
@@ -249,10 +282,10 @@ export function ProductForm({ isOpen, onOpenChange, onSubmit, product, initialDa
               />
             )}
             <DialogFooter className="pt-4">
-                <DialogClose asChild>
-                    <Button type="button" variant="secondary">취소</Button>
-                </DialogClose>
-                <Button type="submit">저장</Button>
+              <DialogClose asChild>
+                <Button type="button" variant="secondary">취소</Button>
+              </DialogClose>
+              <Button type="submit">저장</Button>
             </DialogFooter>
           </form>
         </Form>
