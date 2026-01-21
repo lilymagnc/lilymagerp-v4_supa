@@ -37,16 +37,8 @@ import { db } from "@/lib/firebase";
 import { useNotifications } from "@/hooks/use-notifications";
 import { useDisplayBoard } from "@/hooks/use-display-board";
 import { useCalendar } from "@/hooks/use-calendar";
+import { parseDate } from "@/lib/date-utils";
 
-// Helper for safe date parsing
-const parseDate = (date: any): Date | null => {
-  if (!date) return null;
-  if (date instanceof Date) return date;
-  if (typeof date === 'string') return new Date(date);
-  if (typeof date.toDate === 'function') return date.toDate();
-  if (date.seconds) return new Date(date.seconds * 1000);
-  return null;
-};
 
 export default function OrdersPage() {
   const { orders, loading, fetchOrders, fetchAllOrders, updateOrderStatus, updatePaymentStatus, cancelOrder, deleteOrder } = useOrders();
@@ -631,8 +623,8 @@ export default function OrdersPage() {
 
       // 승인 날짜 확인
       if (order.transferInfo?.acceptedAt) {
-        const acceptedDate = (order.transferInfo.acceptedAt as Timestamp).toDate();
-        return acceptedDate >= threeDaysAgo;
+        const acceptedDate = parseDate(order.transferInfo.acceptedAt);
+        return acceptedDate && acceptedDate >= threeDaysAgo;
       }
       return false;
     });

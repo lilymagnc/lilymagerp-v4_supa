@@ -24,6 +24,7 @@ import { OrderDetailDialog } from "../components/order-detail-dialog";
 import { exportDailySettlementToExcel } from "@/lib/excel-export";
 import { SimpleExpenseCategory, SIMPLE_EXPENSE_CATEGORY_LABELS } from "@/types/simple-expense";
 import { DailySettlementRecord } from "@/types/daily-settlement";
+import { parseDate } from "@/lib/date-utils";
 
 export default function DailySettlementPage() {
     const { orders, fetchOrdersForSettlement, loading: ordersLoading } = useOrders();
@@ -55,7 +56,21 @@ export default function DailySettlementPage() {
     // 비용 및 정산 데이터 불러오기 (최적화됨)
     useEffect(() => {
         const loadData = async () => {
-            if (!currentBranchId || currentTargetBranch === 'all') return;
+            console.log('🔍 Settlement Load Check:', {
+                currentBranchId,
+                currentTargetBranch,
+                reportDate,
+                user: user?.email,
+                userBranch,
+                isAdmin
+            });
+
+            if (!currentBranchId || currentTargetBranch === 'all') {
+                console.warn('⚠️ Skipping data load:', { currentBranchId, currentTargetBranch });
+                return;
+            }
+
+            console.log('✅ Loading settlement data...');
 
             const dateFrom = new Date(reportDate + 'T00:00:00');
             const dateTo = new Date(reportDate + 'T23:59:59');
@@ -72,6 +87,12 @@ export default function DailySettlementPage() {
                 }),
                 fetchOrdersForSettlement(reportDate)
             ]);
+
+            console.log('📊 Data loaded:', {
+                settlement: settlementResult,
+                prevSettlement: prevSettlementResult,
+                ordersCount: _ordersResult?.length
+            });
 
             setSettlementRecord(settlementResult);
             setVaultDeposit(settlementResult?.vaultDeposit || 0);
@@ -94,7 +115,8 @@ export default function DailySettlementPage() {
 
         // 해당 일자의 주문 필터링
         const dailyOrders = orders.filter(order => {
-            const orderDate = order.orderDate instanceof Date ? order.orderDate : order.orderDate.toDate();
+            const orderDate = parseDate(order.orderDate);
+            if (!orderDate) return false;
             const isInDate = orderDate >= from && orderDate <= to;
             const isCanceled = order.status === 'canceled';
 
@@ -113,27 +135,23 @@ export default function DailySettlementPage() {
 
         // 시간 내림차순 정렬
         dailyOrders.sort((a, b) => {
-            const dateA = (a.orderDate as any)?.toDate ? (a.orderDate as any).toDate() : new Date(a.orderDate as any);
-            const dateB = (b.orderDate as any)?.toDate ? (b.orderDate as any).toDate() : new Date(b.orderDate as any);
+            const dateA = parseDate(a.orderDate) || new Date(0);
+            const dateB = parseDate(b.orderDate) || new Date(0);
             return dateB.getTime() - dateA.getTime();
         });
 
         // 2-1. 이월 주문 결제 필터링 (주문은 예전인데 오늘 결제 완료된 건)
         const previousOrderPayments = orders.filter(order => {
-            const orderDate = order.orderDate instanceof Date ? order.orderDate : order.orderDate.toDate();
+            const orderDate = parseDate(order.orderDate);
+            if (!orderDate) return false;
             const isBeforeToday = orderDate < from;
             const isCanceled = order.status === 'canceled';
 
             if (!isBeforeToday || isCanceled) return false;
 
             // 결제 완료일 확인 (payment.completedAt 또는 payment.secondPaymentDate)
-            const completedAt = (order.payment as any).completedAt instanceof Timestamp
-                ? (order.payment as any).completedAt.toDate()
-                : ((order.payment as any).completedAt ? new Date((order.payment as any).completedAt) : null);
-
-            const secondPaymentDate = (order.payment as any).secondPaymentDate instanceof Timestamp
-                ? (order.payment as any).secondPaymentDate.toDate()
-                : ((order.payment as any).secondPaymentDate ? new Date((order.payment as any).secondPaymentDate) : null);
+            const completedAt = parseDate((order.payment as any).completedAt);
+            const secondPaymentDate = parseDate((order.payment as any).secondPaymentDate);
 
             const isCompletedToday = completedAt && completedAt >= from && completedAt <= to;
             const isSecondPaidToday = secondPaymentDate && secondPaymentDate >= from && secondPaymentDate <= to;
@@ -195,9 +213,7 @@ export default function DailySettlementPage() {
             if (!order.actualDeliveryCostCash || processedCashOrderIds.has(order.id)) return;
             if (!isTargetBranchOrder(order)) return;
 
-            const updatedAt = (order.deliveryCostUpdatedAt as any)?.toDate
-                ? (order.deliveryCostUpdatedAt as any).toDate()
-                : (order.deliveryCostUpdatedAt instanceof Date ? order.deliveryCostUpdatedAt : null);
+            const updatedAt = parseDate(order.deliveryCostUpdatedAt);
 
             if (updatedAt && format(updatedAt, 'yyyy-MM-dd') === reportDate) {
                 deliveryCostCashToday += Number(order.actualDeliveryCostCash);
@@ -233,13 +249,8 @@ export default function DailySettlementPage() {
             const isPaidGlobal = order.payment?.status === 'paid' || order.payment?.status === 'completed';
 
             // 결제 시점 확인
-            const completedAt = (order.payment as any).completedAt instanceof Timestamp
-                ? (order.payment as any).completedAt.toDate()
-                : ((order.payment as any).completedAt ? new Date((order.payment as any).completedAt) : null);
-
-            const secondPaymentDate = (order.payment as any).secondPaymentDate instanceof Timestamp
-                ? (order.payment as any).secondPaymentDate.toDate()
-                : ((order.payment as any).secondPaymentDate ? new Date((order.payment as any).secondPaymentDate) : null);
+            const completedAt = parseDate((order.payment as any).completedAt);
+            const secondPaymentDate = parseDate((order.payment as any).secondPaymentDate);
 
             // 유효 결제일: to (오늘의 마감시간)보다 작거나 같아야 함
             let isPaidEffective = false;
@@ -383,8 +394,8 @@ export default function DailySettlementPage() {
     const summaryExpense = useMemo(() => {
         // useSimpleExpenses에서 fetch한 expenses 필터링
         const filtered = expenses.filter(e => {
-            const expenseDate = e.date instanceof Date ? e.date : e.date.toDate();
-            // const reportDateObj = new Date(reportDate + 'T00:00:00'); // Unused
+            const expenseDate = parseDate(e.date);
+            if (!expenseDate) return false;
             return format(expenseDate, 'yyyy-MM-dd') === reportDate;
         });
 
@@ -425,7 +436,8 @@ export default function DailySettlementPage() {
         // 배송비 현금 지급액 집계: 주문 데이터 기반 + 간편지출(현금) 데이터 기반 통합
         // 지출 내역 중 '운송비'이면서 '현금' 결제인 항목들 합산
         const transportCashExpenses = expenses.filter(e => {
-            const expenseDate = e.date instanceof Date ? e.date : e.date.toDate();
+            const expenseDate = parseDate(e.date);
+            if (!expenseDate) return false;
             const isInDate = format(expenseDate, 'yyyy-MM-dd') === reportDate;
             const isTransport = e.category === SimpleExpenseCategory.TRANSPORT;
             const isCash = e.paymentMethod === 'cash' || e.description.includes('현금');
@@ -440,7 +452,8 @@ export default function DailySettlementPage() {
         // 기타 현금 지출 (운송비 제외, 순수 현금/계좌이체 아닌 현금) 집계
         // 조건: 날짜 일치 AND 운송비 아님 AND (결제수단이 'cash' OR 설명에 '현금' 포함)
         const otherCashExpensesList = expenses.filter(e => {
-            const expenseDate = e.date instanceof Date ? e.date : e.date.toDate();
+            const expenseDate = parseDate(e.date);
+            if (!expenseDate) return false;
             const isInDate = format(expenseDate, 'yyyy-MM-dd') === reportDate;
             const isNotTransport = e.category !== SimpleExpenseCategory.TRANSPORT;
             const isCash = e.paymentMethod === 'cash' || e.description.includes('현금');
@@ -851,7 +864,7 @@ export default function DailySettlementPage() {
                                         }
                                     }
 
-                                    const orderDate = order.orderDate instanceof Date ? order.orderDate : order.orderDate.toDate();
+                                    const orderDate = parseDate(order.orderDate) || new Date();
 
                                     return (
                                         <TableRow

@@ -235,18 +235,12 @@ export function useOrders() {
   const fetchOrdersForSettlement = useCallback(async (targetDateStr: string) => {
     try {
       setLoading(true);
-      const targetDate = new Date(targetDateStr);
-      const start = startOfDay(targetDate).toISOString();
-      const end = new Date(targetDate);
-      end.setHours(23, 59, 59, 999);
-      const endStr = end.toISOString();
 
+      // Fetch all orders (we'll filter in memory for more flexibility)
       const { data, error } = await supabase
         .from('orders')
         .select('*')
-        .or(`order_date.gte.${start},order_date.lte.${endStr},` +
-          `payment->>completedAt.gte.${start},payment->>completedAt.lte.${endStr},` +
-          `payment->>secondPaymentDate.gte.${start},payment->>secondPaymentDate.lte.${endStr}`);
+        .order('order_date', { ascending: false });
 
       if (error) throw error;
       const ordersData = (data || []).map(mapRowToOrder);

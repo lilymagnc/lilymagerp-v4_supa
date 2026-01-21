@@ -19,16 +19,8 @@ import { ko } from "date-fns/locale";
 import { getWeatherInfo, getWeatherEmoji, WeatherInfo } from "@/lib/weather-service";
 import BulletinBoard from '@/components/dashboard/bulletin-board';
 import { fetchDailyStats } from "@/lib/stats-utils";
-
-// Helper for safe date parsing
-const parseDate = (date: any): Date | null => {
-  if (!date) return null;
-  if (date instanceof Date) return date;
-  if (typeof date === 'string') return new Date(date);
-  if (typeof date.toDate === 'function') return date.toDate();
-  if (date.seconds) return new Date(date.seconds * 1000);
-  return null;
-}; interface DashboardStats {
+import { parseDate } from "@/lib/date-utils";
+interface DashboardStats {
   totalRevenue: number;
   newCustomers: number;
   weeklyOrders: number;
@@ -117,10 +109,10 @@ function calculateWeeklyStats(statsData: any[], startDate: string, endDate: stri
     }
 
     if (isAllBranches) {
-      weeklyMap[weekKey].totalSales += day.totalRevenue || 0;
+      weeklyMap[weekKey].totalSales += day.totalSettledAmount || 0;
       if (day.branches) {
         Object.entries(day.branches).forEach(([bName, bStat]: [string, any]) => {
-          const amount = bStat.revenue || 0;
+          const amount = bStat.settledAmount || 0;
           weeklyMap[weekKey].branchSales[bName] = (weeklyMap[weekKey].branchSales[bName] || 0) + amount;
           weeklyMap[weekKey][bName] = (weeklyMap[weekKey][bName] || 0) + amount;
         });
@@ -128,7 +120,7 @@ function calculateWeeklyStats(statsData: any[], startDate: string, endDate: stri
     } else if (branchFilter) {
       const bKey = branchFilter.replace(/\./g, '_');
       const bStat = day.branches?.[bKey];
-      weeklyMap[weekKey].sales += bStat?.revenue || 0;
+      weeklyMap[weekKey].sales += bStat?.settledAmount || 0;
     }
   });
 
@@ -154,11 +146,11 @@ function calculateMonthlyStats(statsData: any[], startDate: string, endDate: str
     }
 
     if (isAllBranches) {
-      monthlyMap[monthKey].totalSales += day.totalRevenue || 0;
+      monthlyMap[monthKey].totalSales += day.totalSettledAmount || 0;
       if (day.branches) {
         Object.entries(day.branches).forEach(([bName, bStat]: [string, any]) => {
           if (!monthlyMap[monthKey].branchSales) monthlyMap[monthKey].branchSales = {};
-          const amount = bStat.revenue || 0;
+          const amount = bStat.settledAmount || 0;
           monthlyMap[monthKey].branchSales[bName] = (monthlyMap[monthKey].branchSales[bName] || 0) + amount;
           monthlyMap[monthKey][bName] = (monthlyMap[monthKey][bName] || 0) + amount;
         });
@@ -166,7 +158,7 @@ function calculateMonthlyStats(statsData: any[], startDate: string, endDate: str
     } else if (branchFilter) {
       const bKey = branchFilter.replace(/\./g, '_');
       const bStat = day.branches?.[bKey];
-      monthlyMap[monthKey].sales += bStat?.revenue || 0;
+      monthlyMap[monthKey].sales += bStat?.settledAmount || 0;
     }
   });
 
@@ -499,13 +491,13 @@ export default function DashboardPage() {
               if (branchFilter) {
                 const branchStat = day.branches?.[branchFilter.replace(/\./g, '_')];
                 if (branchStat) {
-                  if (isThisYear) totalRevenue += branchStat.revenue || 0;
+                  if (isThisYear) totalRevenue += branchStat.settledAmount || 0;
                   if (isThisWeek) {
                     weeklyOrders += branchStat.orderCount || 0;
                   }
                 }
               } else {
-                if (isThisYear) totalRevenue += day.totalRevenue || 0;
+                if (isThisYear) totalRevenue += day.totalSettledAmount || 0;
                 if (isThisWeek) {
                   weeklyOrders += day.totalOrderCount || 0;
                 }
@@ -532,21 +524,21 @@ export default function DashboardPage() {
                 if (day.branches) {
                   Object.entries(day.branches).forEach(([bName, bStat]: [string, any]) => {
                     const originalName = bName.replace(/_/g, '.');
-                    flattenedBranches[originalName] = bStat.revenue || 0;
+                    flattenedBranches[originalName] = bStat.settledAmount || 0;
                   });
                 }
                 return {
                   date: label,
-                  totalSales: day.totalRevenue || 0,
+                  totalSales: day.totalSettledAmount || 0,
                   branchSales: day.branches,
                   ...flattenedBranches
                 };
               } else {
                 const bName = branchFilter || userBranch;
-                const bStat = day.branches?.[bName?.replace(/\./g, '_')] || { revenue: 0 };
+                const bStat = day.branches?.[bName?.replace(/\./g, '_')] || { settledAmount: 0 };
                 return {
                   date: label,
-                  sales: bStat.revenue || 0
+                  sales: bStat.settledAmount || 0
                 };
               }
             });

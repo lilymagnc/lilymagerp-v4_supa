@@ -3,12 +3,15 @@ import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { RefreshCw, Play } from "lucide-react";
+import { RefreshCw, Play, Database } from "lucide-react";
 import { supabase } from '@/lib/supabase';
+import { syncFirebaseToSupabase } from '@/lib/firebase-sync';
 
 export default function RebuildStats() {
     const [loading, setLoading] = useState(false);
+    const [syncLoading, setSyncLoading] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0, status: 'idle' });
+    const [syncProgress, setSyncProgress] = useState({ collection: '', total: 0, synced: 0, errors: 0 });
     const { toast } = useToast();
 
     const handleRebuild = async () => {
@@ -161,6 +164,39 @@ export default function RebuildStats() {
         }
     };
 
+    const handleFirebaseSync = async () => {
+        setSyncLoading(true);
+        setSyncProgress({ collection: '', total: 0, synced: 0, errors: 0 });
+
+        toast({
+            title: "Firebase 동기화 시작",
+            description: "Firebase 데이터를 Supabase로 동기화하고 있습니다..."
+        });
+
+        try {
+            const result = await syncFirebaseToSupabase((progress) => {
+                setSyncProgress(progress);
+            });
+
+            if (result.success) {
+                toast({
+                    title: "동기화 완료",
+                    description: "Firebase 데이터가 성공적으로 Supabase로 동기화되었습니다.",
+                });
+                console.log("Sync details:", result.details);
+            }
+        } catch (error: any) {
+            console.error("Firebase sync error:", error);
+            toast({
+                variant: "destructive",
+                title: "동기화 오류",
+                description: `오류: ${error.message || JSON.stringify(error)}`,
+            });
+        } finally {
+            setSyncLoading(false);
+        }
+    };
+
     return (
         <Card>
             <CardHeader>
@@ -225,6 +261,55 @@ export default function RebuildStats() {
                     <p>• 이 작업은 브라우저에서 실행되므로 완료될 때까지 창을 닫지 마세요.</p>
                     <p>• 데이터 양에 따라 시간이 소요될 수 있습니다.</p>
                 </div>
+
+                {/* Firebase 동기화 섹션 */}
+                <div className="flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div>
+                        <h4 className="font-medium flex items-center gap-2">
+                            <Database className="h-4 w-4" />
+                            Firebase → Supabase 데이터 동기화
+                        </h4>
+                        <p className="text-sm text-muted-foreground">
+                            Firebase의 모든 데이터를 Supabase로 복사합니다.
+                        </p>
+                    </div>
+                    <Button
+                        onClick={handleFirebaseSync}
+                        disabled={syncLoading}
+                        variant="outline"
+                        className="min-w-[120px]"
+                    >
+                        {syncLoading ? (
+                            <>
+                                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                                동기화 중...
+                            </>
+                        ) : (
+                            <>
+                                <Database className="mr-2 h-4 w-4" />
+                                동기화 시작
+                            </>
+                        )}
+                    </Button>
+                </div>
+
+                {syncProgress.total > 0 && (
+                    <div className="space-y-2 p-4 bg-muted/30 rounded-lg">
+                        <div className="flex justify-between text-sm">
+                            <span className="font-medium">{syncProgress.collection}</span>
+                            <span className="text-muted-foreground">
+                                {syncProgress.synced} / {syncProgress.total}
+                                {syncProgress.errors > 0 && ` (오류: ${syncProgress.errors})`}
+                            </span>
+                        </div>
+                        <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-blue-500 transition-all duration-300"
+                                style={{ width: `${(syncProgress.synced / syncProgress.total) * 100}%` }}
+                            />
+                        </div>
+                    </div>
+                )}
             </CardContent>
         </Card>
     );

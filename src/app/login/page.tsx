@@ -138,8 +138,14 @@ export default function LoginPage() {
               </div>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              로그인
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  로그인
+                </>
+              ) : (
+                '로그인'
+              )}
             </Button>
           </form>
         </CardContent>

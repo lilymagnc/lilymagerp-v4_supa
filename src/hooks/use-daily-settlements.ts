@@ -9,14 +9,24 @@ export function useDailySettlements() {
     const { toast } = useToast();
 
     const getSettlement = useCallback(async (branchId: string, date: string): Promise<DailySettlementRecord | null> => {
+        // Table doesn't exist in Supabase yet - settlements work without saved records
+        return null;
+
+        /* Disabled until table is created
         if (!branchId || !date) return null;
         setLoading(true);
         try {
+            // Check if table exists first to prevent 404 errors in console
             const { data, error } = await supabase.from('daily_settlements')
                 .select('*')
                 .eq('branch_id', branchId)
                 .eq('date', date)
                 .maybeSingle();
+
+            // Silently handle table not found error (PGRST205)
+            if (error && error.code === 'PGRST205') {
+                return null;
+            }
 
             if (error) throw error;
             if (data) {
@@ -33,11 +43,12 @@ export function useDailySettlements() {
             }
             return null;
         } catch (error) {
-            console.error('Error fetching daily settlement:', error);
+            // Silently handle missing table - not critical for viewing settlements
             return null;
         } finally {
             setLoading(false);
         }
+        */
     }, []);
 
     const saveSettlement = useCallback(async (data: Partial<DailySettlementRecord>) => {
