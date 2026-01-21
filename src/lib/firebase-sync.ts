@@ -56,7 +56,11 @@ export async function syncFirebaseToSupabase(
                     // Skip initialization markers
                     if (id === '_initialized') continue;
 
-                    const payload: any = { id };
+                    // Start with doc ID only for specific tables
+                    const payload: any = {};
+                    if (cfg.supabase !== 'daily_stats') {
+                        payload.id = id;
+                    }
 
                     // Map data based on collection type
                     if (cfg.supabase === 'orders') {
