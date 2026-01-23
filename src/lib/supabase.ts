@@ -1,16 +1,20 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// v4-supa-fix-v3: Extreme defensive check for Vercel build
+const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const rawKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn('Supabase URL or Anon Key is missing. Please check your environment variables.');
+const isValid = (val: string | undefined): val is string => {
+    return !!val && val !== 'undefined' && val !== 'null' && val.length > 0;
+};
+
+if (!isValid(rawUrl) || !isValid(rawKey)) {
+    console.warn('⚠️ [v4-supa-v3] Supabase 환경 변수가 누락되었습니다. 빌드를 위해 임시 값을 사용합니다.');
 }
 
-// Vercel 빌드 시 에러를 방지하기 위해 URL이 없을 경우 placeholder를 사용합니다.
-// 실제 런타임에서는 .env 또는 Vercel 설정의 값이 사용됩니다.
 export const supabase = createClient(
-    supabaseUrl || 'https://placeholder.supabase.co',
-    supabaseAnonKey || 'placeholder'
+    isValid(rawUrl) ? rawUrl : 'https://placeholder.supabase.co',
+    isValid(rawKey) ? rawKey : 'placeholder'
 );
+
 
