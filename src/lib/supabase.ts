@@ -1,14 +1,20 @@
 import { createClient } from '@supabase/supabase-js';
 
-// v4-supa-final-fix: Ensure build passes by providing a valid URL format even if env vars are missing
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://xphvycuaffifjgjaiqxe.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy-key-for-build';
+// v4-supa-lazy-load: 빌드 타임의 URL 유효성 검사를 완전히 우회하기 위해 지연 초기화(Lazy Init) 방식을 사용합니다.
+let supabaseInstance: ReturnType<typeof createClient> | null = null;
 
-if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-    console.warn('⚠️ [v4-supa] NEXT_PUBLIC_SUPABASE_URL is missing. Using fallback for build.');
-}
+export const supabase = new Proxy({} as ReturnType<typeof createClient>, {
+    get(_, prop) {
+        if (!supabaseInstance) {
+            const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim() || 'https://xphvycuaffifjgjaiqxe.supabase.co';
+            const supabaseAnonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim() || 'dummy-key';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+            supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
+        }
+        return (supabaseInstance as any)[prop];
+    }
+});
+
 
 
 
