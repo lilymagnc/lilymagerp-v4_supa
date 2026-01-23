@@ -2120,6 +2120,7 @@ export default function OrdersPage() {
             isOpen={isOrderDetailDialogOpen}
             onOpenChange={setIsOrderDetailDialogOpen}
             order={selectedOrderForDetail}
+            onPrintMessage={handleMessagePrintClick}
           />
         )
       }

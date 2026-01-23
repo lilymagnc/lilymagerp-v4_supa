@@ -164,24 +164,24 @@ export default function RebuildStats() {
         }
     };
 
-    const handleFirebaseSync = async () => {
+    const handleFirebaseSync = async (collectionName?: string) => {
         setSyncLoading(true);
         setSyncProgress({ collection: '', total: 0, synced: 0, errors: 0 });
 
         toast({
-            title: "Firebase 동기화 시작",
+            title: collectionName ? `${collectionName} 동기화 시작` : "Firebase 전체 동기화 시작",
             description: "Firebase 데이터를 Supabase로 동기화하고 있습니다..."
         });
 
         try {
             const result = await syncFirebaseToSupabase((progress) => {
                 setSyncProgress(progress);
-            });
+            }, collectionName);
 
             if (result.success) {
                 toast({
                     title: "동기화 완료",
-                    description: "Firebase 데이터가 성공적으로 Supabase로 동기화되었습니다.",
+                    description: collectionName ? `${collectionName} 데이터가 성공적으로 동기화되었습니다.` : "Firebase 데이터가 성공적으로 Supabase로 동기화되었습니다.",
                 });
                 console.log("Sync details:", result.details);
             }
@@ -196,6 +196,19 @@ export default function RebuildStats() {
             setSyncLoading(false);
         }
     };
+
+    const syncItems = [
+        { firebase: 'orders', label: '주문' },
+        { firebase: 'customers', label: '고객' },
+        { firebase: 'products', label: '상품' },
+        { firebase: 'branches', label: '지점' },
+        { firebase: 'materials', label: '자재' },
+        { firebase: 'simpleExpenses', label: '간편지출' },
+        { firebase: 'userRoles', label: '권한' },
+        { firebase: 'orderTransfers', label: '주문이관' },
+        { firebase: 'materialRequests', label: '자재요청' },
+        { firebase: 'dailyStats', label: '일별통계' },
+    ];
 
     return (
         <Card>
@@ -263,34 +276,51 @@ export default function RebuildStats() {
                 </div>
 
                 {/* Firebase 동기화 섹션 */}
-                <div className="flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                    <div>
-                        <h4 className="font-medium flex items-center gap-2">
-                            <Database className="h-4 w-4" />
-                            Firebase → Supabase 데이터 동기화
-                        </h4>
-                        <p className="text-sm text-muted-foreground">
-                            Firebase의 모든 데이터를 Supabase로 복사합니다.
-                        </p>
+                <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h4 className="font-medium flex items-center gap-2">
+                                <Database className="h-4 w-4" />
+                                Firebase → Supabase 데이터 동기화
+                            </h4>
+                            <p className="text-sm text-muted-foreground">
+                                Firebase의 모든 데이터를 Supabase로 복사합니다.
+                            </p>
+                        </div>
+                        <Button
+                            onClick={() => handleFirebaseSync()}
+                            disabled={syncLoading}
+                            variant="default"
+                            className="min-w-[120px] bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                            {syncLoading ? (
+                                <>
+                                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                                    동기화 중...
+                                </>
+                            ) : (
+                                <>
+                                    <Database className="mr-2 h-4 w-4" />
+                                    전체 동기화
+                                </>
+                            )}
+                        </Button>
                     </div>
-                    <Button
-                        onClick={handleFirebaseSync}
-                        disabled={syncLoading}
-                        variant="outline"
-                        className="min-w-[120px]"
-                    >
-                        {syncLoading ? (
-                            <>
-                                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                                동기화 중...
-                            </>
-                        ) : (
-                            <>
-                                <Database className="mr-2 h-4 w-4" />
-                                동기화 시작
-                            </>
-                        )}
-                    </Button>
+
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 pt-2 border-t border-blue-100 dark:border-blue-900">
+                        {syncItems.map((item) => (
+                            <Button
+                                key={item.firebase}
+                                onClick={() => handleFirebaseSync(item.firebase)}
+                                disabled={syncLoading}
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-9"
+                            >
+                                {item.label} 동기화
+                            </Button>
+                        ))}
+                    </div>
                 </div>
 
                 {syncProgress.total > 0 && (

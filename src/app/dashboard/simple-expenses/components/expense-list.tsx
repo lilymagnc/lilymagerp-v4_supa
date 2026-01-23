@@ -699,7 +699,14 @@ export function ExpenseList({
                         </TableCell>
                       )}
                       <TableCell>
-                        {expense.date?.toDate().toLocaleDateString() || '-'}
+                        {(() => {
+                          const d = expense.date;
+                          if (!d) return '-';
+                          if (typeof d.toDate === 'function') return d.toDate().toLocaleDateString();
+                          if (d instanceof Date) return d.toLocaleDateString();
+                          if (typeof d === 'string') return new Date(d).toLocaleDateString();
+                          return '-';
+                        })()}
                       </TableCell>
                       <TableCell>
                         <div className="max-w-[200px] truncate" title={expense.supplier}>

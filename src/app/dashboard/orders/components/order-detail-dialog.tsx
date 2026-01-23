@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,14 +24,25 @@ import {
   Home,
   ArrowRightLeft,
   DollarSign,
-  ExternalLink
+  ExternalLink,
+  Printer
 } from "lucide-react";
 interface OrderDetailDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   order: Order | null;
+  onPrintMessage?: (order: Order) => void;
 }
-export function OrderDetailDialog({ isOpen, onOpenChange, order }: OrderDetailDialogProps) {
+
+const toLocalDate = (dateVal: any): Date => {
+  if (!dateVal) return new Date();
+  if (dateVal instanceof Timestamp) return dateVal.toDate();
+  if (typeof dateVal === 'string') return new Date(dateVal);
+  if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
+  return new Date(dateVal);
+};
+
+export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage }: OrderDetailDialogProps) {
   if (!order) return null;
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -75,7 +87,7 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order }: OrderDetailDi
             <Badge className="bg-blue-500 text-white">완결</Badge>
             {completedAt && (
               <span className="text-xs text-gray-500">
-                {format((completedAt as Timestamp).toDate(), 'MM/dd HH:mm')}
+                {format(toLocalDate(completedAt), 'MM/dd HH:mm')}
               </span>
             )}
           </div>
@@ -175,7 +187,7 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order }: OrderDetailDi
                     <span className="text-sm font-medium">주문일시</span>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    {order.orderDate && format((order.orderDate as Timestamp).toDate(), 'yyyy-MM-dd HH:mm')}
+                    {order.orderDate && format(toLocalDate(order.orderDate), 'yyyy-MM-dd HH:mm')}
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -375,9 +387,22 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order }: OrderDetailDi
           {order.message && (
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4" />
-                  메시지 정보
+                <CardTitle className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4" />
+                    메시지 정보
+                  </div>
+                  {onPrintMessage && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-2"
+                      onClick={() => onPrintMessage(order)}
+                    >
+                      <Printer className="h-4 w-4" />
+                      메시지 인쇄
+                    </Button>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -391,11 +416,17 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order }: OrderDetailDi
                   </div>
                 </div>
                 {/* 메시지 내용에서 보내는 사람 분리 */}
-                {order.message.content && (
+                {(order.message.content || (order.message as any).sender) && (
                   (() => {
-                    const messageParts = order.message.content.split('\n---\n');
-                    const messageContent = messageParts[0];
-                    const senderName = messageParts.length > 1 ? messageParts[1] : null;
+                    let messageContent = order.message.content || '';
+                    let senderName = (order.message as any).sender || null;
+
+                    // 구분자로 분리 시도 (sender가 따로 없으면)
+                    if (!senderName && messageContent.includes('\n---\n')) {
+                      const messageParts = messageContent.split('\n---\n');
+                      messageContent = messageParts[0];
+                      senderName = messageParts.length > 1 ? messageParts[1] : null;
+                    }
 
                     return (
                       <>
@@ -470,7 +501,7 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order }: OrderDetailDi
                       </div>
                       <p className="text-sm text-muted-foreground">
                         {order.transferInfo.transferDate &&
-                          format((order.transferInfo.transferDate as Timestamp).toDate(), 'yyyy-MM-dd HH:mm')}
+                          format(toLocalDate(order.transferInfo.transferDate), 'yyyy-MM-dd HH:mm')}
                       </p>
                     </div>
                   </div>
@@ -537,7 +568,7 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order }: OrderDetailDi
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">발주일시</p>
                       <p className="font-medium text-sm">
-                        {order.outsourceInfo.outsourcedAt && format((order.outsourceInfo.outsourcedAt as Timestamp).toDate(), 'yyyy-MM-dd HH:mm')}
+                        {order.outsourceInfo.outsourcedAt && format(toLocalDate(order.outsourceInfo.outsourcedAt), 'yyyy-MM-dd HH:mm')}
                       </p>
                     </div>
                     <div className="space-y-1">
@@ -606,12 +637,12 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order }: OrderDetailDi
                       </div>
                       {order.payment.firstPaymentDate && (
                         <div className="text-xs text-muted-foreground">
-                          선결제일: {format(order.payment.firstPaymentDate.toDate(), 'yyyy-MM-dd HH:mm')}
+                          선결제일: {format(toLocalDate(order.payment.firstPaymentDate), 'yyyy-MM-dd HH:mm')}
                         </div>
                       )}
                       {order.payment.secondPaymentDate && (
                         <div className="text-xs text-muted-foreground">
-                          후결제일: {format(order.payment.secondPaymentDate.toDate(), 'yyyy-MM-dd HH:mm')}
+                          후결제일: {format(toLocalDate(order.payment.secondPaymentDate), 'yyyy-MM-dd HH:mm')}
                         </div>
                       )}
                     </div>

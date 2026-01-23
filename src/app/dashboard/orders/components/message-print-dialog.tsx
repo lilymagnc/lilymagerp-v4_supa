@@ -1,9 +1,9 @@
 
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from "@/components/ui/dialog";
-import { Printer, Edit3 } from "lucide-react";
+import { Printer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,14 +12,17 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useSettings } from "@/hooks/use-settings";
 import { useSearchParams } from "next/navigation";
+import { FontSelector } from "./font-selector";
+import { LabelGridSelector } from "./label-grid-selector";
+import { GOOGLE_FONTS } from "@/lib/fonts";
 interface MessagePrintDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  onSubmit: (data: { 
-    orderId: string, 
-    labelType: string, 
-    startPosition: number, 
-    messageFont: string, 
+  onSubmit: (data: {
+    orderId: string,
+    labelType: string,
+    startPosition: number,
+    messageFont: string,
     messageFontSize: number,
     senderFont: string,
     senderFontSize: number,
@@ -30,26 +33,30 @@ interface MessagePrintDialogProps {
   order: Order;
 }
 const labelTypes = [
-    { value: 'formtec-3107', label: '폼텍 3107 (6칸)', cells: 6, gridCols: 'grid-cols-2', height: '93mm', className: 'gap-x-[2mm]' },
-    { value: 'formtec-3108', label: '폼텍 3108 (8칸)', cells: 8, gridCols: 'grid-cols-2', height: '67.5mm', className: 'gap-x-[2mm]' },
-    { value: 'formtec-3109', label: '폼텍 3109 (12칸)', cells: 12, gridCols: 'grid-cols-2', height: '45mm', className: 'gap-x-[2mm]' },
+  { value: 'formtec-3107', label: '폼텍 3107 (6칸)', cells: 6, gridCols: 'grid-cols-2', height: '93mm', className: 'gap-x-[2mm]' },
+  { value: 'formtec-3108', label: '폼텍 3108 (8칸)', cells: 8, gridCols: 'grid-cols-2', height: '67.5mm', className: 'gap-x-[2mm]' },
+  { value: 'formtec-3109', label: '폼텍 3109 (12칸)', cells: 12, gridCols: 'grid-cols-2', height: '45mm', className: 'gap-x-[2mm]' },
 ];
 export function MessagePrintDialog({ isOpen, onOpenChange, onSubmit, order }: MessagePrintDialogProps) {
   const { settings } = useSettings();
   const searchParams = useSearchParams();
-  
-  // 시스템 설정에서 폰트 목록 가져오기
-  const fontOptions = (settings.availableFonts || [
-    'Noto Sans KR',
-    'Malgun Gothic',
-    'Nanum Gothic',
-    'Arial',
-    'Helvetica',
-    'Times New Roman'
-  ]).map(font => ({
-    value: font,
-    label: font
-  }));
+
+  // 설정 저장용 키
+  const STORAGE_KEY_MSG_FONT = 'msg_print_msg_font';
+  const STORAGE_KEY_MSG_SIZE = 'msg_print_msg_size';
+  const STORAGE_KEY_SENDER_FONT = 'msg_print_sender_font';
+  const STORAGE_KEY_SENDER_SIZE = 'msg_print_sender_size';
+
+  // 로컬 스토리지에서 설정 불러오기
+  const getStoredSetting = (key: string, defaultVal: any) => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem(key);
+      if (stored) return stored;
+    }
+    return defaultVal;
+  };
+  // 시스템 설정 + 구글 폰트 통합 (이제 FontSelector에서 처리하므로 여기서는 간단히 유지 또는 제거 가능)
+  // FontSelector는 GOOGLE_FONTS를 직접 사용함.
 
   // URL 파라미터에서 초기값 가져오기
   const getInitialValue = (paramName: string, defaultValue: string) => {
@@ -72,175 +79,83 @@ export function MessagePrintDialog({ isOpen, onOpenChange, onSubmit, order }: Me
   const [labelType, setLabelType] = useState(getInitialValue('labelType', 'formtec-3108'));
   const [startPosition, setStartPosition] = useState(getInitialNumberValue('start', 1));
   const [selectedPositions, setSelectedPositions] = useState<number[]>(getInitialPositions());
-  const [messageFont, setMessageFont] = useState(getInitialValue('messageFont', fontOptions[0].value));
+
+  // Font State with persistence
+  const [messageFont, setMessageFont] = useState(getInitialValue('messageFont', 'Noto Sans KR'));
   const [messageFontSize, setMessageFontSize] = useState(getInitialNumberValue('messageFontSize', 14));
-  const [senderFont, setSenderFont] = useState(getInitialValue('senderFont', fontOptions[0].value));
+  const [senderFont, setSenderFont] = useState(getInitialValue('senderFont', 'Noto Sans KR'));
   const [senderFontSize, setSenderFontSize] = useState(getInitialNumberValue('senderFontSize', 12));
+
+  // Load persisted settings on mount
+  useEffect(() => {
+    const savedMsgFont = getStoredSetting(STORAGE_KEY_MSG_FONT, 'Noto Sans KR');
+    const savedMsgSize = parseInt(getStoredSetting(STORAGE_KEY_MSG_SIZE, '14'));
+    const savedSenderFont = getStoredSetting(STORAGE_KEY_SENDER_FONT, 'Noto Sans KR');
+    const savedSenderSize = parseInt(getStoredSetting(STORAGE_KEY_SENDER_SIZE, '12'));
+
+    // Only override if URL params are not present (priority: URL > Storage > Default)
+    if (!searchParams.get('messageFont')) setMessageFont(savedMsgFont);
+    if (!searchParams.get('messageFontSize')) setMessageFontSize(savedMsgSize);
+    if (!searchParams.get('senderFont')) setSenderFont(savedSenderFont);
+    if (!searchParams.get('senderFontSize')) setSenderFontSize(savedSenderSize);
+  }, []);
+
+  // Save settings when changed
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_MSG_FONT, messageFont);
+      localStorage.setItem(STORAGE_KEY_MSG_SIZE, String(messageFontSize));
+      localStorage.setItem(STORAGE_KEY_SENDER_FONT, senderFont);
+      localStorage.setItem(STORAGE_KEY_SENDER_SIZE, String(senderFontSize));
+    }
+  }, [messageFont, messageFontSize, senderFont, senderFontSize]);
   // 메시지 내용에서 보내는 사람 분리
   const messageParts = (order.message?.content || "").split('\n---\n');
   const defaultMessageContent = messageParts.length > 1 ? messageParts[0] : (order.message?.content || "");
   const defaultSenderName = messageParts.length > 1 ? messageParts[1] : "";
   const [messageContent, setMessageContent] = useState(getInitialValue('messageContent', defaultMessageContent));
   const [senderName, setSenderName] = useState(getInitialValue('senderName', defaultSenderName));
-  const [isEditing, setIsEditing] = useState(false);
-  const selectedLabel = labelTypes.find(lt => lt.value === labelType) || labelTypes[0];
+  // isEditing state removed as we rely on split view
   const handleFormSubmit = () => {
     onSubmit({
-        orderId: order.id,
-        labelType,
-        startPosition,
-        messageFont,
-        messageFontSize,
-        senderFont,
-        senderFontSize,
-        messageContent,
-        senderName,
-        selectedPositions,
+      orderId: order.id,
+      labelType,
+      startPosition, // Keep for compatibility, though selectedPositions is main
+      messageFont,
+      messageFontSize,
+      senderFont,
+      senderFontSize,
+      messageContent,
+      senderName,
+      selectedPositions,
     });
   };
-  const messagePreviewStyle: React.CSSProperties = {
-    fontFamily: messageFont,
-    fontSize: `${messageFontSize}pt`,
-  };
-  const senderPreviewStyle: React.CSSProperties = {
-    fontFamily: senderFont,
-    fontSize: `${senderFontSize}pt`,
-  };
+
+  const selectedLabel = labelTypes.find(lt => lt.value === labelType) || labelTypes[0];
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-6xl max-h-[95vh] h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>메시지 인쇄 옵션</DialogTitle>
           <DialogDescription>
-            &apos;{order.orderer.name}&apos;님의 메시지를 인쇄합니다. 메시지 편집과 폰트 설정이 가능합니다.
+            좌측에서 내용을 입력하고 우측에서 인쇄될 위치를 클릭하여 선택하세요. (자동 저장됨)
           </DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* 설정 영역 */}
-          <div className="space-y-4">
-            {/* 메시지 편집 */}
-            <div className="border rounded-lg p-4 bg-muted/50">
-              <div className="flex justify-between items-center mb-3">
-                <Label className="text-sm font-medium">메시지 편집</Label>
-                                 <Button
-                   type="button"
-                   variant="outline"
-                   size="sm"
-                   onClick={() => setIsEditing(!isEditing)}
-                   aria-label={isEditing ? "미리보기 모드로 전환" : "편집 모드로 전환"}
-                 >
-                   <Edit3 className="mr-2 h-4 w-4" />
-                   {isEditing ? "미리보기" : "편집"}
-                 </Button>
-              </div>
-              {isEditing ? (
-                <div className="space-y-3">
-                  <div>
-                    <Label htmlFor="message-content">메시지 내용</Label>
-                                         <Textarea
-                       id="message-content"
-                       name="message-content"
-                       value={messageContent}
-                       onChange={(e) => setMessageContent(e.target.value)}
-                       placeholder="메시지 내용을 입력하세요"
-                       className="mt-1"
-                       rows={4}
-                       autoComplete="off"
-                     />
-                  </div>
-                  <div>
-                    <Label htmlFor="sender-name">보내는 사람</Label>
-                                                               <Input
-                        id="sender-name"
-                        name="sender-name"
-                        value={senderName}
-                        onChange={(e) => setSenderName(e.target.value)}
-                        placeholder="보내는 사람 이름 (예: - 홍길동 -)"
-                        className="mt-1"
-                        autoComplete="off"
-                      />
-                  </div>
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">
-                  편집 버튼을 클릭하여 메시지를 수정할 수 있습니다.
-                </div>
-              )}
-            </div>
-            {/* 폰트 설정 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-4">
-                <div>
-                  <Label className="text-sm font-medium mb-2 block">메시지 폰트 설정</Label>
-                  <div className="space-y-2">
-                    <div>
-                      <Label htmlFor="message-font">폰트</Label>
-                      <Select value={messageFont} onValueChange={setMessageFont}>
-                        <SelectTrigger id="message-font" name="message-font">
-                          <SelectValue placeholder="폰트 선택" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {fontOptions.map(fo => (
-                            <SelectItem key={fo.value} value={fo.value} style={{fontFamily: fo.value}}>{fo.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="message-font-size">글자 크기 (pt)</Label>
-                      <Input 
-                        id="message-font-size" 
-                        name="message-font-size"
-                        type="number" 
-                        value={messageFontSize} 
-                        onChange={(e) => setMessageFontSize(Number(e.target.value) || 14)} 
-                        autoComplete="off"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <Label className="text-sm font-medium mb-2 block">보내는 사람 폰트 설정</Label>
-                  <div className="space-y-2">
-                    <div>
-                      <Label htmlFor="sender-font">폰트</Label>
-                      <Select value={senderFont} onValueChange={setSenderFont}>
-                        <SelectTrigger id="sender-font" name="sender-font">
-                          <SelectValue placeholder="폰트 선택" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {fontOptions.map(fo => (
-                            <SelectItem key={fo.value} value={fo.value} style={{fontFamily: fo.value}}>{fo.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="sender-font-size">글자 크기 (pt)</Label>
-                      <Input 
-                        id="sender-font-size" 
-                        name="sender-font-size"
-                        type="number" 
-                        value={senderFontSize} 
-                        onChange={(e) => setSenderFontSize(Number(e.target.value) || 12)} 
-                        autoComplete="off"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {/* 라벨지 설정 */}
-            <div>
-              <Label htmlFor="label-type">라벨지 종류</Label>
-              <Select value={labelType} onValueChange={(value) => { 
-                setLabelType(value); 
-                setStartPosition(1); 
-                setSelectedPositions([1]); 
+
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-hidden min-h-0">
+          {/* Left Panel: Controls (Scrollable) */}
+          <div className="lg:col-span-4 space-y-4 overflow-y-auto pr-2">
+
+            {/* 1. 라벨지 선택 */}
+            <div className="space-y-2 border p-4 rounded-md">
+              <Label htmlFor="label-type" className="font-bold">1. 라벨지 규격 선택</Label>
+              <Select value={labelType} onValueChange={(value) => {
+                setLabelType(value);
+                // Reset selections when type changes to avoid out of bounds
+                setSelectedPositions([]);
               }}>
-                <SelectTrigger id="label-type" name="label-type">
+                <SelectTrigger id="label-type">
                   <SelectValue placeholder="라벨지 선택" />
                 </SelectTrigger>
                 <SelectContent>
@@ -250,132 +165,94 @@ export function MessagePrintDialog({ isOpen, onOpenChange, onSubmit, order }: Me
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label id="start-position" htmlFor="start-position">출력 위치 선택 (1-{selectedLabel.cells})</Label>
-              <div className="flex items-center gap-2 mb-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedPositions([1])}
-                  className="text-xs"
-                >
-                  첫 번째만
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedPositions(Array.from({ length: selectedLabel.cells }, (_, i) => i + 1))}
-                  className="text-xs"
-                >
-                  전체 선택
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedPositions([])}
-                  className="text-xs"
-                >
-                  전체 해제
-                </Button>
+
+            {/* 2. 메시지 내용 입력 */}
+            <div className="space-y-4 border p-4 rounded-md bg-muted/30">
+              <Label className="font-bold">2. 내용 입력</Label>
+              <div>
+                <Label htmlFor="message-content" className="text-xs text-muted-foreground">메시지 본문</Label>
+                <Textarea
+                  id="message-content"
+                  value={messageContent}
+                  onChange={(e) => setMessageContent(e.target.value)}
+                  placeholder="메시지 입력"
+                  className="mt-1 min-h-[100px]"
+                />
               </div>
-              <div className={cn("grid gap-1 mt-2 border p-2 rounded-md", selectedLabel.gridCols)} role="group" aria-labelledby="start-position">
-                {Array.from({ length: selectedLabel.cells }).map((_, i) => {
-                  const position = i + 1;
-                  const isSelected = selectedPositions.includes(position);
-                  return (
-                    <Button
-                      key={position}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className={cn("h-8", isSelected && "bg-primary text-primary-foreground")}
-                      onClick={() => {
-                        if (isSelected) {
-                          setSelectedPositions(prev => prev.filter(p => p !== position));
-                        } else {
-                          setSelectedPositions(prev => [...prev, position]);
-                        }
-                      }}
-                      aria-pressed={isSelected}
-                      aria-label={`위치 ${position} ${isSelected ? '해제' : '선택'}`}
-                    >
-                      {position}
-                    </Button>
-                  );
-                })}
+              <div>
+                <Label htmlFor="sender-name" className="text-xs text-muted-foreground">보내는 분</Label>
+                <Input
+                  id="sender-name"
+                  value={senderName}
+                  onChange={(e) => setSenderName(e.target.value)}
+                  placeholder="이름 입력"
+                  className="mt-1"
+                />
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                선택된 위치: {selectedPositions.length > 0 ? selectedPositions.join(', ') : '없음'} 
-                ({selectedPositions.length}개)
-              </p>
+            </div>
+
+            {/* 3. 폰트 스타일 설정 */}
+            <div className="space-y-4 border p-4 rounded-md">
+              <Label className="font-bold">3. 폰트 스타일</Label>
+
+              {/* 메시지 폰트 */}
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold">메시지 폰트</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-2">
+                    <FontSelector value={messageFont} onValueChange={setMessageFont} />
+                  </div>
+                  <Input
+                    type="number"
+                    value={messageFontSize}
+                    onChange={(e) => setMessageFontSize(Number(e.target.value))}
+                    className="text-center"
+                    placeholder="크기"
+                  />
+                </div>
+              </div>
+
+              {/* 보내는 사람 폰트 */}
+              <div className="space-y-2 pt-2 border-t">
+                <Label className="text-xs font-semibold">보내는 분 폰트</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-2">
+                    <FontSelector value={senderFont} onValueChange={setSenderFont} />
+                  </div>
+                  <Input
+                    type="number"
+                    value={senderFontSize}
+                    onChange={(e) => setSenderFontSize(Number(e.target.value))}
+                    className="text-center"
+                    placeholder="크기"
+                  />
+                </div>
+              </div>
             </div>
           </div>
-          {/* 미리보기 영역 */}
-          <div className="border rounded-lg p-4 bg-muted/50">
-            <Label className="text-sm font-medium mb-3 block">실시간 미리보기 ({selectedLabel.label})</Label>
-            {/* 단일 라벨 미리보기 */}
-            <div className="mb-4">
-              <Label className="text-xs text-muted-foreground mb-2 block">선택된 라벨 미리보기</Label>
-              <div 
-                className="p-4 border rounded-md bg-white text-center relative overflow-hidden"
-                style={{ 
-                  minHeight: "200px",
-                  maxHeight: "400px",
-                  height: selectedLabel.height 
-                }}
-              >
-                <div 
-                  className="whitespace-pre-wrap mb-4 flex items-center justify-center h-full"
-                  style={messagePreviewStyle}
-                >
-                  {messageContent || "메시지 내용이 없습니다."}
-                </div>
-                {senderName && (
-                  <div 
-                    className="absolute bottom-2 left-1/2 transform -translate-x-1/2"
-                    style={senderPreviewStyle}
-                  >
-                    {senderName}
-                  </div>
-                )}
-              </div>
-            </div>
-            {/* 전체 라벨 그리드 미리보기 */}
-            <div>
-              <Label className="text-xs text-muted-foreground mb-2 block">
-                전체 라벨 레이아웃 (선택된 위치: {selectedPositions.length > 0 ? selectedPositions.join(', ') : '없음'})
-              </Label>
-              <div className={cn("grid gap-1 border p-2 rounded-md bg-white", selectedLabel.gridCols)}>
-                {Array.from({ length: selectedLabel.cells }).map((_, i) => {
-                  const position = i + 1;
-                  const isSelected = selectedPositions.includes(position);
-                  return (
-                    <div
-                      key={position}
-                      className={cn(
-                        "border rounded p-2 text-center text-xs min-h-[60px] flex items-center justify-center",
-                        isSelected ? "bg-primary text-primary-foreground" : "bg-gray-50"
-                      )}
-                    >
-                      {isSelected ? (
-                        <div className="text-center">
-                          <div className="font-medium">메시지</div>
-                          <div className="text-xs opacity-75">위치 {position}</div>
-                        </div>
-                      ) : (
-                        <div className="text-gray-400">빈 라벨</div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="mt-2 text-xs text-muted-foreground">
-              라벨 크기: {selectedLabel.height} / 총 {selectedLabel.cells}칸
-            </div>
+
+          {/* Right Panel: WYSIWYG Preview (Scrollable) */}
+          <div className="lg:col-span-8 bg-gray-50 border rounded-lg p-4 flex flex-col items-center overflow-y-auto">
+            <LabelGridSelector
+              labelType={labelType}
+              selectedPositions={selectedPositions}
+              onPositionToggle={(pos) => {
+                if (selectedPositions.includes(pos)) {
+                  setSelectedPositions(prev => prev.filter(p => p !== pos));
+                } else {
+                  setSelectedPositions(prev => [...prev, pos]);
+                }
+              }}
+              onSelectAll={() => setSelectedPositions(Array.from({ length: selectedLabel.cells }, (_, i) => i + 1))}
+              onClearAll={() => setSelectedPositions([])}
+              onSelectFirst={() => setSelectedPositions([1])}
+              messageContent={messageContent}
+              senderName={senderName}
+              messageFont={messageFont}
+              messageFontSize={messageFontSize}
+              senderFont={senderFont}
+              senderFontSize={senderFontSize}
+            />
           </div>
         </div>
         <DialogFooter className="pt-4">
@@ -383,7 +260,7 @@ export function MessagePrintDialog({ isOpen, onOpenChange, onSubmit, order }: Me
             <Button type="button" variant="secondary">취소</Button>
           </DialogClose>
           <Button type="button" onClick={handleFormSubmit} disabled={!messageContent || selectedPositions.length === 0}>
-            <Printer className="mr-2 h-4 w-4"/> 인쇄 미리보기
+            <Printer className="mr-2 h-4 w-4" /> 인쇄 미리보기
           </Button>
         </DialogFooter>
       </DialogContent>

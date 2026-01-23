@@ -1,34 +1,61 @@
 "use client";
 
 import { Suspense, useEffect, useState } from 'react';
-import { doc, getDoc, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MessagePrintLayout } from './components/message-print-layout';
 import type { Order as OrderType } from '@/hooks/use-orders';
+import { Timestamp } from 'firebase/firestore';
 import { useAuth } from '@/hooks/use-auth';
 import { useSearchParams } from 'next/navigation';
 
 export interface SerializableOrder extends Omit<OrderType, 'orderDate' | 'id'> {
-  id: string;
-  orderDate: string; // ISO string format
+    id: string;
+    orderDate: string; // ISO string format
 }
+
+const toLocalDate = (dateVal: any): Date => {
+    if (!dateVal) return new Date();
+    if (dateVal instanceof Timestamp) return dateVal.toDate();
+    if (typeof dateVal === 'string') return new Date(dateVal);
+    if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
+    return new Date(dateVal);
+};
 
 async function getOrder(orderId: string): Promise<SerializableOrder | null> {
     try {
-        const docRef = doc(db, 'orders', orderId);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            let orderDateIso = new Date().toISOString();
-            if (data.orderDate && typeof (data.orderDate as Timestamp).toDate === 'function') {
-                orderDateIso = (data.orderDate as Timestamp).toDate().toISOString();
-            }
-            const orderBase = data as Omit<OrderType, 'id' | 'orderDate'>;
+        const { data, error: fetchError } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('id', orderId)
+            .maybeSingle();
+
+        if (fetchError) throw fetchError;
+
+        if (data) {
+            const orderDateIso = toLocalDate(data.order_date).toISOString();
+
             return {
-                ...orderBase,
-                id: docSnap.id,
+                id: data.id,
+                branchId: data.branch_id,
+                branchName: data.branch_name,
+                orderNumber: data.order_number,
                 orderDate: orderDateIso,
+                status: data.status,
+                items: data.items || [],
+                summary: data.summary || {},
+                orderer: data.orderer || {},
+                isAnonymous: data.is_anonymous || false,
+                registerCustomer: data.register_customer || false,
+                orderType: data.order_type,
+                receiptType: data.receipt_type,
+                payment: data.payment || {},
+                pickupInfo: data.pickup_info,
+                deliveryInfo: data.delivery_info,
+                message: data.message || {},
+                request: data.request || '',
+                transferInfo: data.transfer_info,
+                outsourceInfo: data.outsource_info
             };
         } else {
             console.error("No such document!");
@@ -101,7 +128,7 @@ export default function PrintMessagePage() {
     if (loading || isLoading) {
         return (
             <div className="max-w-4xl mx-auto p-6">
-                <Skeleton className="h-96 w-full"/>
+                <Skeleton className="h-96 w-full" />
             </div>
         );
     }
@@ -131,7 +158,7 @@ export default function PrintMessagePage() {
     }
 
     return (
-        <Suspense fallback={<div className="max-w-4xl mx-auto p-6"><Skeleton className="h-96 w-full"/></div>}>
+        <Suspense fallback={<div className="max-w-4xl mx-auto p-6"><Skeleton className="h-96 w-full" /></div>}>
             <MessagePrintLayout
                 order={orderData}
                 labelType={labelType}

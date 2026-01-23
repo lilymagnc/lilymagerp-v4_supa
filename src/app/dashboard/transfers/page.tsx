@@ -3,13 +3,13 @@
 import React, { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
-import { 
-  Search, 
-  Filter, 
-  ArrowRightLeft, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
+import {
+  Search,
+  Filter,
+  ArrowRightLeft,
+  Clock,
+  CheckCircle,
+  XCircle,
   AlertCircle,
   Download,
   RefreshCw,
@@ -42,10 +42,10 @@ import { TransferDetailDialog } from "./components/transfer-detail-dialog";
 import { TransferCancelDialog } from "./components/transfer-cancel-dialog";
 
 export default function TransfersPage() {
-  const { 
-    transfers, 
-    loading, 
-    error, 
+  const {
+    transfers,
+    loading,
+    error,
     hasMore,
     getTransferPermissions,
     fetchTransfers,
@@ -55,10 +55,10 @@ export default function TransfersPage() {
     cleanupOrphanTransfers,
     getTransferStats
   } = useOrderTransfers();
-  
+
   const { user } = useAuth();
   const { branches } = useBranches();
-  
+
   // 상태 관리
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
@@ -67,7 +67,7 @@ export default function TransfersPage() {
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [stats, setStats] = useState<TransferStats | null>(null);
-  
+
   // 다이얼로그 상태
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
@@ -95,13 +95,13 @@ export default function TransfersPage() {
       // 검색어 필터
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
-        const matchesSearch = 
+        const matchesSearch =
           transfer.originalOrderId.toLowerCase().includes(searchLower) ||
           transfer.orderBranchName.toLowerCase().includes(searchLower) ||
           transfer.processBranchName.toLowerCase().includes(searchLower) ||
           transfer.transferByUser.toLowerCase().includes(searchLower) ||
           transfer.transferReason.toLowerCase().includes(searchLower);
-        
+
         if (!matchesSearch) return false;
       }
 
@@ -122,16 +122,12 @@ export default function TransfersPage() {
 
       // 날짜 필터
       if (startDate) {
-        const transferDate = transfer.transferDate instanceof Timestamp 
-          ? transfer.transferDate.toDate() 
-          : new Date(transfer.transferDate);
+        const transferDate = toLocalDate(transfer.transferDate);
         if (transferDate < startDate) return false;
       }
 
       if (endDate) {
-        const transferDate = transfer.transferDate instanceof Timestamp 
-          ? transfer.transferDate.toDate() 
-          : new Date(transfer.transferDate);
+        const transferDate = toLocalDate(transfer.transferDate);
         if (transferDate > endDate) return false;
       }
 
@@ -139,27 +135,34 @@ export default function TransfersPage() {
     });
   }, [transfers, searchTerm, selectedStatus, selectedOrderBranch, selectedProcessBranch, startDate, endDate]);
 
+  // 초기 데이터 로드
+  React.useEffect(() => {
+    if (user) {
+      fetchTransfers();
+    }
+  }, [user, fetchTransfers]);
+
   // 통계 계산
   const calculateStats = async () => {
     try {
       const transferStats = await getTransferStats();
-      
+
       // 발주/수주 구분 통계 추가 (본사 관리자가 아닌 경우에만)
       const userBranch = user?.franchise;
       let orderBranchCount = 0;
       let processBranchCount = 0;
       let orderBranchDetails: Record<string, number> = {};
       let processBranchDetails: Record<string, number> = {};
-      
+
       if (!isAdmin && userBranch) {
         // 전체 이관 데이터에서 발주/수주 구분 계산
-        orderBranchCount = transfers.filter(transfer => 
+        orderBranchCount = transfers.filter(transfer =>
           transfer.orderBranchName === userBranch
         ).length;
-        processBranchCount = transfers.filter(transfer => 
+        processBranchCount = transfers.filter(transfer =>
           transfer.processBranchName === userBranch
         ).length;
-        
+
         // 발주 이관 상세 정보 (수주지점별 건수)
         orderBranchDetails = transfers
           .filter(transfer => transfer.orderBranchName === userBranch)
@@ -168,7 +171,7 @@ export default function TransfersPage() {
             acc[processBranch] = (acc[processBranch] || 0) + 1;
             return acc;
           }, {} as Record<string, number>);
-        
+
         // 수주 이관 상세 정보 (발주지점별 건수)
         processBranchDetails = transfers
           .filter(transfer => transfer.processBranchName === userBranch)
@@ -178,7 +181,7 @@ export default function TransfersPage() {
             return acc;
           }, {} as Record<string, number>);
       }
-      
+
       setStats({
         ...transferStats,
         orderBranchCount,
@@ -196,14 +199,13 @@ export default function TransfersPage() {
     calculateStats();
   }, [transfers, searchTerm, selectedStatus, selectedOrderBranch, selectedProcessBranch, startDate, endDate, user?.franchise, loading]);
 
-  // 사용자 지점에 따른 자동 필터링 - 제거 (이미 훅에서 필터링됨)
-  // React.useEffect(() => {
-  //   if (!isAdmin && user?.franchise) {
-  //     // 일반 사용자는 자동으로 자신의 지점으로 필터링
-  //     setSelectedOrderBranch(user.franchise);
-  //     setSelectedProcessBranch(user.franchise);
-  //   }
-  // }, [isAdmin, user?.franchise]);
+  const toLocalDate = (dateVal: any): Date => {
+    if (!dateVal) return new Date();
+    if (dateVal instanceof Timestamp) return dateVal.toDate();
+    if (typeof dateVal === 'string') return new Date(dateVal);
+    if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
+    return new Date(dateVal);
+  };
 
   // 상태 변경 핸들러
   const handleStatusChange = (transferId: string, status: 'accepted' | 'rejected' | 'completed', notes?: string) => {
@@ -231,12 +233,12 @@ export default function TransfersPage() {
   // 이관 기록 삭제 확인
   const confirmDeleteTransfer = async () => {
     if (!transferToDelete) return;
-    
+
     try {
       await deleteTransfer(transferToDelete);
       setIsDeleteDialogOpen(false);
       setTransferToDelete(null);
-      
+
       // 이관 기록 삭제 후 강제 새로고침 및 통계 업데이트
       await fetchTransfers();
       setTimeout(async () => {
@@ -298,11 +300,11 @@ export default function TransfersPage() {
         </div>
       </PageHeader>
 
-             {/* 통계 카드 */}
-       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                 {loading ? (
-           // 로딩 중일 때 스켈레톤 표시
-           Array.from({ length: 4 }).map((_, i) => (
+      {/* 통계 카드 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {loading ? (
+          // 로딩 중일 때 스켈레톤 표시
+          Array.from({ length: 4 }).map((_, i) => (
             <Card key={i}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
@@ -356,49 +358,49 @@ export default function TransfersPage() {
                 </p>
               </CardContent>
             </Card>
-                         <Card>
-               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                 <CardTitle className="text-sm font-medium">취소됨</CardTitle>
-                 <X className="h-4 w-4 text-muted-foreground" />
-               </CardHeader>
-               <CardContent>
-                 <div className="text-2xl font-bold">{stats?.cancelledTransfers || 0}건</div>
-                 <p className="text-xs text-muted-foreground">
-                   취소된 이관
-                 </p>
-               </CardContent>
-             </Card>
-             <Card>
-               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                 <CardTitle className="text-sm font-medium">완료됨</CardTitle>
-                 <CheckCircle className="h-4 w-4 text-muted-foreground" />
-               </CardHeader>
-               <CardContent>
-                 <div className="text-2xl font-bold">{stats?.completedTransfers || 0}건</div>
-                 <p className="text-xs text-muted-foreground">
-                   완료된 이관
-                 </p>
-               </CardContent>
-             </Card>
-                         <Card>
-               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                 <CardTitle className="text-sm font-medium">총 금액</CardTitle>
-                 <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
-               </CardHeader>
-               <CardContent>
-                 <div className="text-2xl font-bold">₩{(stats?.totalAmount || 0).toLocaleString()}</div>
-                 <div className="text-xs text-muted-foreground mt-2">
-                   <div className="flex justify-between items-center">
-                     <span>발주금액:</span>
-                     <span className="font-semibold">₩{(stats?.orderBranchAmount || 0).toLocaleString()}</span>
-                   </div>
-                   <div className="flex justify-between items-center">
-                     <span>수주금액:</span>
-                     <span className="font-semibold">₩{(stats?.processBranchAmount || 0).toLocaleString()}</span>
-                   </div>
-                 </div>
-               </CardContent>
-             </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">취소됨</CardTitle>
+                <X className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats?.cancelledTransfers || 0}건</div>
+                <p className="text-xs text-muted-foreground">
+                  취소된 이관
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">완료됨</CardTitle>
+                <CheckCircle className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats?.completedTransfers || 0}건</div>
+                <p className="text-xs text-muted-foreground">
+                  완료된 이관
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">총 금액</CardTitle>
+                <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">₩{(stats?.totalAmount || 0).toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground mt-2">
+                  <div className="flex justify-between items-center">
+                    <span>발주금액:</span>
+                    <span className="font-semibold">₩{(stats?.orderBranchAmount || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>수주금액:</span>
+                    <span className="font-semibold">₩{(stats?.processBranchAmount || 0).toLocaleString()}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
             {!isAdmin && user?.franchise && (
               <>
                 <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
@@ -575,10 +577,7 @@ export default function TransfersPage() {
                       {getStatusBadge(transfer.status)}
                     </TableCell>
                     <TableCell>
-                      {transfer.transferDate instanceof Timestamp 
-                        ? format(transfer.transferDate.toDate(), 'yyyy-MM-dd HH:mm')
-                        : format(new Date(transfer.transferDate), 'yyyy-MM-dd HH:mm')
-                      }
+                      {format(toLocalDate(transfer.transferDate), 'yyyy-MM-dd HH:mm')}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
@@ -598,27 +597,27 @@ export default function TransfersPage() {
                             수락
                           </Button>
                         )}
-                        {transfer.status === 'pending' && 
-                         (transfer.orderBranchName === user?.franchise || user?.role === '본사 관리자') && (
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleCancelClick(transfer)}
-                          >
-                            취소
-                          </Button>
-                        )}
-                        {(user?.role === '본사 관리자' || 
-                          (user?.role === '가맹점 관리자' && 
-                           (transfer.orderBranchName === user?.franchise || transfer.processBranchName === user?.franchise))) && (
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleDeleteTransfer(transfer.id)}
-                          >
-                            삭제
-                          </Button>
-                        )}
+                        {transfer.status === 'pending' &&
+                          (transfer.orderBranchName === user?.franchise || user?.role === '본사 관리자') && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleCancelClick(transfer)}
+                            >
+                              취소
+                            </Button>
+                          )}
+                        {(user?.role === '본사 관리자' ||
+                          (user?.role === '가맹점 관리자' &&
+                            (transfer.orderBranchName === user?.franchise || transfer.processBranchName === user?.franchise))) && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDeleteTransfer(transfer.id)}
+                            >
+                              삭제
+                            </Button>
+                          )}
                       </div>
                     </TableCell>
                   </TableRow>

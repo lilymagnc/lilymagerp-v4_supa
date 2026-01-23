@@ -112,21 +112,26 @@ export function useSimpleExpenses() {
         expense_date: data.date instanceof Date ? data.date.toISOString() : data.date,
         amount: data.amount,
         category: data.category,
-        sub_category: data.subCategory,
+        sub_category: data.subCategory, // Using camelCase subCategory as verified above
         description: data.description,
         supplier: data.supplier,
         quantity: data.quantity || 1,
         unit_price: data.unitPrice || 0,
         branch_id: branchId,
         branch_name: branchName,
-        payment_method: data.paymentMethod,
+        // payment_method removed from top level if column missing, add to extra_data
         receipt_url: receiptUrl,
         receipt_file_name: receiptFileName,
         inventory_updates: data.inventoryUpdates || [],
-        related_request_id: data.relatedRequestId,
-        related_order_id: data.relatedOrderId,
+        // related_request_id: data.relatedRequestId,
+        // related_order_id: data.relatedOrderId, // Removed to fix 400 error
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        extra_data: {
+          payment_method: data.paymentMethod,
+          related_order_id: data.relatedOrderId,
+          related_request_id: data.relatedRequestId
+        }
       };
 
       const { error } = await supabase.from('simple_expenses').insert([payload]);
@@ -220,6 +225,51 @@ export function useSimpleExpenses() {
     }
   }, [user, fetchExpenses]);
 
+  const updateExpenseByOrderId = useCallback(async (orderId: string, data: Partial<CreateSimpleExpenseData>, matchSubCategory?: string): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      // 'related_order_id' column doesn't exist, check extra_data using contains
+      // .eq('extra_data->>related_order_id', orderId) can be unstable depending on driver version
+      let query = supabase.from('simple_expenses').select('id')
+        .contains('extra_data', { related_order_id: orderId });
+
+      if (matchSubCategory) {
+        query = query.eq('sub_category', matchSubCategory);
+      }
+
+      const { data: existing } = await query.maybeSingle();
+
+      if (!existing) return false;
+
+      const updatePayload: any = { updated_at: new Date().toISOString() };
+      if (data.amount) updatePayload.amount = data.amount;
+      if (data.description) updatePayload.description = data.description;
+      if (data.supplier) updatePayload.supplier = data.supplier;
+      if (data.date) updatePayload.expense_date = data.date instanceof Date ? data.date.toISOString() : data.date;
+
+      // 'payment_method' column missing, store in extra_data
+      if (data.paymentMethod) {
+        // We need to fetch current extra_data or merge carefully. 
+        // Ideally we fetch it first, but for now assuming we can merge via jsonb update or fetch existing.
+        // Actually, Postgrest update generally replaces columns. For JSONB columns to deep merge, we might need a stored procedure or fetch-modify-save.
+        // But here let's fetch current extra_data.
+        const { data: current } = await supabase.from('simple_expenses').select('extra_data').eq('id', existing.id).single();
+        updatePayload.extra_data = {
+          ...(current?.extra_data || {}),
+          payment_method: data.paymentMethod
+        };
+      }
+
+      const { error } = await supabase.from('simple_expenses').update(updatePayload).eq('id', existing.id);
+      if (error) throw error;
+      await fetchExpenses();
+      return true;
+    } catch (error) {
+      console.error('지출 업데이트 오류:', error);
+      return false;
+    }
+  }, [user, fetchExpenses]);
+
   const deleteExpense = useCallback(async (expenseId: string): Promise<boolean> => {
     if (!user) return false;
     try {
@@ -230,6 +280,28 @@ export function useSimpleExpenses() {
       return true;
     } catch (error) {
       console.error(error);
+      return false;
+    }
+  }, [user, fetchExpenses]);
+
+  const deleteExpenseByOrderId = useCallback(async (orderId: string, matchSubCategory?: string): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      // 'related_order_id' column doesn't exist, check extra_data->>related_order_id
+      // 'related_order_id' column doesn't exist, check extra_data using contains
+      let query = supabase.from('simple_expenses').delete()
+        .contains('extra_data', { related_order_id: orderId });
+
+      if (matchSubCategory) {
+        query = query.eq('sub_category', matchSubCategory);
+      }
+
+      const { error } = await query;
+      if (error) throw error;
+      await fetchExpenses();
+      return true;
+    } catch (error) {
+      console.error('지출 삭제 오류:', error);
       return false;
     }
   }, [user, fetchExpenses]);
@@ -345,6 +417,8 @@ export function useSimpleExpenses() {
 
   return {
     expenses, loading, supplierSuggestions,
-    fetchExpenses, addExpense, updateExpense, deleteExpense, fetchSupplierSuggestions, fetchFixedCostTemplate, saveFixedCostTemplate, addFixedCosts, calculateStats, addMaterialRequestExpense
+    fetchExpenses, addExpense, updateExpense, deleteExpense,
+    updateExpenseByOrderId, deleteExpenseByOrderId,
+    fetchSupplierSuggestions, fetchFixedCostTemplate, saveFixedCostTemplate, addFixedCosts, calculateStats, addMaterialRequestExpense
   };
 }

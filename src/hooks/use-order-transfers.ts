@@ -274,7 +274,7 @@ export function useOrderTransfers() {
       const { data: transfer } = await supabase.from('order_transfers').select('*').eq('id', transferId).single();
       if (!transfer) throw new Error('이관 기록을 찾을 수 없습니다.');
 
-      await supabase.from('orders').update({ transfer_info: null }).eq('id', transfer.original_order_id).catch(() => { });
+      await supabase.from('orders').update({ transfer_info: null }).eq('id', transfer.original_order_id);
       await supabase.from('order_transfers').delete().eq('id', transferId);
 
       toast({ title: "기록 삭제 완료", description: "성공했습니다." });
@@ -302,7 +302,6 @@ export function useOrderTransfers() {
       await fetchTransfers(false);
     } catch (err) { console.error(err); }
   }, [fetchTransfers, toast]);
-
   const getTransferStats = useCallback(async (): Promise<TransferStats> => {
     try {
       const { data } = await supabase.from('order_transfers').select('*');
@@ -326,8 +325,17 @@ export function useOrderTransfers() {
     } catch (err) { console.error(err); throw err; }
   }, [user, getTransferPermissions]);
 
+  const calculateAmountSplit = useCallback((totalAmount: number, orderType: string) => {
+    // 기본 분배 비율 설정 (현장/전화 주문은 보통 발주지점 비중이 높음)
+    if (orderType === '현장주문' || orderType === '전화주문') {
+      return { orderBranch: 100, processBranch: 0 };
+    }
+    // 기타(네이버/카카오 등)은 수주지점에 일부 배분할 수도 있으나 기본은 100/0으로 시작
+    return { orderBranch: 100, processBranch: 0 };
+  }, []);
+
   return {
     transfers, loading, error, hasMore,
-    fetchTransfers, createTransfer, updateTransferStatus, cancelTransfer, deleteTransfer, cleanupOrphanTransfers, getTransferStats, getTransferPermissions
+    fetchTransfers, createTransfer, updateTransferStatus, cancelTransfer, deleteTransfer, cleanupOrphanTransfers, getTransferStats, getTransferPermissions, calculateAmountSplit
   };
 }

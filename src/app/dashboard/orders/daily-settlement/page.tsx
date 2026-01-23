@@ -15,7 +15,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { useProducts } from "@/hooks/use-products";
 import { useSimpleExpenses } from "@/hooks/use-simple-expenses";
 import { useDailySettlements } from "@/hooks/use-daily-settlements";
-import { Timestamp } from "firebase/firestore";
 import { PageHeader } from "@/components/page-header";
 import Link from 'next/link';
 
@@ -46,7 +45,17 @@ export default function DailySettlementPage() {
     const [vaultDeposit, setVaultDeposit] = useState<number>(0);
     const [manualPreviousBalance, setManualPreviousBalance] = useState<number>(0);
 
-    const isAdmin = user?.role === '본사 관리자';
+    const isAdmin = useMemo(() => {
+        if (!user?.role) return false;
+        const role = user.role.trim();
+        const email = user.email?.toLowerCase();
+
+        // 이메일 기반 강제 판정 (AuthProvider와 동기화)
+        if (email === 'lilymag0301@gmail.com' || email === 'lilymagg01@gmail.com') return true;
+
+        return role === '본사 관리자' || role.includes('본사') && role.includes('관리자');
+    }, [user?.role, user?.email]);
+
     const userBranch = user?.franchise;
 
     // 현재 보고 있는 기준 지점
@@ -65,8 +74,17 @@ export default function DailySettlementPage() {
                 isAdmin
             });
 
-            if (!currentBranchId || currentTargetBranch === 'all') {
-                console.warn('⚠️ Skipping data load:', { currentBranchId, currentTargetBranch });
+            if (currentTargetBranch === 'all') {
+                // 전체 보기일 때는 개별 지점 정산(시재) 데이터는 로드하지 않지만 주문 데이터는 로드함
+                await fetchOrdersForSettlement(reportDate);
+                setSettlementRecord(null);
+                setVaultDeposit(0);
+                setManualPreviousBalance(0);
+                setPrevSettlementRecord(null);
+                return;
+            }
+
+            if (!currentBranchId) {
                 return;
             }
 
@@ -955,11 +973,11 @@ export default function DailySettlementPage() {
                                         }
                                     }
 
-                                    const orderDate = order.orderDate instanceof Date ? order.orderDate : order.orderDate.toDate();
+                                    const orderDate = parseDate(order.orderDate) || new Date();
 
                                     // 수금 시간 추출 (오늘 날짜와 매칭되는 결제 완료 시간)
-                                    const completedAt = (order.payment as any).completedAt?.toDate?.() || (order.payment as any).completedAt;
-                                    const secondPaymentDate = (order.payment as any).secondPaymentDate?.toDate?.() || (order.payment as any).secondPaymentDate;
+                                    const completedAt = parseDate((order.payment as any).completedAt);
+                                    const secondPaymentDate = parseDate((order.payment as any).secondPaymentDate);
                                     let collectionTime = null;
                                     const todayFrom = stats?.from;
                                     const todayTo = stats?.to;
@@ -1056,19 +1074,14 @@ export default function DailySettlementPage() {
                                         }
                                     }
 
-                                    const orderDate = order.orderDate instanceof Date ? order.orderDate : order.orderDate.toDate();
+                                    const orderDate = parseDate(order.orderDate) || new Date();
 
                                     // 현재 시점 기준 결제 상태 확인
                                     const currentPaymentStatus = order.payment.status;
                                     const isCurrentlyPaid = currentPaymentStatus === 'paid' || currentPaymentStatus === 'completed';
 
-                                    const completedAtTime = (order.payment as any).completedAt instanceof Timestamp
-                                        ? (order.payment as any).completedAt.toDate()
-                                        : ((order.payment as any).completedAt ? new Date((order.payment as any).completedAt) : null);
-
-                                    const secondPaymentTime = (order.payment as any).secondPaymentDate instanceof Timestamp
-                                        ? (order.payment as any).secondPaymentDate.toDate()
-                                        : ((order.payment as any).secondPaymentDate ? new Date((order.payment as any).secondPaymentDate) : null);
+                                    const completedAtTime = parseDate((order.payment as any).completedAt);
+                                    const secondPaymentTime = parseDate((order.payment as any).secondPaymentDate);
 
                                     const paidTime = completedAtTime || secondPaymentTime;
 

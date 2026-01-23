@@ -41,6 +41,14 @@ import { DeliveryCostTable } from "./components/DeliveryCostTable";
 import { CalendarView } from "./components/CalendarView";
 import { DeliverySettingsDialog } from "./components/DeliverySettingsDialog";
 
+const toLocalDate = (dateVal: any): Date => {
+  if (!dateVal) return new Date();
+  if (dateVal instanceof Timestamp) return dateVal.toDate();
+  if (typeof dateVal === 'string') return new Date(dateVal);
+  if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
+  return new Date(dateVal);
+};
+
 export default function PickupDeliveryPage() {
   const { orders, loading, updateOrderStatus, updateOrder, completeDelivery } = useOrders();
   const { branches, loading: branchesLoading, updateBranch } = useBranches();
@@ -283,7 +291,7 @@ export default function PickupDeliveryPage() {
       // Date Filter
       if (startDate || endDate) {
         let dateStr = '';
-        if (dateFilterType === 'order') dateStr = (order.orderDate as any).toDate?.().toISOString() || new Date(order.orderDate as any).toISOString();
+        if (dateFilterType === 'order') dateStr = toLocalDate(order.orderDate).toISOString();
         else if (dateFilterType === 'pickup') dateStr = order.pickupInfo?.date || '';
         else if (dateFilterType === 'delivery') dateStr = order.deliveryInfo?.date || '';
         if (!isDateInRange(dateStr, startDate, endDate)) return false;
@@ -446,7 +454,7 @@ export default function PickupDeliveryPage() {
       {viewMode === 'calendar' ? (
         <CalendarView
           orders={orders}
-          onDateSelect={(date) => {
+          onDateClick={(date) => {
             setStartDate(startOfDay(date));
             setEndDate(endOfDay(date));
             setViewMode('list');
@@ -514,7 +522,6 @@ export default function PickupDeliveryPage() {
           order={selectedOrder}
           open={isDialogOpen}
           onOpenChange={setIsDialogOpen}
-          onOrderUpdate={() => { }} // Hook handles real-time updates
         />
       )}
 

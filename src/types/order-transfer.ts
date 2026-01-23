@@ -44,6 +44,11 @@ export interface OrderTransfer {
   rejectedBy?: string;
   completedAt?: Date | Timestamp;
   completedBy?: string;
+  cancelledAt?: Date | Timestamp;
+  cancelledBy?: string;
+  cancelReason?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 
@@ -62,14 +67,14 @@ export interface DisplayBoardItem {
   isActive: boolean;
   transferId?: string; // 주문 이관 관련 전광판인 경우
   orderId?: string; // 주문 관련 전광판인 경우
-  
+
   // 주문 이관 관련 추가 정보
   orderBranchName?: string;
   processBranchName?: string;
   orderAmount?: number;
   transferReason?: string;
   status?: 'pending' | 'accepted' | 'rejected' | 'completed' | 'cancelled';
-  
+
   // 주문 상세 정보
   orderNumber?: string;
   deliveryDate?: string;

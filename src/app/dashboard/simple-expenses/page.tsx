@@ -187,19 +187,32 @@ export default function SimpleExpensesPage() {
     return expenses.filter(expense => expense.branchId === selectedBranchId);
   }, [expenses, selectedBranchId, branches]);
   // 이번 달 지출 계산 (현자 지점만)
+  // 날짜 변환 헬퍼 함수
+  const getDateObject = (date: any): Date | null => {
+    if (!date) return null;
+    if (typeof date.toDate === 'function') return date.toDate(); // Firestore Timestamp
+    if (date instanceof Date) return date;
+    if (typeof date === 'string') return new Date(date);
+    return null;
+  };
+
+  // 이번 달 지출 계산 (현자 지점만)
   const thisMonthExpenses = filteredExpenses.filter(expense => {
-    if (!expense.date) return false;
-    const expenseDate = expense.date.toDate();
+    const expenseDate = getDateObject(expense.date);
+    if (!expenseDate) return false;
+
     const now = new Date();
     const isCurrentMonth = expenseDate.getMonth() === now.getMonth() &&
       expenseDate.getFullYear() === now.getFullYear();
     return isCurrentMonth;
   });
   const thisMonthStats = calculateStats(thisMonthExpenses);
+
   // 오늘 지출 계산 (현자 지점만)
   const todayExpenses = filteredExpenses.filter(expense => {
-    if (!expense.date) return false;
-    const expenseDate = expense.date.toDate();
+    const expenseDate = getDateObject(expense.date);
+    if (!expenseDate) return false;
+
     const today = new Date();
     const isToday = expenseDate.toDateString() === today.toDateString();
     return isToday;
@@ -218,9 +231,10 @@ export default function SimpleExpensesPage() {
     monthSet.add(currentMonthKey);
 
     // 지출 데이터에서 월 추출
+    // 지출 데이터에서 월 추출
     expenses.forEach(expense => {
-      if (expense.date) {
-        const expenseDate = expense.date.toDate();
+      const expenseDate = getDateObject(expense.date);
+      if (expenseDate) {
         const year = expenseDate.getFullYear();
         const month = expenseDate.getMonth() + 1;
         const monthKey = `${year}-${month.toString().padStart(2, '0')}`;

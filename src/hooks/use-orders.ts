@@ -90,6 +90,17 @@ export interface OrderData {
   };
   request: string;
   source?: 'excel_upload' | 'manual';
+  outsourceInfo?: {
+    isOutsourced: boolean;
+    partnerId: string;
+    partnerName: string;
+    partnerPrice: number;
+    profit: number;
+    status: 'pending' | 'accepted' | 'completed' | 'canceled';
+    notes?: string;
+    outsourcedAt: any;
+    updatedAt?: any;
+  };
 }
 
 export interface Order extends Omit<OrderData, 'orderDate'> {
@@ -128,6 +139,11 @@ export interface Order extends Omit<OrderData, 'orderDate'> {
     outsourcedAt: any;
     updatedAt?: any;
   };
+  extraData?: any;
+  createdAt?: any;
+  updatedAt?: any;
+  completedAt?: any;
+  completedBy?: string;
 }
 
 export type PaymentStatus = "paid" | "pending" | "completed" | "split_payment";
@@ -149,8 +165,8 @@ export function useOrders() {
     summary: row.summary || {},
     orderer: row.orderer || {},
     isAnonymous: row.is_anonymous || false,
-    registerCustomer: row.register_customer || false,
-    orderType: row.order_type,
+    registerCustomer: row.register_customer || row.extra_data?.register_customer || false,
+    orderType: row.order_type || row.extra_data?.order_type || "etc",
     receiptType: row.receipt_type,
     payment: row.payment || {},
     pickupInfo: row.pickup_info,
@@ -162,11 +178,25 @@ export function useOrders() {
     deliveryCostUpdatedBy: row.delivery_cost_updated_by,
     deliveryCostReason: row.delivery_cost_reason,
     deliveryProfit: row.delivery_profit,
-    message: row.message || {},
-    request: row.request || '',
-    source: row.source,
-    transferInfo: row.transfer_info,
-    outsourceInfo: row.outsource_info
+    message: (() => {
+      const msg = (row.message && Object.keys(row.message).length > 0) ? row.message : (row.extra_data?.message || {});
+      // Normalize legacy ribbon formats if content is missing
+      if (msg.type === 'ribbon' && !msg.content) {
+        if (msg.ribbon_left || msg.ribbon_right) {
+          // Standard: Right=Content(Congratz), Left=Sender
+          msg.content = `${msg.ribbon_right || ''}\n---\n${msg.ribbon_left || ''}`;
+        } else if (msg.start || msg.end) {
+          // Assuming Start=Sender, End=Content
+          msg.content = `${msg.end || ''}\n---\n${msg.start || ''}`;
+        }
+      }
+      return msg;
+    })(),
+    request: row.request || row.extra_data?.request || '',
+    source: row.source || row.extra_data?.source,
+    transferInfo: row.transfer_info || row.extra_data?.transfer_info,
+    outsourceInfo: row.outsource_info || row.extra_data?.outsource_info,
+    extraData: row.extra_data
   });
 
   const fetchOrders = useCallback(async (days: number = 30) => {
@@ -489,8 +519,18 @@ export function useOrders() {
       if (data.items) updatePayload.items = data.items;
       if (data.deliveryInfo) updatePayload.delivery_info = data.deliveryInfo;
       if (data.pickupInfo) updatePayload.pickup_info = data.pickupInfo;
-      if (data.message) updatePayload.message = data.message;
+      if (data.outsourceInfo) updatePayload.outsource_info = data.outsourceInfo;
       if (data.request) updatePayload.request = data.request;
+
+      // 'message' column doesn't exist, store in 'extra_data'
+      if (data.message) {
+        // Fetch current extra_data first if needed, but we have oldOrder
+        const currentExtraData = oldOrder.extraData || {};
+        updatePayload.extra_data = {
+          ...currentExtraData,
+          message: data.message
+        };
+      }
 
       const { error } = await supabase.from('orders').update(updatePayload).eq('id', orderId);
       if (error) throw error;

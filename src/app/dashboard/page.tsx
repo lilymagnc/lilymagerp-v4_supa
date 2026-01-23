@@ -3,7 +3,8 @@ import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
-import { Building, DollarSign, Package, Users, TrendingUp, Calendar, CalendarDays, ShoppingCart, CheckSquare, AlertCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Building, DollarSign, Package, Users, TrendingUp, Calendar, CalendarDays, ShoppingCart, CheckSquare, AlertCircle, Clock, Truck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Button } from "@/components/ui/button";
@@ -111,10 +112,12 @@ function calculateWeeklyStats(statsData: any[], startDate: string, endDate: stri
     if (isAllBranches) {
       weeklyMap[weekKey].totalSales += day.totalSettledAmount || 0;
       if (day.branches) {
-        Object.entries(day.branches).forEach(([bName, bStat]: [string, any]) => {
+        Object.entries(day.branches).forEach(([bKey, bStat]: [string, any]) => {
           const amount = bStat.settledAmount || 0;
-          weeklyMap[weekKey].branchSales[bName] = (weeklyMap[weekKey].branchSales[bName] || 0) + amount;
-          weeklyMap[weekKey][bName] = (weeklyMap[weekKey][bName] || 0) + amount;
+          const actualBranchName = bKey.replace(/_/g, '.');
+          // Recharts가 인식할 수 있도록 객체 루트에 지점명 속성 추가
+          weeklyMap[weekKey][actualBranchName] = (weeklyMap[weekKey][actualBranchName] || 0) + amount;
+          weeklyMap[weekKey].branchSales[actualBranchName] = (weeklyMap[weekKey].branchSales[actualBranchName] || 0) + amount;
         });
       }
     } else if (branchFilter) {
@@ -148,11 +151,12 @@ function calculateMonthlyStats(statsData: any[], startDate: string, endDate: str
     if (isAllBranches) {
       monthlyMap[monthKey].totalSales += day.totalSettledAmount || 0;
       if (day.branches) {
-        Object.entries(day.branches).forEach(([bName, bStat]: [string, any]) => {
-          if (!monthlyMap[monthKey].branchSales) monthlyMap[monthKey].branchSales = {};
+        Object.entries(day.branches).forEach(([bKey, bStat]: [string, any]) => {
           const amount = bStat.settledAmount || 0;
-          monthlyMap[monthKey].branchSales[bName] = (monthlyMap[monthKey].branchSales[bName] || 0) + amount;
-          monthlyMap[monthKey][bName] = (monthlyMap[monthKey][bName] || 0) + amount;
+          const actualBranchName = bKey.replace(/_/g, '.');
+          // Recharts가 인식할 수 있도록 객체 루트에 지점명 속성 추가
+          monthlyMap[monthKey][actualBranchName] = (monthlyMap[monthKey][actualBranchName] || 0) + amount;
+          monthlyMap[monthKey].branchSales[actualBranchName] = (monthlyMap[monthKey].branchSales[actualBranchName] || 0) + amount;
         });
       }
     } else if (branchFilter) {
@@ -174,22 +178,47 @@ export default function DashboardPage() {
 
   const koreanWeekdays = ['일', '월', '화', '수', '목', '금', '토'];
 
-  const isAdmin = user?.role === '본사 관리자';
+  // 권한 판정 로그 추가 (디버깅용)
+  useEffect(() => {
+    if (user) {
+      console.log('현재 로그인 사용자 정보:', {
+        role: user.role,
+        franchise: user.franchise,
+        email: user.email
+      });
+    }
+  }, [user]);
+
+  const isAdmin = useMemo(() => {
+    if (!user?.role) return false;
+    const role = user.role.trim();
+    const email = user.email?.toLowerCase();
+
+    // 이메일 기반 강제 판정 (AuthProvider와 동기화)
+    if (email === 'lilymag0301@gmail.com' || email === 'lilymagg01@gmail.com') return true;
+
+    return role === '본사 관리자' || role.includes('본사') && role.includes('관리자');
+  }, [user?.role, user?.email]);
+
   const userBranch = user?.franchise;
 
   const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('전체');
 
   const availableBranches = useMemo(() => {
     if (isAdmin) {
-      return branches.filter(b => b.type !== '본사');
+      // 본사 관리자면 '본사' 타입을 제외한 모든 지점
+      const filtered = branches.filter(b => b.type !== '본사');
+      console.log('본사 관리자용 지점 목록:', filtered.map(b => b.name));
+      return filtered;
     } else {
-      return branches.filter(branch => branch.name === userBranch);
+      const filtered = branches.filter(branch => branch.name === userBranch);
+      return filtered;
     }
   }, [branches, isAdmin, userBranch]);
 
   const currentFilteredBranch = useMemo(() => {
     if (isAdmin) {
-      return selectedBranchFilter === '전체' ? null : selectedBranchFilter;
+      return (selectedBranchFilter === '전체' || !selectedBranchFilter) ? null : selectedBranchFilter;
     } else {
       return userBranch;
     }
@@ -519,35 +548,40 @@ export default function DashboardPage() {
               const weekday = koreanWeekdays[dateObj.getDay()];
               const label = `${format(dateObj, 'M/d')} (${weekday})`;
 
-              if (isAdmin && !branchFilter) {
-                const flattenedBranches: any = {};
-                if (day.branches) {
-                  Object.entries(day.branches).forEach(([bName, bStat]: [string, any]) => {
-                    const originalName = bName.replace(/_/g, '.');
-                    flattenedBranches[originalName] = bStat.settledAmount || 0;
-                  });
-                }
-                return {
-                  date: label,
-                  totalSales: day.totalSettledAmount || 0,
-                  branchSales: day.branches,
-                  ...flattenedBranches
-                };
-              } else {
-                const bName = branchFilter || userBranch;
-                const bStat = day.branches?.[bName?.replace(/\./g, '_')] || { settledAmount: 0 };
-                return {
-                  date: label,
-                  sales: bStat.settledAmount || 0
-                };
-              }
-            });
-            setDailySales(dailyData as any);
+              const result: any = { date: label, totalSales: day.totalSettledAmount || 0 };
 
-            const weeklyData = calculateWeeklyStats(statsData, weeklyStartDate, weeklyEndDate, isAdmin && !branchFilter, branchFilter || userBranch);
+              if (day.branches) {
+                Object.entries(day.branches).forEach(([bKey, bStat]: [string, any]) => {
+                  const amount = bStat.settledAmount || 0;
+                  // 키값에서 지명명 복구 (점, 공백 등 처리)
+                  const actualName = bKey.replace(/_/g, '.');
+                  result[actualName] = amount;
+
+                  // 혹시 모를 매칭을 위해 공백 있는 이름도 추가
+                  const nameWithSpaces = bKey.replace(/_/g, ' ');
+                  if (actualName !== nameWithSpaces) {
+                    result[nameWithSpaces] = amount;
+                  }
+                });
+              }
+
+              if (!isAdmin || branchFilter) {
+                const bName = branchFilter || userBranch;
+                if (bName) {
+                  const bKey = bName.replace(/\./g, '_').replace(/ /g, '_');
+                  const bStat = day.branches?.[bKey] || { settledAmount: 0 };
+                  result.sales = bStat.settledAmount || 0;
+                }
+              }
+
+              return result;
+            });
+            setDailySales(dailyData);
+
+            const weeklyData = calculateWeeklyStats(statsData, weeklyStartDate, weeklyEndDate, isAdmin && (!branchFilter || branchFilter === '전체'), branchFilter || userBranch);
             setWeeklySales(weeklyData as any);
 
-            const monthlyData = calculateMonthlyStats(statsData, monthlyStartDate, monthlyEndDate, isAdmin && !branchFilter, branchFilter || userBranch);
+            const monthlyData = calculateMonthlyStats(statsData, monthlyStartDate, monthlyEndDate, isAdmin && (!branchFilter || branchFilter === '전체'), branchFilter || userBranch);
             setMonthlySales(monthlyData as any);
           }
         } catch (err) {
@@ -648,7 +682,7 @@ export default function DashboardPage() {
 
   const getDashboardTitle = () => {
     if (isAdmin) {
-      if (currentFilteredBranch) {
+      if (currentFilteredBranch && currentFilteredBranch !== '전체') {
         return `${currentFilteredBranch} 대시보드`;
       } else {
         return '전체 대시보드';
@@ -660,10 +694,10 @@ export default function DashboardPage() {
 
   const getDashboardDescription = () => {
     if (isAdmin) {
-      if (currentFilteredBranch) {
+      if (currentFilteredBranch && currentFilteredBranch !== '전체') {
         return `${currentFilteredBranch}의 현재 상태를 한 눈에 파악하세요.`;
       } else {
-        return '시스템의 현재 상태를 한 눈에 파악하세요.';
+        return '시스템 전체의 현재 상태를 한 눈에 파악하세요.';
       }
     } else {
       return userBranch ? `${userBranch}의 현재 상태를 한 눈에 파악하세요.` : '현재 상태를 한 눈에 파악하세요.';
@@ -1092,6 +1126,103 @@ export default function DashboardPage() {
           </ResponsiveContainer>
         </CardContent>
       </Card>
+
+      {/* 일정 및 픽업/배송 현황 섹션 추가 */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
+        {/* 오늘의 주요 일정 */}
+        <Card className="lg:col-span-2">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-orange-600" />
+              오늘 & 내일 일정
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-orange-600 text-xs"
+              onClick={() => router.push('/dashboard/calendar')}
+            >
+              전체보기
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {todayAndTomorrowEvents.length > 0 ? (
+              <div className="space-y-3">
+                {todayAndTomorrowEvents.slice(0, 5).map((event: any) => (
+                  <div key={event.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 hover:bg-orange-50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-2 h-10 rounded-full ${event.type === 'pickup' ? 'bg-blue-400' :
+                        event.type === 'delivery' ? 'bg-purple-400' : 'bg-orange-400'
+                        }`} />
+                      <div>
+                        <p className="font-bold text-sm">{event.title}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-gray-500 flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {format(new Date(event.startDate), 'HH:mm')}
+                          </span>
+                          <Badge variant="outline" className="text-[10px] py-0 h-4">
+                            {event.type === 'pickup' ? '픽업' : event.type === 'delivery' ? '배송' : '기타'}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => event.orderId && handleOrderDetail(orders.find(o => o.id === event.orderId) as any)}
+                    >
+                      상세
+                    </Button>
+                  </div>
+                ))}
+                {todayAndTomorrowEvents.length > 5 && (
+                  <p className="text-center text-xs text-gray-400 mt-2">
+                    외 {todayAndTomorrowEvents.length - 5}개의 일정이 더 있습니다.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                <Calendar className="h-12 w-12 opacity-20 mb-2" />
+                <p className="text-sm">예정된 일정이 없습니다.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 요약 카드 (픽업/배송) */}
+        <div className="space-y-4">
+          <Card className="bg-blue-50/50 border-blue-100">
+            <CardHeader className="py-4 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm font-bold text-blue-800">픽업 대기</CardTitle>
+              <Package className="h-4 w-4 text-blue-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-black text-blue-900">
+                {todayAndTomorrowEvents.filter(e => e.type === 'pickup' && isToday(new Date(e.startDate))).length}
+                <span className="text-sm font-medium ml-1">건</span>
+              </div>
+              <p className="text-xs text-blue-600/70 mt-1">오늘 처리해야 할 픽업</p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-purple-50/50 border-purple-100">
+            <CardHeader className="py-4 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm font-bold text-purple-800">배송 대기</CardTitle>
+              <Truck className="h-4 w-4 text-purple-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-black text-purple-900">
+                {todayAndTomorrowEvents.filter(e => e.type === 'delivery' && isToday(new Date(e.startDate))).length}
+                <span className="text-sm font-medium ml-1">건</span>
+              </div>
+              <p className="text-xs text-purple-600/70 mt-1">오늘 처리해야 할 배송</p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       {/* 최근 주문 목록 (실제 데이터) - 테이블 형태로 개선 */}
       <Card>

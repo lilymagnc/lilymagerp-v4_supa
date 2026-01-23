@@ -29,10 +29,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { usePartners } from "@/hooks/use-partners";
 import { useToast } from "@/hooks/use-toast";
 import { Order } from "@/hooks/use-orders";
-import { db } from "@/lib/firebase";
 import { useSimpleExpenses } from "@/hooks/use-simple-expenses";
 import { SimpleExpenseCategory } from "@/types/simple-expense";
-import { Timestamp, doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 import { Package, Calculator, Info, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -149,23 +148,40 @@ export function OrderOutsourceDialog({
         try {
             setIsSubmitting(true);
 
-            const orderRef = doc(db, "orders", order.id);
             const currentStatus = order.outsourceInfo?.status || 'pending';
 
-            await updateDoc(orderRef, {
-                outsourceInfo: {
-                    isOutsourced: true,
-                    partnerId,
-                    partnerName: selectedPartner?.name || "",
-                    partnerPrice,
+            // Supabase에서는 outsource_info를 extra_data 내부에 저장하도록 마이그레이션 구성됨
+            // 현재 order의 extra_data를 가져와서 업데이트
+            const { data: currentOrder } = await supabase
+                .from('orders')
+                .select('extra_data')
+                .eq('id', order.id)
+                .single();
+
+            const updatedExtraData = {
+                ...(currentOrder?.extra_data || {}),
+                outsource_info: {
+                    is_outsourced: true,
+                    partner_id: partnerId,
+                    partner_name: selectedPartner?.name || "",
+                    partner_price: partnerPrice,
                     profit,
                     status: currentStatus,
                     notes,
-                    outsourcedAt: order.outsourceInfo?.outsourcedAt || serverTimestamp(),
-                    updatedAt: serverTimestamp(),
-                },
-                status: 'processing' // Ensure order status is processing
-            });
+                    outsourced_at: order.outsourceInfo?.outsourcedAt || new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                }
+            };
+
+            const { error: updateError } = await supabase
+                .from('orders')
+                .update({
+                    extra_data: updatedExtraData,
+                    status: 'processing'
+                })
+                .eq('id', order.id);
+
+            if (updateError) throw updateError;
 
             // 자동으로 간편지출 관리에 자재비로 등록/수정
             const itemsDescription = order.items.map(item => `${item.name}(${item.quantity})`).join(', ');

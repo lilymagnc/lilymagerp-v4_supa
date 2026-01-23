@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useOrders } from "@/hooks/use-orders";
 import { useSettings } from "@/hooks/use-settings";
 import { useSimpleExpenses } from "@/hooks/use-simple-expenses";
+import { useAuth } from "@/hooks/use-auth"; // Added for user tracking
 import { usePartners } from "@/hooks/use-partners";
 import { useBranches } from "@/hooks/use-branches";
 import { SimpleExpenseCategory } from "@/types/simple-expense";
@@ -55,9 +56,14 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
   const { toast } = useToast();
   const { updateOrder } = useOrders();
   const { settings } = useSettings();
-  const { addExpense } = useSimpleExpenses();
   const { partners, addPartner } = usePartners();
   const { branches } = useBranches();
+  const { user } = useAuth(); // Import user for tracking
+  const {
+    updateExpenseByOrderId,
+    addExpense,
+    deleteExpenseByOrderId
+  } = useSimpleExpenses();
   const [isLoading, setIsLoading] = useState(false);
   const [editableDeliveryFee, setEditableDeliveryFee] = useState(0);
   const [actualDeliveryCost, setActualDeliveryCost] = useState(0);
@@ -86,6 +92,11 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
       sender: '',
       content: ''
     },
+    outsourceInfo: {
+      isOutsourced: false,
+      partnerName: '',
+      partnerPrice: 0
+    },
     specialRequests: '',
     status: 'processing' as 'processing' | 'completed' | 'canceled',
     paymentStatus: 'pending' as any,
@@ -113,7 +124,7 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
         orderer: {
           name: order.orderer.name || '',
           contact: order.orderer.contact || '',
-          company: order.orderer.company || '',
+          companyName: order.orderer.company || '',
           email: order.orderer.email || ''
         },
         receiptType: order.receiptType || 'store_pickup',
@@ -133,6 +144,11 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
           type: order.message?.type || 'none',
           sender: '',
           content: order.message?.content || ''
+        },
+        outsourceInfo: {
+          isOutsourced: order.outsourceInfo?.isOutsourced || false,
+          partnerName: order.outsourceInfo?.partnerName || '',
+          partnerPrice: order.outsourceInfo?.partnerPrice || 0
         },
         specialRequests: order.request || '',
         status: order.status,
@@ -274,16 +290,34 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
   };
 
   const handleNestedInputChange = (section: string, subsection: string, field: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      [section]: {
-        ...prev[section as keyof typeof prev],
-        [subsection]: {
-          ...(prev[section as keyof typeof prev] as any)[subsection],
-          [field]: value
-        }
+    setFormData(prev => {
+      const parent = prev[section as keyof typeof prev] as any;
+
+      if (subsection) {
+        // Deeply nested input (e.g. recipient.contact) - existing logic might be flawed if strict structure expected
+        // But here we're likely using this for 2 levels deep max: section -> subsection -> field 
+        // OR section -> field if subsection is empty
+        return {
+          ...prev,
+          [section]: {
+            ...parent,
+            [subsection]: {
+              ...parent[subsection],
+              [field]: value
+            }
+          }
+        };
+      } else {
+        // Direct child of section (e.g. outsourceInfo.partnerName)
+        return {
+          ...prev,
+          [section]: {
+            ...parent,
+            [field]: value
+          }
+        };
       }
-    }));
+    });
   };
 
   const handleItemChange = (index: number, field: string, value: any) => {
@@ -337,21 +371,54 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
     };
   };
 
+  // 외부 발주 지출 관리 함수
+  const manageOutsourceExpense = async (orderId: string, branchId: string, branchName: string, info: typeof formData.outsourceInfo) => {
+    try {
+      if (info.isOutsourced && info.partnerPrice > 0) {
+        // 지출 날짜는 주문의 배송일/픽업일 기준, 없으면 오늘
+        const targetDate = formData.pickupDate ? new Date(formData.pickupDate) : new Date();
+
+        // 지출 등록/업데이트 시도
+        const expenseData = {
+          date: targetDate,
+          amount: info.partnerPrice,
+          category: 'material' as any, // SimpleExpenseCategory.MATERIAL
+          subCategory: 'outsource', // MaterialSubCategory.OUTSOURCE
+          description: `자재비-외부발주 (${info.partnerName})`,
+          supplier: info.partnerName,
+          quantity: 1,
+          unitPrice: info.partnerPrice,
+          paymentMethod: 'transfer' as any, // 기본값 계좌이체
+          relatedOrderId: orderId
+        };
+
+        // 기존 지출 업데이트 시도
+        const updated = await updateExpenseByOrderId(orderId, expenseData, 'outsource');
+
+        // 없으면 새로 생성
+        if (!updated) {
+          await addExpense({
+            ...expenseData,
+            inventoryUpdates: [], // 필수 항목
+          }, branchId, branchName);
+        }
+      } else {
+        // 외부 발주가 아니거나 금액이 0이면 관련 지출 삭제 (또는 업데이트 안함)
+        // 여기서는 명시적으로 취소된 경우 삭제하도록 함
+        if (!info.isOutsourced) {
+          await deleteExpenseByOrderId(orderId, 'outsource');
+        }
+      }
+    } catch (e) {
+      console.error("외부 발주 지출 동기화 실패", e);
+    }
+  };
+
   const handleSave = async () => {
     if (!order) return;
 
     setIsLoading(true);
     try {
-      // 필수 필드 검증 (주문자 정보 검증 제거 - 고객 요청)
-      /* if (!formData.orderer.name || !formData.orderer.contact) {
-        toast({
-          title: "오류",
-          description: "주문자명과 연락처는 필수입니다.",
-          variant: "destructive"
-        });
-        return;
-      } */
-
       if (formData.items.length === 0) {
         toast({
           title: "오류",
@@ -361,22 +428,37 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
         return;
       }
 
-
-
       const updatedOrder = {
         orderer: {
           ...order.orderer,
           name: formData.orderer.name,
           contact: formData.orderer.contact,
-          company: formData.orderer.companyName,
+          company: formData.orderer.companyName, // Fixed: align with interface
           email: formData.orderer.email
         },
         receiptType: formData.receiptType,
-        items: formData.items,
+        items: formData.items.map((item, idx) => ({
+          ...item,
+          id: order.items[idx]?.id || crypto.randomUUID(), // Preserve ID or generate
+          source: (order.items[idx]?.source || 'manual') as 'manual' | 'excel_upload'
+        })),
         message: formData.message.type !== 'none' ? {
-          type: formData.message.type,
+          type: formData.message.type as any,
           content: formData.message.content
         } : null,
+        outsourceInfo: formData.outsourceInfo.isOutsourced ? {
+          isOutsourced: true,
+          partnerId: '', // Optional or lookup
+          partnerName: formData.outsourceInfo.partnerName,
+          partnerPrice: formData.outsourceInfo.partnerPrice,
+          profit: calculateTotal().total - formData.outsourceInfo.partnerPrice,
+          status: order.outsourceInfo?.status || 'pending',
+          outsourcedAt: order.outsourceInfo?.outsourcedAt || new Date(),
+          updatedAt: new Date()
+        } : {
+          isOutsourced: false,
+          partnerId: '', partnerName: '', partnerPrice: 0, profit: 0, status: 'canceled' as const, outsourcedAt: null
+        },
         request: formData.specialRequests,
         status: formData.status,
         payment: {
@@ -422,6 +504,12 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
         await createDeliveryExpense(order, actualDeliveryCost, actualDeliveryCostCash);
       }
 
+      // 외부 발주 지출 동기화
+      const orderBranch = branches.find(branch => branch.name === order.branchName) || branches[0];
+      if (orderBranch) {
+        await manageOutsourceExpense(order.id, orderBranch.id, orderBranch.name, formData.outsourceInfo);
+      }
+
       await updateOrder(order.id, updatedOrder);
 
       toast({
@@ -431,6 +519,7 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
 
       onOpenChange(false);
     } catch (error) {
+      console.error(error);
       toast({
         title: "오류",
         description: "주문 수정 중 오류가 발생했습니다.",
@@ -736,6 +825,59 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
                         </p>
                       </div>
                     </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 외부 발주 정보 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building className="h-4 w-4" />
+                외부 발주 정보
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="is-outsourced"
+                  checked={formData.outsourceInfo.isOutsourced}
+                  onChange={(e) => handleNestedInputChange('outsourceInfo', '', 'isOutsourced', e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <Label htmlFor="is-outsourced">외부 발주 여부</Label>
+              </div>
+
+              {formData.outsourceInfo.isOutsourced && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t">
+                  <div className="space-y-2">
+                    <Label htmlFor="outsource-partner">발주 업체명</Label>
+                    <Input
+                      id="outsource-partner"
+                      value={formData.outsourceInfo.partnerName}
+                      onChange={(e) => handleNestedInputChange('outsourceInfo', '', 'partnerName', e.target.value)}
+                      placeholder="업체명을 입력하세요"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="outsource-price">발주 금액 (비용)</Label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">₩</span>
+                      <Input
+                        id="outsource-price"
+                        type="number"
+                        value={formData.outsourceInfo.partnerPrice}
+                        onChange={(e) => handleNestedInputChange('outsourceInfo', '', 'partnerPrice', Number(e.target.value))}
+                        placeholder="금액 입력"
+                        min="0"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      입력 시 간편지출에 '자재비-외부발주'로 자동 등록/수정됩니다.
+                    </p>
                   </div>
                 </div>
               )}

@@ -1,21 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useOrders } from '@/hooks/use-orders';
 import { useCalendar } from '@/hooks/use-calendar';
 import { format, isToday, startOfDay, isEqual, isAfter, isBefore } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { getWeatherInfo, getWeatherEmoji } from '@/lib/weather-service';
-
-// Helper function to get today and tomorrow's date strings
-const getDates = () => {
-  const today = new Date();
-  const tomorrow = new Date();
-  tomorrow.setDate(today.getDate() + 1);
-  return {
-    todayString: format(today, 'yyyy-MM-dd'),
-    tomorrowString: format(tomorrow, 'yyyy-MM-dd'),
-  };
-};
 
 const BulletinBoard = () => {
   const [boardData, setBoardData] = useState<string[]>([]);
@@ -24,7 +13,18 @@ const BulletinBoard = () => {
   const { orders = [] } = useOrders();
   const { events = [] } = useCalendar();
 
-  // Effect for fetching weather based on location
+  const isAdmin = useMemo(() => {
+    if (!user) return false;
+    const role = user.role?.trim();
+    const email = user.email?.toLowerCase();
+    return (
+      role === '본사 관리자' ||
+      email === 'lilymag0301@gmail.com' ||
+      email === 'lilymagg01@gmail.com' ||
+      (role && role.includes('본사') && role.includes('관리자'))
+    );
+  }, [user]);
+
   useEffect(() => {
     const fetchWeather = (latitude?: number, longitude?: number) => {
       getWeatherInfo(latitude, longitude).then(weatherInfo => {
@@ -39,68 +39,61 @@ const BulletinBoard = () => {
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => { // Success
+        (position) => {
           fetchWeather(position.coords.latitude, position.coords.longitude);
         },
-        () => { // Error or permission denied
-          fetchWeather(); // Fetch for default location (Seoul)
+        () => {
+          fetchWeather();
         }
       );
     } else {
-      fetchWeather(); // Geolocation not supported
+      fetchWeather();
     }
-  }, []); // Runs once on mount
+  }, []);
 
-  // Effect for building the main board data
   useEffect(() => {
     const fetchData = async () => {
       const dateLine = format(new Date(), "M월 d일 (EEEE)", { locale: ko });
-      const { todayString, tomorrowString } = getDates();
+      const today = new Date();
+      const tomorrow = new Date();
+      tomorrow.setDate(today.getDate() + 1);
+      const todayString = format(today, 'yyyy-MM-dd');
+      const tomorrowString = format(tomorrow, 'yyyy-MM-dd');
+
       const finalData = [dateLine, weatherLine];
 
-      if (user?.role === '본사 관리자') {
-        const relevantOrders = orders;
-        const todayDeliveries = relevantOrders.filter(o => o.deliveryInfo?.date === todayString && o.status !== 'completed').length;
-        const tomorrowDeliveries = relevantOrders.filter(o => o.deliveryInfo?.date === tomorrowString && o.status !== 'completed').length;
-        const todayPickups = relevantOrders.filter(o => o.pickupInfo?.date === todayString && o.status !== 'completed').length;
-        const tomorrowPickups = relevantOrders.filter(o => o.pickupInfo?.date === tomorrowString && o.status !== 'completed').length;
-        const deliveryLine = `🚚 오늘/내일 배송: ${todayDeliveries}건 / ${tomorrowDeliveries}건`;
-        const pickupLine = `📦 오늘/내일 픽업: ${todayPickups}건 / ${tomorrowPickups}건`;
-        finalData.push(deliveryLine, pickupLine);
+      if (isAdmin) {
+        const todayDeliveries = orders.filter(o => o.deliveryInfo?.date === todayString && o.status !== 'completed').length;
+        const tomorrowDeliveries = orders.filter(o => o.deliveryInfo?.date === tomorrowString && o.status !== 'completed').length;
+        const todayPickups = orders.filter(o => o.pickupInfo?.date === todayString && o.status !== 'completed').length;
+        const tomorrowPickups = orders.filter(o => o.pickupInfo?.date === tomorrowString && o.status !== 'completed').length;
+        finalData.push(`🚚 오늘/내일 배송: ${todayDeliveries}건 / ${tomorrowDeliveries}건`);
+        finalData.push(`📦 오늘/내일 픽업: ${todayPickups}건 / ${tomorrowPickups}건`);
       } else if (user?.franchise) {
         const relevantOrders = orders.filter(o => o.branchName === user.franchise);
         const upcomingDeliveries = relevantOrders
           .filter(o => (o.deliveryInfo?.date === todayString || o.deliveryInfo?.date === tomorrowString) && o.status !== 'completed')
-          .sort((a, b) => (a.deliveryInfo?.time || '').localeCompare(b.deliveryInfo?.time || ''))
-          .map(o => `🚚 [${o.deliveryInfo?.date === todayString ? '오늘' : '내일'}] ${o.deliveryInfo?.time || '시간미정'} 배송: ${o.orderer?.name || '정보없음'}`);
+          .map(o => `🚚 [${o.deliveryInfo?.date === todayString ? '오늘' : '내일'}] ${o.deliveryInfo?.time || ''} 배송: ${o.orderer?.name || ''}`);
         const upcomingPickups = relevantOrders
           .filter(o => (o.pickupInfo?.date === todayString || o.pickupInfo?.date === tomorrowString) && o.status !== 'completed')
-          .sort((a, b) => (a.pickupInfo?.time || '').localeCompare(b.pickupInfo?.time || ''))
-          .map(o => `📦 [${o.pickupInfo?.date === todayString ? '오늘' : '내일'}] ${o.pickupInfo?.time || '시간미정'} 픽업: ${o.orderer?.name || '정보없음'}`);
+          .map(o => `📦 [${o.pickupInfo?.date === todayString ? '오늘' : '내일'}] ${o.pickupInfo?.time || ''} 픽업: ${o.orderer?.name || ''}`);
         finalData.push(...upcomingDeliveries, ...upcomingPickups);
       }
 
+      const todayStart = startOfDay(new Date());
       const noticeLines = events
         .filter(event => {
           if (event.type !== 'notice') return false;
-          const today = startOfDay(new Date());
-          const startDate = startOfDay(event.startDate);
-          const endDate = event.endDate ? startOfDay(event.endDate) : startDate;
-          const hasStarted = isEqual(today, startDate) || isAfter(today, startDate);
-          const hasNotEnded = isEqual(today, endDate) || isBefore(today, endDate);
+          const startDate = startOfDay(new Date(event.startDate));
+          const endDate = event.endDate ? startOfDay(new Date(event.endDate)) : startDate;
+          const active = (isEqual(todayStart, startDate) || isAfter(todayStart, startDate)) &&
+            (isEqual(todayStart, endDate) || isBefore(todayStart, endDate));
 
-          // 공지 대상 필터링
-          if (user?.role === '본사 관리자') {
-            // 본사 관리자는 모든 공지를 볼 수 있음
-            return hasStarted && hasNotEnded;
-          } else {
-            // 지점 사용자는 전체 공지와 자신의 지점 공지만 볼 수 있음
-            return hasStarted && hasNotEnded &&
-              (event.branchName === '전체' || event.branchName === user?.franchise);
-          }
+          if (isAdmin) return active;
+          return active && (event.branchName === '전체' || event.branchName === user?.franchise);
         })
-        .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())
-        .slice(0, 10)
+        .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())
+        .slice(0, 5)
         .map(event => `📢 ${event.title}`);
 
       if (noticeLines.length === 0) {
@@ -112,7 +105,7 @@ const BulletinBoard = () => {
     };
 
     fetchData();
-  }, [user, orders, events, weatherLine]); // Add weatherLine to dependency array
+  }, [user, isAdmin, orders, events, weatherLine]);
 
   const displayData = [...boardData, ...boardData];
 

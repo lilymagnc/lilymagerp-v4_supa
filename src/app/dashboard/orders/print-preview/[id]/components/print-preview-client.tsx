@@ -11,9 +11,9 @@ import { useAuth } from '@/hooks/use-auth';
 import { PageHeader } from '@/components/page-header';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { doc, getDoc, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import type { Order as OrderType } from '@/hooks/use-orders';
+import { Timestamp } from 'firebase/firestore'; // Still needed for type checking if data is mixed
 
 // Define the type for serializable order data
 export interface SerializableOrder extends Omit<OrderType, 'orderDate' | 'id'> {
@@ -33,6 +33,14 @@ export function PrintPreviewClient({ orderId }: PrintPreviewClientProps) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    const toLocalDate = (dateVal: any): Date => {
+        if (!dateVal) return new Date();
+        if (dateVal instanceof Timestamp) return dateVal.toDate();
+        if (typeof dateVal === 'string') return new Date(dateVal);
+        if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
+        return new Date(dateVal);
+    };
+
     useEffect(() => {
         async function fetchOrder() {
             if (!user) {
@@ -43,20 +51,59 @@ export function PrintPreviewClient({ orderId }: PrintPreviewClientProps) {
 
             try {
                 setLoading(true);
-                const docRef = doc(db, 'orders', orderId);
-                const docSnap = await getDoc(docRef);
+                const { data, error: fetchError } = await supabase
+                    .from('orders')
+                    .select('*')
+                    .eq('id', orderId)
+                    .maybeSingle();
 
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    let orderDateIso = new Date().toISOString();
-                    if (data.orderDate && typeof (data.orderDate as Timestamp).toDate === 'function') {
-                        orderDateIso = (data.orderDate as Timestamp).toDate().toISOString();
-                    }
-                    const orderBase = data as Omit<OrderType, 'id' | 'orderDate'>;
+                if (fetchError) throw fetchError;
+
+                if (data) {
+                    const orderDateIso = toLocalDate(data.order_date).toISOString();
+
+                    // Supabase returns snake_case, need to map to camelCase for the OrderType interface
+                    // Alternatively, use the mapRowToOrder if available globally, but here we can manually map
                     const orderData: SerializableOrder = {
-                        ...orderBase,
-                        id: docSnap.id,
+                        id: data.id,
+                        branchId: data.branch_id,
+                        branchName: data.branch_name,
+                        orderNumber: data.order_number,
                         orderDate: orderDateIso,
+                        status: data.status,
+                        items: data.items || [],
+                        summary: data.summary || {},
+                        orderer: data.orderer || {},
+                        isAnonymous: data.is_anonymous || false,
+                        registerCustomer: data.register_customer || false,
+                        orderType: data.order_type,
+                        receiptType: data.receipt_type,
+                        payment: data.payment || {},
+                        pickupInfo: data.pickup_info,
+                        deliveryInfo: data.delivery_info,
+                        message: (() => {
+                            const msg = (data.message && Object.keys(data.message).length > 0) ? data.message : (data.extra_data?.message || {});
+                            // Normalize legacy ribbon formats if content is missing or check for ribbon fields
+                            if ((msg.type === 'ribbon') || msg.ribbon_left || msg.ribbon_right || msg.start || msg.end) {
+                                if (msg.type !== 'ribbon') msg.type = 'ribbon';
+
+                                if (!msg.content) {
+                                    if (msg.ribbon_left || msg.ribbon_right) {
+                                        msg.content = `${msg.ribbon_right || ''} / ${msg.ribbon_left || ''}`;
+                                    } else if (msg.start || msg.end) {
+                                        msg.content = `${msg.end || ''} / ${msg.start || ''}`;
+                                    }
+                                }
+                            }
+                            // Also check if sender is separate and content doesn't verify it
+                            if (msg.sender && msg.content && !msg.content.includes(msg.sender)) {
+                                msg.content = `${msg.content} / ${msg.sender}`;
+                            }
+                            return msg;
+                        })(),
+                        request: data.request || '',
+                        transferInfo: data.transfer_info,
+                        outsourceInfo: data.outsource_info
                     };
                     setOrder(orderData);
                 } else {
@@ -106,10 +153,10 @@ export function PrintPreviewClient({ orderId }: PrintPreviewClientProps) {
         );
     }
 
-    const targetBranch = branches.find(b => b.id === order.branchId);
+    const targetBranch = branches.find(b => b.id === order.branchId) || branches.find(b => b.name === order.branchName);
     const itemsText = order.items.map(item => `${item.name} / ${item.quantity}개`).join('\n');
     const orderDateObject = new Date(order.orderDate);
-    const printData: OrderPrintData | null = targetBranch ? {
+    const printData: OrderPrintData | null = {
         orderDate: format(orderDateObject, "yyyy-MM-dd HH:mm (E)", { locale: ko }),
         ordererName: order.orderer.name,
         ordererContact: order.orderer.contact,
@@ -125,14 +172,14 @@ export function PrintPreviewClient({ orderId }: PrintPreviewClientProps) {
         recipientName: order.deliveryInfo?.recipientName ?? '',
         recipientContact: order.deliveryInfo?.recipientContact ?? '',
         deliveryAddress: order.deliveryInfo?.address ?? '',
-        message: order.message?.content ?? '',
+        message: (order.message?.content ?? '').replace(/\n---\n/g, ' / '),
         messageType: order.message?.type ?? 'card', // 메시지 타입 추가
         isAnonymous: order.isAnonymous || false,
         branchInfo: {
-            name: targetBranch.name,
-            address: targetBranch.address,
-            contact: targetBranch.phone,
-            account: targetBranch.account || '',
+            name: targetBranch?.name || order.branchName || '알 수 없는 지점',
+            address: targetBranch?.address || '',
+            contact: targetBranch?.phone || '',
+            account: targetBranch?.account || '',
         },
         transferInfo: order.transferInfo && order.transferInfo.isTransferred ? {
             originalBranchName: order.transferInfo.originalBranchName || '',
@@ -142,7 +189,7 @@ export function PrintPreviewClient({ orderId }: PrintPreviewClientProps) {
             partnerName: order.outsourceInfo.partnerName || '',
             partnerPrice: order.outsourceInfo.partnerPrice || 0
         } : undefined
-    } : null;
+    };
 
     return (
         <div>

@@ -27,17 +27,27 @@ interface SyncProgress {
 }
 
 export async function syncFirebaseToSupabase(
-    onProgress?: (progress: SyncProgress) => void
+    onProgress?: (progress: SyncProgress) => void,
+    targetCollection?: string
 ): Promise<{ success: boolean; message: string; details: any }> {
     const results: any = {};
 
-    const collectionsToSync = [
-        { firebase: 'orders', supabase: 'orders' },
-        { firebase: 'customers', supabase: 'customers' },
-        { firebase: 'products', supabase: 'products' },
-        { firebase: 'branches', supabase: 'branches' },
-        { firebase: 'dailyStats', supabase: 'daily_stats' },
+    const allCollections = [
+        { firebase: 'orders', supabase: 'orders', label: '주문' },
+        { firebase: 'customers', supabase: 'customers', label: '고객' },
+        { firebase: 'products', supabase: 'products', label: '상품' },
+        { firebase: 'branches', supabase: 'branches', label: '지점' },
+        { firebase: 'materials', supabase: 'materials', label: '자재' },
+        { firebase: 'simpleExpenses', supabase: 'simple_expenses', label: '간편지출' },
+        { firebase: 'userRoles', supabase: 'user_roles', label: '권한' },
+        { firebase: 'orderTransfers', supabase: 'order_transfers', label: '주문이관' },
+        { firebase: 'materialRequests', supabase: 'material_requests', label: '자재요청' },
+        { firebase: 'dailyStats', supabase: 'daily_stats', label: '일별통계' },
     ];
+
+    const collectionsToSync = targetCollection
+        ? allCollections.filter(c => c.firebase === targetCollection)
+        : allCollections;
 
     for (const cfg of collectionsToSync) {
         try {
@@ -56,106 +66,159 @@ export async function syncFirebaseToSupabase(
                     // Skip initialization markers
                     if (id === '_initialized') continue;
 
-                    // Start with doc ID only for specific tables
-                    const payload: any = {};
-                    if (cfg.supabase !== 'daily_stats') {
-                        payload.id = id;
+                    // Start with doc ID (daily_stats uses date as PK)
+                    const payload: any = (cfg.supabase === 'daily_stats') ? { date: id } : { id };
+                    const extraData: any = {};
+
+                    // Generic greedy mapping: Separate mapped columns from extra_data
+                    const allowedColumns = (cfg.supabase === 'orders') ?
+                        ['id', 'order_number', 'status', 'receipt_type', 'branch_id', 'branch_name', 'order_date', 'orderer', 'delivery_info', 'pickup_info', 'summary', 'payment', 'items', 'memo', 'transfer_info', 'outsource_info', 'cancel_reason', 'canceled_at', 'actual_delivery_cost', 'actual_delivery_cost_cash', 'delivery_cost_status', 'delivery_cost_updated_at', 'delivery_cost_updated_by', 'delivery_cost_reason', 'delivery_profit', 'created_at', 'updated_at', 'completed_at', 'completed_by', 'extra_data'] :
+                        (cfg.supabase === 'customers') ?
+                            ['id', 'name', 'contact', 'company_name', 'address', 'email', 'grade', 'memo', 'points', 'type', 'birthday', 'wedding_anniversary', 'founding_anniversary', 'first_visit_date', 'other_anniversary_name', 'other_anniversary', 'special_notes', 'monthly_payment_day', 'total_spent', 'order_count', 'primary_branch', 'branch', 'branches', 'is_deleted', 'extra_data', 'created_at', 'updated_at', 'last_order_date'] :
+                            (cfg.supabase === 'products') ?
+                                ['id', 'name', 'main_category', 'mid_category', 'price', 'supplier', 'stock', 'size', 'color', 'branch', 'code', 'category', 'status', 'extra_data', 'created_at', 'updated_at'] :
+                                (cfg.supabase === 'materials') ?
+                                    ['id', 'name', 'main_category', 'mid_category', 'unit', 'spec', 'price', 'stock', 'size', 'color', 'memo', 'branch', 'supplier', 'extra_data', 'created_at', 'updated_at'] :
+                                    (cfg.supabase === 'branches') ?
+                                        ['id', 'name', 'type', 'address', 'phone', 'manager', 'business_number', 'employee_count', 'delivery_fees', 'surcharges', 'account', 'extra_data'] :
+                                        (cfg.supabase === 'simple_expenses') ?
+                                            ['id', 'expense_date', 'amount', 'category', 'sub_category', 'description', 'supplier', 'quantity', 'unit_price', 'branch_id', 'branch_name', 'receipt_url', 'receipt_file_name', 'related_request_id', 'is_auto_generated', 'inventory_updates', 'extra_data', 'created_at', 'updated_at'] :
+                                            (cfg.supabase === 'order_transfers') ?
+                                                ['id', 'original_order_id', 'order_branch_id', 'order_branch_name', 'process_branch_id', 'process_branch_name', 'transfer_date', 'transfer_reason', 'transfer_by', 'transfer_by_user', 'status', 'amount_split', 'original_order_amount', 'notes', 'accepted_at', 'accepted_by', 'rejected_at', 'rejected_by', 'completed_at', 'completed_by', 'cancelled_at', 'cancelled_by', 'cancel_reason', 'created_at', 'updated_at'] :
+                                                (cfg.supabase === 'material_requests') ?
+                                                    ['id', 'request_number', 'branch_id', 'branch_name', 'requester_id', 'requester_name', 'status', 'total_amount', 'items', 'actual_purchase', 'delivery', 'created_at', 'updated_at'] :
+                                                    (cfg.supabase === 'user_roles') ?
+                                                        ['id', 'user_id', 'email', 'role', 'permissions', 'branch_id', 'branch_name', 'is_active', 'created_at', 'updated_at'] :
+                                                        (cfg.supabase === 'daily_stats') ?
+                                                            ['date', 'total_order_count', 'total_revenue', 'total_settled_amount', 'branches', 'extra_data', 'last_updated'] :
+                                                            [];
+
+                    // Field Mapping Config
+                    const fieldMap: Record<string, string> = {
+                        orderNumber: 'order_number',
+                        receiptType: 'receipt_type',
+                        branchId: 'branch_id',
+                        branchName: 'branch_name',
+                        orderDate: 'order_date',
+                        deliveryInfo: 'delivery_info',
+                        pickupInfo: 'pickup_info',
+                        transferInfo: 'transfer_info',
+                        actualDeliveryCost: 'actual_delivery_cost',
+                        createdAt: 'created_at',
+                        updatedAt: 'updated_at',
+                        completedAt: 'completed_at',
+                        completedBy: 'completed_by',
+                        companyName: 'company_name',
+                        otherAnniversaryName: 'other_anniversary_name',
+                        otherAnniversary: 'other_anniversary',
+                        specialNotes: 'special_notes',
+                        monthlyPaymentDay: 'monthly_payment_day',
+                        totalSpent: 'total_spent',
+                        orderCount: 'order_count',
+                        primaryBranch: 'primary_branch',
+                        isDeleted: 'is_deleted',
+                        lastOrderDate: 'last_order_date',
+                        mainCategory: 'main_category',
+                        midCategory: 'mid_category',
+                        businessNumber: 'business_number',
+                        employeeCount: 'employee_count',
+                        deliveryFees: 'delivery_fees',
+                        outsourceInfo: 'outsource_info',
+                        outsource_info: 'outsource_info',
+                        // order_transfers mapping
+                        originalOrderId: 'original_order_id',
+                        orderBranchId: 'order_branch_id',
+                        orderBranchName: 'order_branch_name',
+                        processBranchId: 'process_branch_id',
+                        processBranchName: 'process_branch_name',
+                        transferDate: 'transfer_date',
+                        transferReason: 'transfer_reason',
+                        transferBy: 'transfer_by',
+                        transferByUser: 'transfer_by_user',
+                        amountSplit: 'amount_split',
+                        originalOrderAmount: 'original_order_amount',
+                        acceptedAt: 'accepted_at',
+                        acceptedBy: 'accepted_by',
+                        rejectedAt: 'rejected_at',
+                        rejectedBy: 'rejected_by',
+                        cancelledAt: 'cancelled_at',
+                        cancelledBy: 'cancelled_by',
+                        cancelReason: 'cancel_reason',
+                        // daily_stats mapping
+                        totalRevenue: 'total_revenue',
+                        totalOrderCount: 'total_order_count',
+                        totalSettledAmount: 'total_settled_amount',
+                        lastUpdated: 'last_updated',
+                        // simple_expenses mapping
+                        expenseDate: 'expense_date',
+                        date: 'expense_date',
+                        subCategory: 'sub_category',
+                        unitPrice: 'unit_price',
+                        branchId_expense: 'branch_id', // Handle potential conflicts
+                        receiptUrl: 'receipt_url',
+                        receiptFileName: 'receipt_file_name',
+                        relatedRequestId: 'related_request_id',
+                        relatedOrderId: 'related_order_id',
+                        isAutoGenerated: 'is_auto_generated',
+                        inventoryUpdates: 'inventory_updates',
+                        paymentMethod: 'payment_method',
+                        // material_requests
+                        requestNumber: 'request_number',
+                        totalAmount: 'total_amount',
+                        // user_roles
+                        userId: 'user_id',
+                        isActive: 'is_active'
+                    };
+
+                    for (const [key, value] of Object.entries(data)) {
+                        const pgKey = fieldMap[key] || key;
+                        let convertedValue = convertValue(value);
+
+                        // Ensure numeric values that might be stored as bigint are rounded
+                        const bigintColumns = [
+                            'amount', 'unit_price', 'original_order_amount', 'partner_price',
+                            'profit', 'total', 'subtotal', 'price', 'points', 'total_spent',
+                            'total_revenue', 'total_settled_amount', 'quantity'
+                        ];
+
+                        if (bigintColumns.includes(pgKey) || pgKey.endsWith('_amount') || pgKey.endsWith('_price')) {
+                            if (typeof convertedValue === 'number' && !isNaN(convertedValue)) {
+                                convertedValue = Math.round(convertedValue);
+                            }
+                        }
+
+                        if (allowedColumns.includes(pgKey) && pgKey !== 'extra_data') {
+                            payload[pgKey] = convertedValue;
+                        } else {
+                            extraData[pgKey] = convertedValue;
+                        }
                     }
 
-                    // Map data based on collection type
+                    // For 'orders', explicitly nest outsource_info in extra_data if it's there
                     if (cfg.supabase === 'orders') {
-                        Object.assign(payload, {
-                            order_number: data.orderNumber,
-                            status: data.status,
-                            receipt_type: data.receiptType,
-                            branch_id: data.branchId,
-                            branch_name: data.branchName,
-                            order_date: convertValue(data.orderDate),
-                            orderer: convertValue(data.orderer),
-                            delivery_info: convertValue(data.deliveryInfo),
-                            pickup_info: convertValue(data.pickupInfo),
-                            summary: convertValue(data.summary),
-                            payment: convertValue(data.payment),
-                            items: convertValue(data.items),
-                            memo: data.memo,
-                            transfer_info: convertValue(data.transferInfo),
-                            actual_delivery_cost: data.actualDeliveryCost,
-                            created_at: convertValue(data.createdAt || data.created_at),
-                            updated_at: convertValue(data.updatedAt || data.updated_at),
-                            completed_at: convertValue(data.completedAt),
-                            completed_by: data.completedBy
-                        });
-                        if (data.outsource_info) payload.outsource_info = convertValue(data.outsource_info);
-                    } else if (cfg.supabase === 'customers') {
-                        Object.assign(payload, {
-                            name: data.name,
-                            contact: data.contact,
-                            company_name: data.companyName,
-                            address: data.address,
-                            email: data.email,
-                            grade: data.grade,
-                            memo: data.memo,
-                            points: data.points,
-                            type: data.type,
-                            birthday: data.birthday,
-                            wedding_anniversary: data.weddingAnniversary,
-                            founding_anniversary: data.foundingAnniversary,
-                            first_visit_date: data.firstVisitDate,
-                            other_anniversary_name: data.otherAnniversaryName,
-                            other_anniversary: data.otherAnniversary,
-                            anniversary: data.anniversary,
-                            special_notes: data.specialNotes,
-                            monthly_payment_day: data.monthlyPaymentDay,
-                            total_spent: data.totalSpent,
-                            order_count: data.orderCount,
-                            primary_branch: data.primaryBranch,
-                            branch: data.branch,
-                            branches: convertValue(data.branches),
-                            is_deleted: data.isDeleted,
-                            created_at: convertValue(data.createdAt || data.created_at),
-                            updated_at: convertValue(data.updatedAt || data.updated_at),
-                            last_order_date: convertValue(data.lastOrderDate)
-                        });
-                    } else if (cfg.supabase === 'products') {
-                        if (!data.name) continue; // Skip products without name
-                        Object.assign(payload, {
-                            name: data.name,
-                            main_category: data.mainCategory,
-                            mid_category: data.midCategory,
-                            price: data.price,
-                            supplier: data.supplier,
-                            stock: data.stock,
-                            size: data.size,
-                            color: data.color,
-                            branch: data.branch,
-                            code: data.code,
-                            category: data.category,
-                            status: data.status,
-                            created_at: convertValue(data.createdAt || data.created_at),
-                            updated_at: convertValue(data.updatedAt || data.updated_at)
-                        });
-                    } else if (cfg.supabase === 'branches') {
-                        Object.assign(payload, {
-                            name: data.name,
-                            type: data.type,
-                            address: data.address,
-                            phone: data.phone,
-                            manager: data.manager,
-                            business_number: data.businessNumber,
-                            employee_count: data.employeeCount,
-                            delivery_fees: convertValue(data.deliveryFees),
-                            surcharges: convertValue(data.surcharges),
-                            account: convertValue(data.account)
-                        });
-                    } else if (cfg.supabase === 'daily_stats') {
-                        Object.assign(payload, {
-                            date: id,
-                            total_order_count: data.totalOrderCount,
-                            total_revenue: data.totalRevenue,
-                            total_settled_amount: data.totalSettledAmount,
-                            branches: convertValue(data.branches),
-                            last_updated: convertValue(data.lastUpdated)
-                        });
+                        if (payload.outsource_info) {
+                            extraData.outsource_info = payload.outsource_info;
+                            delete payload.outsource_info;
+                        }
+                        payload.extra_data = {
+                            ...(convertValue(data.extra_data || data.extraData || {})),
+                            ...extraData
+                        };
+                    } else if (allowedColumns.includes('extra_data')) {
+                        payload.extra_data = {
+                            ...(convertValue(data.extra_data || data.extraData || {})),
+                            ...extraData
+                        };
+                    }
+
+                    // Special cases
+                    if (cfg.supabase === 'daily_stats') {
+                        payload.date = id;
+                        payload.total_order_count = data.totalOrderCount;
+                        payload.total_revenue = data.totalRevenue;
+                        payload.total_settled_amount = data.totalSettledAmount;
+                        payload.branches = convertValue(data.branches);
+                        payload.last_updated = convertValue(data.lastUpdated);
                     }
 
                     // Determine unique key for upsert

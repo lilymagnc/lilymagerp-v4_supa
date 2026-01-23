@@ -74,6 +74,14 @@ import { useBranches } from "@/hooks/use-branches";
 import { useAuth } from "@/hooks/use-auth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+const toLocalDate = (dateVal: any): Date => {
+    if (!dateVal) return new Date();
+    if (dateVal instanceof Timestamp) return dateVal.toDate();
+    if (typeof dateVal === 'string') return new Date(dateVal);
+    if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
+    return new Date(dateVal);
+};
+
 export default function OutsourcePage() {
     const { orders, loading, stats: totalStats, fetchOutsourceOrders, updateOutsourceStatus } = useOutsourceOrders();
     const { user } = useAuth();
@@ -123,7 +131,7 @@ export default function OutsourcePage() {
     const filteredOrders = React.useMemo(() => {
         return orders.filter(order => {
             if (!order.outsourceInfo?.outsourcedAt) return false;
-            const outsourcedDate = (order.outsourceInfo.outsourcedAt as Timestamp).toDate();
+            const outsourcedDate = toLocalDate(order.outsourceInfo.outsourcedAt);
 
             if (startDate && outsourcedDate < startOfDay(startDate)) return false;
             if (endDate && outsourcedDate > endOfDay(endDate)) return false;
@@ -222,7 +230,7 @@ export default function OutsourcePage() {
             if (isAdmin && selectedBranch !== "all" && order.branchName !== selectedBranch) {
                 return false;
             }
-            const orderDate = order.orderDate instanceof Timestamp ? order.orderDate.toDate() : new Date(order.orderDate);
+            const orderDate = toLocalDate(order.orderDate);
             return orderDate.getFullYear() === currentYear;
         }).reduce((sum, order) => sum + (order.summary?.total || 0), 0);
     }, [orders, selectedBranch, isAdmin]);
@@ -259,7 +267,7 @@ export default function OutsourcePage() {
 
     const handleDownloadOrders = () => {
         const data = filteredOrders.map(order => ({
-            "발주일": order.outsourceInfo?.outsourcedAt ? format((order.outsourceInfo.outsourcedAt as Timestamp).toDate(), 'yyyy-MM-dd HH:mm') : '',
+            "발주일": order.outsourceInfo?.outsourcedAt ? format(toLocalDate(order.outsourceInfo.outsourcedAt), 'yyyy-MM-dd HH:mm') : '',
             "수주업체": order.outsourceInfo?.partnerName,
             "주문번호": order.orderNumber || '',
             "주문자": order.orderer.name,
@@ -626,7 +634,7 @@ export default function OutsourcePage() {
                                         filteredOrders.slice(0, 5).map((order) => (
                                             <TableRow key={order.id} className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => handleRowClick(order)}>
                                                 <TableCell className="text-[10px] whitespace-nowrap">
-                                                    {order.outsourceInfo?.outsourcedAt && format((order.outsourceInfo.outsourcedAt as Timestamp).toDate(), 'MM/dd HH:mm')}
+                                                    {order.outsourceInfo?.outsourcedAt && format(toLocalDate(order.outsourceInfo.outsourcedAt), 'MM/dd HH:mm')}
                                                 </TableCell>
                                                 <TableCell className="font-medium text-xs truncate max-w-[100px]">{order.outsourceInfo?.partnerName}</TableCell>
                                                 <TableCell className="text-right text-xs font-medium">₩{order.outsourceInfo?.partnerPrice.toLocaleString()}</TableCell>
@@ -698,10 +706,10 @@ export default function OutsourcePage() {
                                         <TableCell className="text-xs">
                                             <div className="flex flex-col gap-0.5">
                                                 <span className="font-medium text-blue-600">
-                                                    {order.outsourceInfo?.outsourcedAt && format((order.outsourceInfo.outsourcedAt as Timestamp).toDate(), 'MM/dd HH:mm')}
+                                                    {order.outsourceInfo?.outsourcedAt && format(toLocalDate(order.outsourceInfo.outsourcedAt), 'MM/dd HH:mm')}
                                                 </span>
                                                 <span className="text-gray-400 text-[10px]">
-                                                    {format((order.orderDate as Timestamp).toDate(), 'MM/dd')}
+                                                    {format(toLocalDate(order.orderDate), 'MM/dd')}
                                                 </span>
                                             </div>
                                         </TableCell>

@@ -13,6 +13,15 @@ import { Order } from "@/hooks/use-orders";
 import { Branch } from "@/hooks/use-branches";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
+import { Timestamp } from "firebase/firestore";
+
+const toLocalDate = (dateVal: any): Date => {
+  if (!dateVal) return new Date();
+  if (dateVal instanceof Timestamp) return dateVal.toDate();
+  if (typeof dateVal === 'string') return new Date(dateVal);
+  if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
+  return new Date(dateVal);
+};
 
 interface StatementData {
   customer: Customer;
@@ -69,25 +78,11 @@ export default function StatementPrintPage() {
 
     // 고객의 주문 내역 필터링 - 연락처로 매칭
     const customerOrders = orders.filter(order => {
-      let orderDate: Date;
-      const orderDateValue = order.orderDate as any;
-      
-      // Firebase Timestamp 객체인 경우
-      if (orderDateValue && typeof orderDateValue.toDate === 'function') {
-        orderDate = orderDateValue.toDate();
-      } 
-      // Timestamp 객체의 seconds/nanoseconds 구조인 경우
-      else if (orderDateValue && typeof orderDateValue.seconds === 'number') {
-        orderDate = new Date(orderDateValue.seconds * 1000);
-      }
-      // 일반 Date 객체나 문자열인 경우
-      else {
-        orderDate = new Date(orderDateValue);
-      }
-      
-      return order.orderer.contact === customer.contact && 
-             orderDate >= start && 
-             orderDate <= end;
+      const orderDate = toLocalDate(order.orderDate);
+
+      return order.orderer.contact === customer.contact &&
+        orderDate >= start &&
+        orderDate <= end;
     });
 
     const summary = {
@@ -422,7 +417,7 @@ export default function StatementPrintPage() {
                   거래기간
                 </td>
                 <td>
-                  {format(statementData.period.startDate, "yyyy년 MM월 dd일", { locale: ko })} ~ 
+                  {format(statementData.period.startDate, "yyyy년 MM월 dd일", { locale: ko })} ~
                   {format(statementData.period.endDate, "yyyy년 MM월 dd일", { locale: ko })}
                 </td>
               </tr>
@@ -466,17 +461,7 @@ export default function StatementPrintPage() {
                     <tr key={`${order.id}-${itemIndex}`}>
                       <td>
                         {(() => {
-                          const orderDateValue = order.orderDate as any;
-                          let orderDate: Date;
-                          
-                          if (orderDateValue && typeof orderDateValue.toDate === 'function') {
-                            orderDate = orderDateValue.toDate();
-                          } else if (orderDateValue && typeof orderDateValue.seconds === 'number') {
-                            orderDate = new Date(orderDateValue.seconds * 1000);
-                          } else {
-                            orderDate = new Date(orderDateValue);
-                          }
-                          
+                          const orderDate = toLocalDate(order.orderDate);
                           return format(orderDate, "yyyy-MM-dd", { locale: ko });
                         })()}
                       </td>

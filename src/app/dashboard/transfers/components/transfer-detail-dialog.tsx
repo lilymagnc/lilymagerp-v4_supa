@@ -19,6 +19,14 @@ interface TransferDetailDialogProps {
   transfer: any;
 }
 
+const toLocalDate = (dateVal: any): Date => {
+  if (!dateVal) return new Date();
+  if (dateVal instanceof Timestamp) return dateVal.toDate();
+  if (typeof dateVal === 'string') return new Date(dateVal);
+  if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
+  return new Date(dateVal);
+};
+
 export function TransferDetailDialog({
   isOpen,
   onClose,
@@ -76,10 +84,7 @@ export function TransferDetailDialog({
               <div>
                 <label className="text-sm font-medium text-muted-foreground">이관 요청일</label>
                 <p className="text-sm">
-                  {transfer.transferDate instanceof Timestamp 
-                    ? format(transfer.transferDate.toDate(), 'yyyy-MM-dd HH:mm:ss')
-                    : format(new Date(transfer.transferDate), 'yyyy-MM-dd HH:mm:ss')
-                  }
+                  {format(toLocalDate(transfer.transferDate), 'yyyy-MM-dd HH:mm:ss')}
                 </p>
               </div>
               <div>
@@ -139,7 +144,7 @@ export function TransferDetailDialog({
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">수락일</label>
                   <p className="text-sm">
-                    {transfer.acceptedAt instanceof Timestamp 
+                    {transfer.acceptedAt instanceof Timestamp
                       ? format(transfer.acceptedAt.toDate(), 'yyyy-MM-dd HH:mm:ss')
                       : format(new Date(transfer.acceptedAt), 'yyyy-MM-dd HH:mm:ss')
                     }
@@ -150,7 +155,7 @@ export function TransferDetailDialog({
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">거절일</label>
                   <p className="text-sm">
-                    {transfer.rejectedAt instanceof Timestamp 
+                    {transfer.rejectedAt instanceof Timestamp
                       ? format(transfer.rejectedAt.toDate(), 'yyyy-MM-dd HH:mm:ss')
                       : format(new Date(transfer.rejectedAt), 'yyyy-MM-dd HH:mm:ss')
                     }
@@ -161,7 +166,7 @@ export function TransferDetailDialog({
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">완료일</label>
                   <p className="text-sm">
-                    {transfer.completedAt instanceof Timestamp 
+                    {transfer.completedAt instanceof Timestamp
                       ? format(transfer.completedAt.toDate(), 'yyyy-MM-dd HH:mm:ss')
                       : format(new Date(transfer.completedAt), 'yyyy-MM-dd HH:mm:ss')
                     }
@@ -178,7 +183,7 @@ export function TransferDetailDialog({
               <div>
                 <label className="text-sm font-medium text-muted-foreground">생성일</label>
                 <p className="text-sm">
-                  {transfer.createdAt instanceof Timestamp 
+                  {transfer.createdAt instanceof Timestamp
                     ? format(transfer.createdAt.toDate(), 'yyyy-MM-dd HH:mm:ss')
                     : format(new Date(transfer.createdAt), 'yyyy-MM-dd HH:mm:ss')
                   }
@@ -187,7 +192,7 @@ export function TransferDetailDialog({
               <div>
                 <label className="text-sm font-medium text-muted-foreground">수정일</label>
                 <p className="text-sm">
-                  {transfer.updatedAt instanceof Timestamp 
+                  {transfer.updatedAt instanceof Timestamp
                     ? format(transfer.updatedAt.toDate(), 'yyyy-MM-dd HH:mm:ss')
                     : format(new Date(transfer.updatedAt), 'yyyy-MM-dd HH:mm:ss')
                   }

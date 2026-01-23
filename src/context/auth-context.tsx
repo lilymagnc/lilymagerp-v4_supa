@@ -39,8 +39,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .eq('is_active', true)
         .maybeSingle();
 
+      let role: '본사 관리자' | '가맹점 관리자' | '직원' = '직원';
+
       if (roleData) {
-        let role: '본사 관리자' | '가맹점 관리자' | '직원';
         switch (roleData.role) {
           case 'hq_manager':
           case 'admin':
@@ -53,34 +54,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           default:
             role = '직원';
         }
-
-        return {
-          id: roleData.id,
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          role,
-          franchise: roleData.branch_name || '', // 미지정이면 빈 문자열
-          branchId: roleData.branch_id,
-          branchName: roleData.branch_name
-        } as UserProfile;
       }
 
-      // 기본값 반환
+      // 특정 관리자 이메일 강제 권한 부여 (임시 해결책)
+      const email = firebaseUser.email.toLowerCase();
+      if (email === 'lilymag0301@gmail.com' || email === 'lilymagg01@gmail.com') {
+        role = '본사 관리자';
+      }
+
       return {
-        id: firebaseUser.uid,
+        id: roleData?.id || firebaseUser.uid,
         uid: firebaseUser.uid,
         email: firebaseUser.email,
-        role: '직원',
-        franchise: '' // 기본값 빈 문자열
+        role,
+        franchise: roleData?.branch_name || (role === '본사 관리자' ? '본사' : ''),
+        branchId: roleData?.branch_id,
+        branchName: roleData?.branch_name
       } as UserProfile;
+
     } catch (error) {
       console.error("Error fetching user role from Supabase:", error);
+
+      // 오류 발생 시에도 특정 이메일은 관리자로 처리
+      const isSpecialAdmin = firebaseUser.email.toLowerCase() === 'lilymag0301@gmail.com' || firebaseUser.email.toLowerCase() === 'lilymagg01@gmail.com';
+
       return {
         id: firebaseUser.uid,
         uid: firebaseUser.uid,
         email: firebaseUser.email,
-        role: '직원',
-        franchise: '미정'
+        role: isSpecialAdmin ? '본사 관리자' : '직원',
+        franchise: isSpecialAdmin ? '본사' : '미정'
       } as UserProfile;
     }
   }, []);
@@ -118,4 +121,3 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     </AuthContext.Provider>
   );
 };
-

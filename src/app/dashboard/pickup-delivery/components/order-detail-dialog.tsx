@@ -9,6 +9,7 @@ import { Order } from "@/hooks/use-orders";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { Calendar, Phone, MapPin, Package, User, Building, CreditCard, MessageSquare } from "lucide-react";
+import { Timestamp } from "firebase/firestore";
 interface OrderDetailDialogProps {
   order: Order | null;
   open: boolean;
@@ -49,10 +50,18 @@ const formatDateTime = (date: string, time: string) => {
     return date + (time ? ` ${time}` : '');
   }
 };
+const toLocalDate = (dateVal: any): Date => {
+  if (!dateVal) return new Date();
+  if (dateVal instanceof Timestamp) return dateVal.toDate();
+  if (typeof dateVal === 'string') return new Date(dateVal);
+  if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
+  return new Date(dateVal);
+};
+
 const formatOrderDate = (date: any) => {
   if (!date) return '-';
   try {
-    const dateObj = date instanceof Date ? date : new Date(date);
+    const dateObj = toLocalDate(date);
     if (isNaN(dateObj.getTime())) {
       return '-';
     }
@@ -101,10 +110,10 @@ export function OrderDetailDialog({ order, open, onOpenChange }: OrderDetailDial
               <div>
                 <p className="text-sm text-muted-foreground">수령 방법</p>
                 <p className="font-medium">
-                  {order.receiptType === 'store_pickup' ? '매장픽업 (즉시)' : 
-                   order.receiptType === 'pickup_reservation' ? '픽업예약' : 
-                   order.receiptType === 'delivery_reservation' ? '배송예약' : 
-                   order.receiptType || '기타'}
+                  {order.receiptType === 'store_pickup' ? '매장픽업 (즉시)' :
+                    order.receiptType === 'pickup_reservation' ? '픽업예약' :
+                      order.receiptType === 'delivery_reservation' ? '배송예약' :
+                        order.receiptType || '기타'}
                 </p>
               </div>
               <div>
@@ -112,8 +121,8 @@ export function OrderDetailDialog({ order, open, onOpenChange }: OrderDetailDial
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center gap-2">
                     <p className="font-medium">
-                      {order.transferInfo?.isTransferred && order.transferInfo?.processBranchName 
-                        ? order.transferInfo.processBranchName 
+                      {order.transferInfo?.isTransferred && order.transferInfo?.processBranchName
+                        ? order.transferInfo.processBranchName
                         : order.branchName || '-'}
                     </p>
                     {order.transferInfo?.isTransferred && (

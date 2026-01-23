@@ -15,10 +15,20 @@ export class PrintableQuotation extends React.Component<PrintableQuotationProps>
         const { data } = this.props;
         if (!data) return null;
 
-        const formatDate = (date: Timestamp | Date) => {
+        const formatDate = (date: Timestamp | Date | string | number | any) => {
             if (!date) return "-";
-            const d = date instanceof Timestamp ? date.toDate() : date;
-            return format(d, "yyyy-MM-dd");
+            let d: Date;
+            if (date instanceof Timestamp) d = date.toDate();
+            else if (typeof date === 'string') d = new Date(date);
+            else if (typeof date === 'number') d = new Date(date);
+            else if (date.seconds) d = new Date(date.seconds * 1000); // Handle object like {seconds: ...}
+            else d = date;
+
+            try {
+                return format(d, "yyyy-MM-dd");
+            } catch (e) {
+                return "-";
+            }
         };
 
         return (
