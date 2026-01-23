@@ -1,20 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
-// v4-supa-fix-v3: Extreme defensive check for Vercel build
-const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const rawKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// v4-supa-final-fix: Ensure build passes by providing a valid URL format even if env vars are missing
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://xphvycuaffifjgjaiqxe.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy-key-for-build';
 
-const isValid = (val: string | undefined): val is string => {
-    return !!val && val !== 'undefined' && val !== 'null' && val.length > 0;
-};
-
-if (!isValid(rawUrl) || !isValid(rawKey)) {
-    console.warn('⚠️ [v4-supa-v3] Supabase 환경 변수가 누락되었습니다. 빌드를 위해 임시 값을 사용합니다.');
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    console.warn('⚠️ [v4-supa] NEXT_PUBLIC_SUPABASE_URL is missing. Using fallback for build.');
 }
 
-export const supabase = createClient(
-    isValid(rawUrl) ? rawUrl : 'https://placeholder.supabase.co',
-    isValid(rawKey) ? rawKey : 'placeholder'
-);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
 
 
