@@ -7,8 +7,6 @@ import { SidebarProvider, Sidebar, SidebarTrigger, SidebarHeader, SidebarContent
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from '@/components/ui/button';
 import { LayoutDashboard, Boxes, ShoppingCart, Users, UserCog, LogOut, ClipboardList, Store, BookUser, Hammer, History, Briefcase, MapPin, Truck, Images, DollarSign, Target, BarChart3, Package, Receipt, Settings, Database, Percent, ArrowRightLeft, ExternalLink } from 'lucide-react';
-import { signOut } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
 import React from 'react';
 import Image from 'next/image';
 import { ROLE_LABELS } from '@/types/user-role';
@@ -19,7 +17,7 @@ export default function DashboardLayout({
 }: {
     children: React.ReactNode;
 }) {
-    const { user, loading } = useAuth();
+    const { user, loading, signOut } = useAuth();
     const { userRole, loading: roleLoading, isHQManager, isBranchUser, isBranchManager } = useUserRole();
     const router = useRouter();
 
@@ -30,7 +28,7 @@ export default function DashboardLayout({
     }, [user, loading, router]);
 
     const handleLogout = async () => {
-        await signOut(auth);
+        await signOut();
         router.push('/login');
     };
 
@@ -46,7 +44,6 @@ export default function DashboardLayout({
     }
 
     const getRoleDisplayName = () => {
-        if (user.isAnonymous) return '익명 사용자';
         if (userRole) return ROLE_LABELS[userRole.role];
         return '사용자';
     };
@@ -68,6 +65,8 @@ export default function DashboardLayout({
                 </SidebarHeader>
                 <SidebarContent>
                     <SidebarMenu>
+                        {/* ... (remaining menu items omitted for brevity in replace, but I'll make sure to match exact lines) ... */}
+                        {/* Actually, let's just target the specific avatar section */}
                         {/* 1. 대시보드 (모든 사용자) */}
                         <SidebarMenuItem>
                             <SidebarMenuButton onClick={() => router.push('/dashboard')}><LayoutDashboard />대시보드</SidebarMenuButton>
@@ -213,11 +212,11 @@ export default function DashboardLayout({
                 <SidebarFooter className="p-4">
                     <div className="flex items-center gap-3 mb-2">
                         <Avatar>
-                            <AvatarImage src={user.photoURL ?? ''} />
+                            <AvatarImage src="" />
                             <AvatarFallback>{user.email?.[0].toUpperCase() ?? 'U'}</AvatarFallback>
                         </Avatar>
                         <div className="flex flex-col overflow-hidden">
-                            <p className="text-sm font-medium truncate">{user.isAnonymous ? '익명 사용자' : user.email}</p>
+                            <p className="text-sm font-medium truncate">{user.email}</p>
                             <p className="text-xs text-muted-foreground">역할: {getRoleDisplayName()}</p>
                             {userRole?.branchName && (
                                 <p className="text-xs text-muted-foreground">지점: {userRole.branchName}</p>

@@ -195,7 +195,7 @@ export default function DashboardPage() {
     const email = user.email?.toLowerCase();
 
     // 이메일 기반 강제 판정 (AuthProvider와 동기화)
-    if (email === 'lilymag0301@gmail.com' || email === 'lilymagg01@gmail.com') return true;
+    if (email === 'lilymag0301@gmail.com') return true;
 
     return role === '본사 관리자' || role.includes('본사') && role.includes('관리자');
   }, [user?.role, user?.email]);
@@ -505,6 +505,16 @@ export default function DashboardPage() {
           const earliestDate = [dailyStartDate, weeklyStartDate, monthlyStartDate, yearStartStr].sort()[0];
           const statsData = await fetchDailyStats(earliestDate, todayStr);
 
+          if (statsData.length > 0) {
+            console.log('Dashboard statsData sample (last 3 entries):', statsData.slice(-3));
+            const targetDay = statsData.find((d: any) => d.date === '2026-01-23');
+            if (targetDay) {
+              console.log('Found stats for 2026-01-23:', targetDay);
+              const bKey = (branchFilter || userBranch || '').replace(/\./g, '_').replace(/ /g, '_');
+              console.log(`Branch mapping for '${branchFilter || userBranch}': key=${bKey}, data=`, targetDay.branches?.[bKey]);
+            }
+          }
+
           if (statsData.length === 0) {
             setStatsEmpty(true);
           } else {
@@ -518,7 +528,8 @@ export default function DashboardPage() {
               const isThisWeek = day.date >= weekStartStr;
 
               if (branchFilter) {
-                const branchStat = day.branches?.[branchFilter.replace(/\./g, '_')];
+                const bKey = branchFilter.replace(/\./g, '_').replace(/ /g, '_');
+                const branchStat = day.branches?.[bKey];
                 if (branchStat) {
                   if (isThisYear) totalRevenue += branchStat.settledAmount || 0;
                   if (isThisWeek) {
@@ -550,18 +561,19 @@ export default function DashboardPage() {
 
               const result: any = { date: label, totalSales: day.totalSettledAmount || 0 };
 
+              // 지점별 매칭
               if (day.branches) {
                 Object.entries(day.branches).forEach(([bKey, bStat]: [string, any]) => {
                   const amount = bStat.settledAmount || 0;
-                  // 키값에서 지명명 복구 (점, 공백 등 처리)
-                  const actualName = bKey.replace(/_/g, '.');
-                  result[actualName] = amount;
+                  // 키값에서 지점명 복구 시도
+                  const nameWithDots = bKey.replace(/_/g, '.');
+                  result[nameWithDots] = amount;
 
-                  // 혹시 모를 매칭을 위해 공백 있는 이름도 추가
                   const nameWithSpaces = bKey.replace(/_/g, ' ');
-                  if (actualName !== nameWithSpaces) {
-                    result[nameWithSpaces] = amount;
-                  }
+                  result[nameWithSpaces] = amount;
+
+                  // 원본 키도 유지
+                  result[bKey] = amount;
                 });
               }
 
@@ -571,6 +583,11 @@ export default function DashboardPage() {
                   const bKey = bName.replace(/\./g, '_').replace(/ /g, '_');
                   const bStat = day.branches?.[bKey] || { settledAmount: 0 };
                   result.sales = bStat.settledAmount || 0;
+
+                  // 디버그 로그 (특정 날짜)
+                  if (day.date === '2026-01-23') {
+                    console.log(`[Chart Debug 1/23] Branch=${bName}, Key=${bKey}, Sales=${result.sales}`);
+                  }
                 }
               }
 

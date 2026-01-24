@@ -145,7 +145,14 @@ export function useEmployees() {
 
       // Supabase supports upsert, but the original logic was selective.
       // For simplicity, we'll do an insert/upsert for all.
-      const { error } = await supabase.from('employees').upsert(payloads, { onConflict: 'email' });
+      // Deduplicate by email
+      const uniqueEmployeesMap = new Map();
+      payloads.forEach(e => {
+        if (e.email) uniqueEmployeesMap.set(e.email, e);
+      });
+      const finalEmployees = Array.from(uniqueEmployeesMap.values());
+
+      const { error } = await supabase.from('employees').upsert(finalEmployees, { onConflict: 'email' });
       if (error) throw error;
 
       toast({ title: '처리 완료', description: `성공: 직원 정보가 업데이트/추가되었습니다.` });

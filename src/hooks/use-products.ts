@@ -281,7 +281,14 @@ export function useProducts() {
         status: getStatus(Number(row.stock || 0))
       }));
 
-      const { error } = await supabase.from('products').upsert(productsToInsert);
+      // Deduplicate by ID
+      const uniqueProductsMap = new Map();
+      productsToInsert.forEach(p => {
+        if (p.id) uniqueProductsMap.set(p.id, p);
+      });
+      const finalProducts = Array.from(uniqueProductsMap.values());
+
+      const { error } = await supabase.from('products').upsert(finalProducts);
       if (error) throw error;
 
       toast({ title: '처리 완료', description: `${productsToInsert.length}개의 상품 정보가 반영되었습니다.` });

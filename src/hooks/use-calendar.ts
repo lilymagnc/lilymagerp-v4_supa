@@ -68,8 +68,7 @@ export function useCalendar() {
       let query = supabase.from('calendar_events').select('*');
 
       const isAdmin = user.role === '본사 관리자' ||
-        user.email?.toLowerCase() === 'lilymag0301@gmail.com' ||
-        user.email?.toLowerCase() === 'lilymagg01@gmail.com';
+        user.email?.toLowerCase() === 'lilymag0301@gmail.com';
 
       if (!isAdmin) {
         query = query.in('branch_name', [user.franchise, '전체']);

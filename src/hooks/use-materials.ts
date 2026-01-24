@@ -330,7 +330,14 @@ export function useMaterials() {
                 updated_at: new Date().toISOString()
             }));
 
-            const { error } = await supabase.from('materials').upsert(materialsToInsert);
+            // Deduplicate by ID
+            const uniqueMaterialsMap = new Map();
+            materialsToInsert.forEach(m => {
+                if (m.id) uniqueMaterialsMap.set(m.id, m);
+            });
+            const finalMaterials = Array.from(uniqueMaterialsMap.values());
+
+            const { error } = await supabase.from('materials').upsert(finalMaterials);
             if (error) throw error;
 
             // Category sync for all inserted items

@@ -20,7 +20,6 @@ const BulletinBoard = () => {
     return (
       role === '본사 관리자' ||
       email === 'lilymag0301@gmail.com' ||
-      email === 'lilymagg01@gmail.com' ||
       (role && role.includes('본사') && role.includes('관리자'))
     );
   }, [user]);

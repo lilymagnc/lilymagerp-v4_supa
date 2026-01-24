@@ -51,7 +51,7 @@ export default function DailySettlementPage() {
         const email = user.email?.toLowerCase();
 
         // 이메일 기반 강제 판정 (AuthProvider와 동기화)
-        if (email === 'lilymag0301@gmail.com' || email === 'lilymagg01@gmail.com') return true;
+        if (email === 'lilymag0301@gmail.com') return true;
 
         return role === '본사 관리자' || role.includes('본사') && role.includes('관리자');
     }, [user?.role, user?.email]);

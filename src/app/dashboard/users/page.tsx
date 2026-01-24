@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
-import { PlusCircle, Users, Search, Filter, Key, UserCheck, UserX } from "lucide-react";
+import { PlusCircle, Users, Search, Filter, Key, UserCheck, UserX, Loader2 } from "lucide-react";
 import { UserTable } from "./components/user-table";
 import { UserForm } from "./components/user-form";
 import { useAuth } from "@/hooks/use-auth";
@@ -145,6 +145,68 @@ export default function UsersPage() {
     setFilteredUsers(filtered);
   }, [users, searchTerm, roleFilter, statusFilter]);
 
+  // Supabase Auth 일괄 등록 로직
+  const [migrationLoading, setMigrationLoading] = useState(false);
+  const handleBulkRegisterToSupabase = async () => {
+    if (!confirm(`${users.length}명의 사용자를 Supabase 인증 시스템에 일괄 등록하시겠습니까?\n이미 등록된 사용자는 제외됩니다.\n\n초기 비밀번호는 'lilymag1234!'로 설정됩니다.`)) return;
+
+    setMigrationLoading(true);
+    let successCount = 0;
+    let existCount = 0;
+    let failCount = 0;
+
+    try {
+      // 관리자 세션을 유지하면서 가입시키기 위해 세션 저장을 하지 않는 임시 클라이언트 생성
+      const { createClient } = await import('@supabase/supabase-js');
+      const tempSupabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { auth: { persistSession: false } }
+      );
+
+      for (const user of users) {
+        try {
+          const { error } = await tempSupabase.auth.signUp({
+            email: user.email,
+            password: 'lilymag1234!', // 임시 비밀번호
+            options: {
+              data: {
+                role: user.role,
+                branch_name: user.franchise
+              }
+            }
+          });
+
+          if (error) {
+            if (error.message.includes("already registered") || error.status === 422) {
+              existCount++;
+            } else {
+              console.error(`Error registering ${user.email}:`, error);
+              failCount++;
+            }
+          } else {
+            successCount++;
+          }
+        } catch (err) {
+          failCount++;
+        }
+      }
+
+      toast({
+        title: "일괄 등록 완료",
+        description: `성공: ${successCount}, 이미 존재: ${existCount}, 실패: ${failCount}\n성공한 사용자들은 'lilymag1234!'로 로그인할 수 있습니다.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "오류 발생",
+        description: error.message
+      });
+    } finally {
+      setMigrationLoading(false);
+    }
+  };
+
   const handleDeleteUser = async (userId: string, userEmail: string) => {
     try {
       const userToDelete = users.find(u => u.email === userEmail);
@@ -277,10 +339,21 @@ export default function UsersPage() {
         title="사용자 관리"
         description="시스템 사용자 계정과 권한을 관리하세요."
       >
-        <Button onClick={() => setIsFormOpen(true)}>
-          <PlusCircle className="mr-2 h-4 w-4" />
-          사용자 추가
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleBulkRegisterToSupabase}
+            disabled={migrationLoading}
+            className="border-blue-500 text-blue-600 hover:bg-blue-50"
+          >
+            {migrationLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Key className="mr-2 h-4 w-4" />}
+            Supabase 인증 일괄 등록
+          </Button>
+          <Button onClick={() => setIsFormOpen(true)}>
+            <PlusCircle className="mr-2 h-4 w-4" />
+            사용자 추가
+          </Button>
+        </div>
       </PageHeader>
 
       {/* 통계 카드 */}

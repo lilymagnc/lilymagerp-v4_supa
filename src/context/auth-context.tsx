@@ -2,13 +2,10 @@
 
 import { createContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { Loader2 } from 'lucide-react';
 
 export interface UserProfile {
-  id: string;
-  uid: string; // Firebase UID
+  id: string; // Supabase UID
   email?: string;
   role?: '본사 관리자' | '가맹점 관리자' | '직원';
   franchise?: string;
@@ -19,26 +16,30 @@ export interface UserProfile {
 interface AuthContextType {
   user: UserProfile | null;
   loading: boolean;
+  signOut: () => Promise<void>;
 }
 
-export const AuthContext = createContext<AuthContextType>({ user: null, loading: true });
+export const AuthContext = createContext<AuthContextType>({
+  user: null,
+  loading: true,
+  signOut: async () => { }
+});
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserRole = useCallback(async (firebaseUser: FirebaseUser) => {
-    if (!firebaseUser.email) return null;
-
+  const fetchUserRole = useCallback(async (email: string, userId: string) => {
     try {
-      // user_roles 테이블에서 사용자 역할 확인
-      const { data: roleData, error } = await supabase
+      // 1. user_roles 테이블에서 사용자 역할 확인
+      const { data } = await supabase
         .from('user_roles')
         .select('*')
-        .eq('email', firebaseUser.email)
+        .eq('email', email)
         .eq('is_active', true)
         .maybeSingle();
 
+      const roleData = data as any;
       let role: '본사 관리자' | '가맹점 관리자' | '직원' = '직원';
 
       if (roleData) {
@@ -57,15 +58,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       // 특정 관리자 이메일 강제 권한 부여 (임시 해결책)
-      const email = firebaseUser.email.toLowerCase();
-      if (email === 'lilymag0301@gmail.com' || email === 'lilymagg01@gmail.com') {
+      const lowerEmail = email.toLowerCase();
+      if (lowerEmail === 'lilymag0301@gmail.com') {
         role = '본사 관리자';
       }
 
       return {
-        id: roleData?.id || firebaseUser.uid,
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
+        id: userId,
+        email: email,
         role,
         franchise: roleData?.branch_name || (role === '본사 관리자' ? '본사' : ''),
         branchId: roleData?.branch_id,
@@ -74,29 +74,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     } catch (error) {
       console.error("Error fetching user role from Supabase:", error);
-
-      // 오류 발생 시에도 특정 이메일은 관리자로 처리
-      const isSpecialAdmin = firebaseUser.email.toLowerCase() === 'lilymag0301@gmail.com' || firebaseUser.email.toLowerCase() === 'lilymagg01@gmail.com';
-
       return {
-        id: firebaseUser.uid,
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        role: isSpecialAdmin ? '본사 관리자' : '직원',
-        franchise: isSpecialAdmin ? '본사' : '미정'
+        id: userId,
+        email: email,
+        role: '직원',
+        franchise: '미정'
       } as UserProfile;
     }
   }, []);
 
   useEffect(() => {
-    if (!auth) {
-      setLoading(false);
-      return;
-    }
+    // 1. Get initial session
+    const getInitialSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const userWithRole = await fetchUserRole(session.user.email!, session.user.id);
+          setUser(userWithRole);
+        }
+      } catch (err) {
+        console.error("Session error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        const userWithRole = await fetchUserRole(firebaseUser);
+    getInitialSession();
+
+    // 2. Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        const userWithRole = await fetchUserRole(session.user.email!, session.user.id);
         setUser(userWithRole);
       } else {
         setUser(null);
@@ -104,8 +112,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [fetchUserRole]);
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
 
   if (loading) {
     return (
@@ -116,7 +131,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <AuthContext.Provider value={{ user, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );

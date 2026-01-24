@@ -36,7 +36,7 @@ export default function CalendarPage() {
     const email = user.email?.toLowerCase();
 
     // 이메일 기반 강제 판정 (AuthProvider와 동기화)
-    if (email === 'lilymag0301@gmail.com' || email === 'lilymagg01@gmail.com') return true;
+    if (email === 'lilymag0301@gmail.com') return true;
 
     return role === '본사 관리자' || role.includes('본사') && role.includes('관리자');
   }, [user?.role, user?.email]);
@@ -549,8 +549,8 @@ export default function CalendarPage() {
                     size="sm"
                     onClick={() => setSelectedEventType(type.value)}
                     className={`text-xs px-2 py-1 h-auto ${selectedEventType === type.value
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white text-gray-700 hover:bg-gray-50'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-gray-700 hover:bg-gray-50'
                       }`}
                   >
                     <div className={`w-2 h-2 rounded-full ${type.color} mr-1`}></div>
@@ -637,10 +637,10 @@ export default function CalendarPage() {
                       <div
                         key={event.id}
                         className={`text-xs p-1 rounded cursor-pointer text-white ${event.color} ${event.type === 'notice' && event.branchName === '본사'
-                            ? 'ring-2 ring-yellow-300 font-bold'
-                            : event.type === 'notice'
-                              ? 'ring-1 ring-gray-300'
-                              : ''
+                          ? 'ring-2 ring-yellow-300 font-bold'
+                          : event.type === 'notice'
+                            ? 'ring-1 ring-gray-300'
+                            : ''
                           }`}
                         onClick={(e) => {
                           e.stopPropagation(); // 날짜 클릭 이벤트 전파 방지

@@ -16,9 +16,25 @@ export function parseDate(date: any): Date | null {
     // Already a Date object
     if (date instanceof Date) return date;
 
-    // ISO string (Supabase format)
+    // ISO string or common string format
     if (typeof date === 'string') {
-        const parsed = new Date(date);
+        // Try parsing directly
+        let parsed = new Date(date);
+
+        // If failed, try replacing space with T for ISO-ish strings
+        if (isNaN(parsed.getTime()) && date.includes(' ')) {
+            const isoLike = date.replace(' ', 'T');
+            parsed = new Date(isoLike);
+        }
+
+        // If still failed, try parsing "YYYY-MM-DD" part only
+        if (isNaN(parsed.getTime())) {
+            const datePart = date.split(' ')[0];
+            if (datePart.includes('-')) {
+                parsed = new Date(datePart);
+            }
+        }
+
         return isNaN(parsed.getTime()) ? null : parsed;
     }
 
@@ -28,7 +44,7 @@ export function parseDate(date: any): Date | null {
     }
 
     // Firebase Timestamp with seconds property
-    if (date.seconds) {
+    if (typeof date === 'object' && date !== null && 'seconds' in date) {
         return new Date(date.seconds * 1000);
     }
 

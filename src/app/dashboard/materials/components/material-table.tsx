@@ -30,6 +30,9 @@ export type Material = {
   size: string;
   color: string;
   branch: string;
+  unit?: string;
+  spec?: string;
+  memo?: string;
 };
 interface MaterialTableProps {
   materials: Material[];

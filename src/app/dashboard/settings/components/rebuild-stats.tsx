@@ -6,6 +6,8 @@ import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, Play, Database } from "lucide-react";
 import { supabase } from '@/lib/supabase';
 import { syncFirebaseToSupabase } from '@/lib/firebase-sync';
+import { format } from 'date-fns';
+import { parseDate } from '@/lib/date-utils';
 
 export default function RebuildStats() {
     const [loading, setLoading] = useState(false);
@@ -22,23 +24,25 @@ export default function RebuildStats() {
         try {
             console.log("Fetching all orders from Supabase...");
             // 1. 모든 주문 가져오기
-            const { data: orders, error: fetchError } = await supabase
+            const { data, error: fetchError } = await supabase
                 .from('orders')
                 .select('*');
+
+            const orders = data as any[] || [];
 
             if (fetchError) {
                 console.error("Fetch error:", fetchError);
                 throw fetchError;
             }
 
-            if (!orders || orders.length === 0) {
+            if (orders.length === 0) {
                 console.warn("No orders found.");
                 toast({ title: "데이터 없음", description: "주문 데이터가 없습니다.", variant: "default" });
                 setLoading(false);
                 return;
             }
 
-            console.log(`Fetched ${orders.length} orders.`);
+            console.log(`Fetched ${orders.length} orders total.`);
             const totalOrders = orders.length;
             setProgress({ current: 0, total: totalOrders, status: 'computing' });
 
@@ -47,85 +51,96 @@ export default function RebuildStats() {
 
             const dailyStats: { [key: string]: any } = {};
 
-            orders.forEach((order) => {
-                if (order.status === 'canceled') return;
+            orders.forEach((order, index) => {
+                // 취소된 주문은 집계에서 제외
+                if (!order || order.status === 'canceled' || order.status === '취소') return;
 
-                // 1. 매출(Revenue) 기준일: 주문 시점
-                let orderDateStr = '';
-                if (order.order_date) {
-                    // order_date가 Timestamp string인 경우 처리
-                    // e.g. "2026-01-10T04:50:30.171+00:00" -> "2026-01-10"
-                    orderDateStr = new Date(order.order_date).toISOString().split('T')[0];
+                // 1. 주문 날짜 (매출 기준일)
+                const parsedOrderDate = parseDate(order.order_date || order.created_at);
+                if (!parsedOrderDate) {
+                    console.warn(`[Order ${order.id}] Failed to parse order date`);
+                    return;
                 }
+                const orderDateStr = format(parsedOrderDate, 'yyyy-MM-dd');
 
-                // 2. 정산(Settlement) 기준일: 결제 완료 시점 (없으면 주문일)
-                let settlementDateStr = orderDateStr;
+                // 2. 결제 날짜 (정산 기준일) - 없으면 주문일 사용
                 const payment = order.payment || {};
+                const parsedPaymentDate = parseDate(payment.completedAt || order.completed_at || order.updated_at || order.order_date);
+                const settlementDateStr = parsedPaymentDate ? format(parsedPaymentDate, 'yyyy-MM-dd') : orderDateStr;
 
-                if (payment.completedAt) {
-                    // completedAt이 Firestore Timestamp 형식({seconds, ...})일 수도 있고 문자열일 수도 있음
-                    if (typeof payment.completedAt === 'string') {
-                        settlementDateStr = new Date(payment.completedAt).toISOString().split('T')[0];
-                    } else if (payment.completedAt.seconds) {
-                        settlementDateStr = new Date(payment.completedAt.seconds * 1000).toISOString().split('T')[0];
-                    }
-                }
+                // 3. 지점명 처리
+                const branchName = order.branch_name || order.branchName || "Unknown";
+                const branchKey = branchName.replace(/\./g, '_').replace(/ /g, '_');
 
-                const branchName = order.branch_name || "Unknown";
+                // 4. 금액 추출 (여러 필드 확인)
                 const summary = order.summary || {};
-                const revenue = summary.total || order.total || 0;
-                const isSettled = payment.status === 'paid' || payment.status === 'completed';
+                const revenue = Number(summary.total || order.total || summary.total_amount || order.amount || 0);
 
-                if (!orderDateStr) return; // 유효하지 않은 날짜 건너뛰기
+                // 5. 결제/정산 완료 여부 판정
+                const isSettled = payment.status === 'paid' ||
+                    payment.status === 'completed' ||
+                    payment.status === '결제완료' ||
+                    order.status === 'completed' ||
+                    order.status === '주문완료' ||
+                    order.payment_status === 'paid';
 
-                // 매출/주문수 카운트 (주문일 기준)
+                // --- 집계 로직 시작 ---
+
+                // 매출 기준일 (주문일) 데이터 공간 확보
                 if (!dailyStats[orderDateStr]) {
-                    dailyStats[orderDateStr] = {
-                        date: orderDateStr,
-                        totalRevenue: 0,
-                        totalOrderCount: 0,
-                        totalSettledAmount: 0,
-                        branches: {}
-                    };
+                    dailyStats[orderDateStr] = { date: orderDateStr, totalRevenue: 0, totalOrderCount: 0, totalSettledAmount: 0, branches: {} };
                 }
+
+                // 전사 합계 (주문일 기준: 매출액, 주문건수)
                 dailyStats[orderDateStr].totalRevenue += revenue;
                 dailyStats[orderDateStr].totalOrderCount += 1;
 
-                const branchKey = branchName.replace(/\./g, '_');
+                // 지점별 합계 (주문일 기준: 매출액, 주문건수)
                 if (!dailyStats[orderDateStr].branches[branchKey]) {
                     dailyStats[orderDateStr].branches[branchKey] = { revenue: 0, orderCount: 0, settledAmount: 0 };
                 }
                 dailyStats[orderDateStr].branches[branchKey].revenue += revenue;
                 dailyStats[orderDateStr].branches[branchKey].orderCount += 1;
 
-                // 정산액 카운트 (결제완료일 기준)
+                // 정산액 (결제완료일 기준)
                 if (isSettled) {
                     if (!dailyStats[settlementDateStr]) {
-                        dailyStats[settlementDateStr] = {
-                            date: settlementDateStr,
-                            totalRevenue: 0,
-                            totalOrderCount: 0,
-                            totalSettledAmount: 0,
-                            branches: {}
-                        };
+                        dailyStats[settlementDateStr] = { date: settlementDateStr, totalRevenue: 0, totalOrderCount: 0, totalSettledAmount: 0, branches: {} };
                     }
+
+                    // 전사 정산 합계
                     dailyStats[settlementDateStr].totalSettledAmount += revenue;
 
+                    // 지점별 정산 합계
                     if (!dailyStats[settlementDateStr].branches[branchKey]) {
                         dailyStats[settlementDateStr].branches[branchKey] = { revenue: 0, orderCount: 0, settledAmount: 0 };
                     }
                     dailyStats[settlementDateStr].branches[branchKey].settledAmount += revenue;
+
+                    if (orderDateStr === '2026-01-23') {
+                        if (!globalThis.foundBranches23) globalThis.foundBranches23 = new Set();
+                        (globalThis.foundBranches23 as Set<string>).add(branchName);
+
+                        if (index < 20) {
+                            console.log(`[1/23 Order] ID=${order.id.slice(0, 8)}, Branch='${branchName}', Amount=${revenue}, Status=${order.status}`);
+                        }
+                    }
                 }
             });
 
-            console.log("Stats computation complete.");
+            if (globalThis.foundBranches23) {
+                console.log("---- Unique Branches found on 2026-01-23 ----");
+                console.log(Array.from(globalThis.foundBranches23 as Set<string>));
+                console.log("---------------------------------------------");
+            }
+
+            const processedDays = Object.keys(dailyStats);
+            console.log(`Stats computation complete. Processed ${processedDays.length} distinct days.`);
 
             // 2. 결과 저장
-            const days = Object.keys(dailyStats);
-            console.log(`Saving ${days.length} daily stats records...`);
-            setProgress(prev => ({ ...prev, total: days.length, status: 'saving' }));
+            setProgress(prev => ({ ...prev, total: processedDays.length, status: 'saving' }));
 
-            const statsArray = days.map(dateStr => ({
+            const statsArray = processedDays.map(dateStr => ({
                 date: dailyStats[dateStr].date,
                 total_revenue: dailyStats[dateStr].totalRevenue,
                 total_order_count: dailyStats[dateStr].totalOrderCount,
@@ -136,7 +151,7 @@ export default function RebuildStats() {
 
             const { error: upsertError } = await supabase
                 .from('daily_stats')
-                .upsert(statsArray);
+                .upsert(statsArray as any, { onConflict: 'date' });
 
             if (upsertError) {
                 console.error("Upsert error:", upsertError);
@@ -144,11 +159,11 @@ export default function RebuildStats() {
             }
 
             console.log("Save complete.");
-            setProgress({ current: days.length, total: days.length, status: 'completed' });
+            setProgress({ current: processedDays.length, total: processedDays.length, status: 'completed' });
 
             toast({
                 title: "통계 재계산 완료",
-                description: `${days.length}일간의 데이터가 성공적으로 집계되었습니다.`,
+                description: `${processedDays.length}일간의 데이터가 성공적으로 집계되었습니다.`,
             });
 
         } catch (error: any) {

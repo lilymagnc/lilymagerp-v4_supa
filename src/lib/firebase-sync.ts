@@ -59,10 +59,11 @@ export async function syncFirebaseToSupabase(
 
             results[cfg.firebase] = { total, synced: 0, errors: 0 };
 
-            // Batch processing
-            const BATCH_SIZE = 50;
-            const docBatches: any[][] = [];
-            let currentBatch: any[] = [];
+            // Collect all payloads and deduplicate by conflict key
+            const payloadsMap = new Map<string, any>();
+            const conflictKey = cfg.supabase === 'branches' ? 'name' :
+                cfg.supabase === 'daily_stats' ? 'date' :
+                    'id';
 
             for (const doc of snapshot.docs) {
                 try {
@@ -212,11 +213,10 @@ export async function syncFirebaseToSupabase(
                         payload.last_updated = convertValue(data.lastUpdated);
                     }
 
-                    currentBatch.push(payload);
-
-                    if (currentBatch.length >= BATCH_SIZE) {
-                        docBatches.push([...currentBatch]);
-                        currentBatch = [];
+                    // Store in map using conflict key to deduplicate
+                    const conflictValue = payload[conflictKey];
+                    if (conflictValue) {
+                        payloadsMap.set(String(conflictValue), payload);
                     }
                 } catch (err) {
                     errors++;
@@ -224,20 +224,19 @@ export async function syncFirebaseToSupabase(
                 }
             }
 
-            // Add last batch
-            if (currentBatch.length > 0) {
-                docBatches.push(currentBatch);
+            // Batch processing from unique payloads
+            const uniquePayloads = Array.from(payloadsMap.values());
+            const BATCH_SIZE = 50;
+            const docBatches: any[][] = [];
+
+            for (let i = 0; i < uniquePayloads.length; i += BATCH_SIZE) {
+                docBatches.push(uniquePayloads.slice(i, i + BATCH_SIZE));
             }
 
             // Upsert in batches
             for (const batch of docBatches) {
-                let onConflict = 'id';
-                if (cfg.supabase === 'branches') onConflict = 'name';
-                else if (cfg.supabase === 'daily_stats') onConflict = 'date';
-
                 const { error } = await (supabase.from(cfg.supabase) as any)
-                    .upsert(batch, { onConflict });
-
+                    .upsert(batch, { onConflict: conflictKey });
 
                 if (error) {
                     errors += batch.length;
