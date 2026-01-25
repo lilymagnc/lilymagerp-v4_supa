@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
 // v4-supa-debug-v1: 환경 변수 문제를 진단하기 위한 디버그 로그와 로직 보강
-let supabaseInstance: ReturnType<typeof createClient> | null = null;
+let supabaseInstance: any = null;
 
-export const supabase = new Proxy({} as ReturnType<typeof createClient>, {
+export const supabase = new Proxy({} as any, {
     get(_, prop) {
         if (!supabaseInstance) {
             const rawUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();

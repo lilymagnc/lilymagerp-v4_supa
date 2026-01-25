@@ -26,18 +26,17 @@ import { ExcelUploadDialog } from "./components/excel-upload-dialog";
 import { OrderTransferDialog } from "@/components/order-transfer-dialog";
 import { OrderOutsourceDialog } from "@/components/order-outsource-dialog";
 import { Trash2, XCircle, Calendar as CalendarIcon, ExternalLink } from "lucide-react";
-import { Timestamp } from "firebase/firestore";
 import { exportOrdersToExcel } from "@/lib/excel-export";
 import { useToast } from "@/hooks/use-toast";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { doc, updateDoc, serverTimestamp, addDoc, collection } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { useNotifications } from "@/hooks/use-notifications";
 import { useDisplayBoard } from "@/hooks/use-display-board";
 import { useCalendar } from "@/hooks/use-calendar";
 import { parseDate } from "@/lib/date-utils";
+import { isSettled, isCanceled, isPendingPayment } from "@/lib/order-utils";
 
 
 export default function OrdersPage() {
@@ -135,12 +134,8 @@ export default function OrdersPage() {
       let processedCount = 0;
       for (const order of overdueOrders) {
         try {
-          // 1. 주문 상태 업데이트 (Firebase 직접 업데이트하여 반영 속도 개선)
-          const orderRef = doc(db, 'orders', order.id);
-          await updateDoc(orderRef, {
-            status: 'completed',
-            updatedAt: serverTimestamp()
-          });
+          // 1. 주문 상태 업데이트 (Supabase 사용)
+          await updateOrderStatus(order.id, 'completed');
 
           // 2. 시스템 알림 생성
           await createNotification({
@@ -151,9 +146,7 @@ export default function OrdersPage() {
             severity: 'low',
             branchId: order.branchId,
             relatedId: order.id,
-            relatedType: 'order',
-            isRead: false,
-            isArchived: false
+            relatedType: 'order'
           });
 
           // 3. 전광판 등록 (24시간 노출)
@@ -563,7 +556,7 @@ export default function OrdersPage() {
     }
     if (startDate || endDate) {
       filtered = filtered.filter(order => {
-        const orderDate = order.orderDate ? (order.orderDate as Timestamp).toDate() : null;
+        const orderDate = order.orderDate ? parseDate(order.orderDate) : null;
 
         // 수령 방식에 따른 정확한 일정 정보 추출
         const scheduleInfo = order.receiptType === 'delivery_reservation' ? order.deliveryInfo : order.pickupInfo;
@@ -650,37 +643,18 @@ export default function OrdersPage() {
 
     // 오늘 주문한 모든 주문 (주문일 기준)
     const todayOrderedOrdersForRevenue = filteredOrders.filter(order => {
-      if (!order.orderDate) return false;
-      let orderDate: Date;
-      if (typeof order.orderDate === 'string') {
-        orderDate = new Date(order.orderDate);
-      } else if (order.orderDate.seconds) {
-        orderDate = new Date(order.orderDate.seconds * 1000);
-      } else if (typeof order.orderDate.toDate === 'function') {
-        orderDate = order.orderDate.toDate();
-      } else {
-        return false;
-      }
+      const orderDate = parseDate(order.orderDate);
+      if (!orderDate) return false;
       const orderDateOnly = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate());
       return orderDateOnly.getTime() === todayStartForRevenue.getTime();
     });
 
     // 오늘 결제 완료된 모든 주문 (결제완료일 기준)
     const todayCompletedOrdersForRevenue = filteredOrders.filter(order => {
-      if ((order.payment?.status !== 'paid' && order.payment?.status !== 'completed') || !order.payment?.completedAt) return false;
+      if (!isSettled(order) || !order.payment?.completedAt) return false;
 
-      let completedDate: Date;
-      const compAt = order.payment.completedAt;
-
-      if (typeof compAt === 'string') {
-        completedDate = new Date(compAt);
-      } else if (compAt.seconds) {
-        completedDate = new Date(compAt.seconds * 1000);
-      } else if (typeof compAt.toDate === 'function') {
-        completedDate = compAt.toDate();
-      } else {
-        return false;
-      }
+      const completedDate = parseDate(order.payment.completedAt);
+      if (!completedDate) return false;
 
       const completedDateOnly = new Date(completedDate.getFullYear(), completedDate.getMonth(), completedDate.getDate());
       return completedDateOnly.getTime() === todayStartForRevenue.getTime();
@@ -688,18 +662,8 @@ export default function OrdersPage() {
 
     // 금일결제: 어제 및 과거주문 + 오늘결제완료 (오늘주문 + 오늘결제완료는 제외)
     const todayPaymentCompletedOrdersForRevenue = todayCompletedOrdersForRevenue.filter(order => {
-      if (!order.orderDate) return false;
-
-      let orderDate: Date;
-      if (typeof order.orderDate === 'string') {
-        orderDate = new Date(order.orderDate);
-      } else if (order.orderDate.seconds) {
-        orderDate = new Date(order.orderDate.seconds * 1000);
-      } else if (typeof order.orderDate.toDate === 'function') {
-        orderDate = order.orderDate.toDate();
-      } else {
-        return false;
-      }
+      const orderDate = parseDate(order.orderDate);
+      if (!orderDate) return false;
 
       const orderDateOnly = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate());
       // 주문일이 오늘이 아닌 주문만 포함 (어제 및 과거주문)
@@ -708,22 +672,13 @@ export default function OrdersPage() {
 
     // 오늘 주문했지만 아직 미결제인 주문
     const todayOrderedButPendingOrdersForRevenue = todayOrderedOrdersForRevenue.filter(order =>
-      order.payment?.status !== 'paid' && order.payment?.status !== 'completed'
+      isPendingPayment(order)
     );
 
     // 어제 주문했지만 오늘 결제된 주문
     const yesterdayOrderedTodayCompletedOrdersForRevenue = todayCompletedOrdersForRevenue.filter(order => {
-      if (!order.orderDate) return false;
-      let orderDate: Date;
-      if (typeof order.orderDate === 'string') {
-        orderDate = new Date(order.orderDate);
-      } else if (order.orderDate.seconds) {
-        orderDate = new Date(order.orderDate.seconds * 1000);
-      } else if (typeof order.orderDate.toDate === 'function') {
-        orderDate = order.orderDate.toDate();
-      } else {
-        return false;
-      }
+      const orderDate = parseDate(order.orderDate);
+      if (!orderDate) return false;
       const orderDateOnly = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate());
       return orderDateOnly.getTime() !== todayStartForRevenue.getTime();
     });
@@ -764,11 +719,11 @@ export default function OrdersPage() {
       // 결제 상태 필터링
       if (selectedPaymentStatus !== "all") {
         if (selectedPaymentStatus === "paid") {
-          baseFiltered = baseFiltered.filter(order => order.payment?.status === "paid" || order.payment?.status === "completed");
+          baseFiltered = baseFiltered.filter(order => isSettled(order));
         } else if (selectedPaymentStatus === "pending") {
-          baseFiltered = baseFiltered.filter(order => order.payment?.status === "pending");
+          baseFiltered = baseFiltered.filter(order => isPendingPayment(order));
         } else if (selectedPaymentStatus === "split_payment") {
-          baseFiltered = baseFiltered.filter(order => order.payment?.status === "split_payment");
+          baseFiltered = baseFiltered.filter(order => order.payment?.status === "split_payment" || (order.payment as any)?.paymentStatus === "split_payment");
         }
       }
 
@@ -784,19 +739,17 @@ export default function OrdersPage() {
 
       // 완결 주문: 결제 완료일 기준으로 필터링
       const completedByPaymentDate = baseFiltered.filter(order => {
-        if (order.payment?.status !== 'paid' && order.payment?.status !== 'completed') {
+        if (!isSettled(order)) {
           return false;
         }
 
         // 결제 완료일 기준으로 필터링
         let revenueDate: Date | null = null;
         if (order.payment?.completedAt) {
-          const completedDate = (order.payment.completedAt as Timestamp).toDate();
-          revenueDate = new Date(completedDate.getFullYear(), completedDate.getMonth(), completedDate.getDate());
+          revenueDate = parseDate(order.payment.completedAt);
         } else if (order.orderDate) {
           // 결제 완료일이 없으면 주문일 기준
-          const orderDate = (order.orderDate as Timestamp).toDate();
-          revenueDate = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate());
+          revenueDate = parseDate(order.orderDate);
         }
 
         if (!revenueDate) return false;
@@ -824,10 +777,11 @@ export default function OrdersPage() {
 
       // 미결 주문: 주문일 기준으로 필터링
       const pendingByOrderDate = baseFiltered.filter(order => {
-        if (order.payment?.status !== 'pending') return false;
+        if (!isPendingPayment(order)) return false;
         if (!order.orderDate) return false;
 
-        const orderDate = (order.orderDate as Timestamp).toDate();
+        const orderDate = parseDate(order.orderDate);
+        if (!orderDate) return false;
         const orderDateOnly = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate());
 
         if (startDate && endDate) {
@@ -863,11 +817,11 @@ export default function OrdersPage() {
 
       // 총 매출의 완결/미결 분리 (수주받은 주문 제외)
       const totalCompletedOrders = filteredOrders.filter(order =>
-        (order.payment?.status === 'paid' || order.payment?.status === 'completed') &&
+        isSettled(order) &&
         !(order.transferInfo?.isTransferred && order.transferInfo?.processBranchName && userBranch && order.transferInfo.processBranchName === userBranch)
       );
       const totalPendingOrders = filteredOrders.filter(order =>
-        order.payment?.status === 'pending' &&
+        isPendingPayment(order) &&
         !(order.transferInfo?.isTransferred && order.transferInfo?.processBranchName && userBranch && order.transferInfo.processBranchName === userBranch)
       );
       totalCompletedAmount = totalCompletedOrders.reduce((sum, order) => sum + (order.summary?.total || 0), 0);

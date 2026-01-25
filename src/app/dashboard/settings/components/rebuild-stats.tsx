@@ -5,9 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, Play, Database } from "lucide-react";
 import { supabase } from '@/lib/supabase';
-import { syncFirebaseToSupabase } from '@/lib/firebase-sync';
 import { format } from 'date-fns';
 import { parseDate } from '@/lib/date-utils';
+import { isSettled, isCanceled } from '@/lib/order-utils';
+import { sanitizeBranchKey } from '@/lib/stats-utils';
 
 export default function RebuildStats() {
     const [loading, setLoading] = useState(false);
@@ -22,18 +23,44 @@ export default function RebuildStats() {
         toast({ title: "작업 시작", description: "주문 데이터를 불러오고 있습니다..." });
 
         try {
-            console.log("Fetching all orders from Supabase...");
-            // 1. 모든 주문 가져오기
-            const { data, error: fetchError } = await supabase
-                .from('orders')
-                .select('*');
+            console.log("Fetching all orders from Supabase using pagination...");
 
-            const orders = data as any[] || [];
+            let allOrders: any[] = [];
+            let lastId = '';
+            let hasMore = true;
+            const PAGE_SIZE = 1000;
 
-            if (fetchError) {
-                console.error("Fetch error:", fetchError);
-                throw fetchError;
+            while (hasMore) {
+                let query = supabase
+                    .from('orders')
+                    .select('*')
+                    .order('id', { ascending: true })
+                    .limit(PAGE_SIZE);
+
+                if (lastId) {
+                    query = query.gt('id', lastId);
+                }
+
+                const { data, error: fetchError } = await query;
+
+                if (fetchError) {
+                    console.error("Fetch error:", fetchError);
+                    throw fetchError;
+                }
+
+                if (!data || data.length === 0) {
+                    hasMore = false;
+                } else {
+                    allOrders = [...allOrders, ...data];
+                    lastId = data[data.length - 1].id;
+                    if (data.length < PAGE_SIZE) {
+                        hasMore = false;
+                    }
+                    setProgress(prev => ({ ...prev, current: allOrders.length, status: 'fetching' }));
+                }
             }
+
+            const orders = allOrders;
 
             if (orders.length === 0) {
                 console.warn("No orders found.");
@@ -53,7 +80,7 @@ export default function RebuildStats() {
 
             orders.forEach((order, index) => {
                 // 취소된 주문은 집계에서 제외
-                if (!order || order.status === 'canceled' || order.status === '취소') return;
+                if (!order || isCanceled(order)) return;
 
                 // 1. 주문 날짜 (매출 기준일)
                 const parsedOrderDate = parseDate(order.order_date || order.created_at);
@@ -70,19 +97,14 @@ export default function RebuildStats() {
 
                 // 3. 지점명 처리
                 const branchName = order.branch_name || order.branchName || "Unknown";
-                const branchKey = branchName.replace(/\./g, '_').replace(/ /g, '_');
+                const branchKey = sanitizeBranchKey(branchName);
 
                 // 4. 금액 추출 (여러 필드 확인)
                 const summary = order.summary || {};
                 const revenue = Number(summary.total || order.total || summary.total_amount || order.amount || 0);
 
                 // 5. 결제/정산 완료 여부 판정
-                const isSettled = payment.status === 'paid' ||
-                    payment.status === 'completed' ||
-                    payment.status === '결제완료' ||
-                    order.status === 'completed' ||
-                    order.status === '주문완료' ||
-                    order.payment_status === 'paid';
+                const settled = isSettled(order);
 
                 // --- 집계 로직 시작 ---
 
@@ -103,7 +125,7 @@ export default function RebuildStats() {
                 dailyStats[orderDateStr].branches[branchKey].orderCount += 1;
 
                 // 정산액 (결제완료일 기준)
-                if (isSettled) {
+                if (settled) {
                     if (!dailyStats[settlementDateStr]) {
                         dailyStats[settlementDateStr] = { date: settlementDateStr, totalRevenue: 0, totalOrderCount: 0, totalSettledAmount: 0, branches: {} };
                     }
@@ -189,16 +211,21 @@ export default function RebuildStats() {
         });
 
         try {
-            const result = await syncFirebaseToSupabase((progress) => {
-                setSyncProgress(progress);
-            }, collectionName);
+            const url = new URL('/api/firebase-sync', window.location.origin);
+            if (collectionName) url.searchParams.set('collection', collectionName);
+            const res = await fetch(url.toString());
+            const data = await res.json();
 
-            if (result.success) {
+            if (data.success) {
                 toast({
                     title: "동기화 완료",
-                    description: collectionName ? `${collectionName} 데이터가 성공적으로 동기화되었습니다.` : "Firebase 데이터가 성공적으로 Supabase로 동기화되었습니다.",
+                    description: collectionName
+                        ? `${collectionName} 데이터가 성공적으로 동기화되었습니다.`
+                        : "Firebase 데이터가 성공적으로 Supabase로 동기화되었습니다.",
                 });
-                console.log("Sync details:", result.details);
+                console.log("Sync details:", data.result);
+            } else {
+                throw new Error(data.error || 'Unknown error');
             }
         } catch (error: any) {
             console.error("Firebase sync error:", error);

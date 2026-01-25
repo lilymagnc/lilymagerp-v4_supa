@@ -1,5 +1,14 @@
 import { supabase } from '@/lib/supabase';
 
+/**
+ * 지점명을 JSONB 키로 안전하게 사용하기 위해 변환합니다.
+ * '릴리맥 광화문점' -> '릴리맥_광화문점'
+ */
+export const sanitizeBranchKey = (branchName: string): string => {
+    if (!branchName) return "Unknown";
+    return branchName.replace(/\./g, '_').replace(/ /g, '_');
+};
+
 export async function updateDailyStats(
     orderDate: Date | string,
     branchName: string,
@@ -23,7 +32,7 @@ export async function updateDailyStats(
             p_revenue_delta: Math.round(change.revenueDelta),
             p_order_count_delta: change.orderCountDelta,
             p_settled_amount_delta: Math.round(change.settledAmountDelta),
-            p_branch_key: branchName
+            p_branch_key: sanitizeBranchKey(branchName)
         });
 
         if (error) throw error;

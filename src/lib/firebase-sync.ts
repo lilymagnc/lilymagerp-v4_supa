@@ -1,15 +1,36 @@
-import { db } from '@/lib/firebase';
+import admin from 'firebase-admin';
 import { supabase } from '@/lib/supabase';
-import {
-    collection,
-    getDocs,
-    Timestamp
-} from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, Timestamp } from 'firebase/firestore';
+
+// Initialize Firebase Admin SDK (server side)
+let adminDb: admin.firestore.Firestore | null = null;
+if (typeof window === 'undefined') {
+    try {
+        // Use GOOGLE_APPLICATION_CREDENTIALS env var
+        admin.initializeApp({
+            credential: admin.credential.applicationDefault()
+        });
+        adminDb = admin.firestore();
+    } catch (e) {
+        console.error('Admin SDK init error:', e);
+    }
+}
 
 const convertValue = (val: any): any => {
-    if (val instanceof Timestamp) return val.toDate().toISOString();
+    if (!val) return val;
+
+    // Check for Firestore Timestamp (Client or Admin SDK)
+    if (val.toDate && typeof val.toDate === 'function') {
+        return val.toDate().toISOString();
+    }
+
+    // Native Date
+    if (val instanceof Date) return val.toISOString();
+
     if (Array.isArray(val)) return val.map(convertValue);
-    if (typeof val === 'object' && val !== null) {
+
+    if (typeof val === 'object') {
         const newObj: any = {};
         for (const key in val) {
             newObj[key] = convertValue(val[key]);
@@ -52,7 +73,14 @@ export async function syncFirebaseToSupabase(
     for (const cfg of collectionsToSync) {
         try {
             console.log(`Starting sync for ${cfg.firebase}...`);
-            const snapshot = await getDocs(collection(db, cfg.firebase));
+            let snapshot;
+            if (adminDb) {
+                // Admin SDK uses its own collection method
+                snapshot = await adminDb.collection(cfg.firebase).get();
+            } else {
+                // Client SDK fallback
+                snapshot = await getDocs(collection(db, cfg.firebase));
+            }
             const total = snapshot.size;
             let synced = 0;
             let errors = 0;
@@ -76,7 +104,7 @@ export async function syncFirebaseToSupabase(
                     const extraData: any = {};
 
                     const allowedColumns = (cfg.supabase === 'orders') ?
-                        ['id', 'order_number', 'status', 'receipt_type', 'branch_id', 'branch_name', 'order_date', 'orderer', 'delivery_info', 'pickup_info', 'summary', 'payment', 'items', 'memo', 'transfer_info', 'outsource_info', 'cancel_reason', 'canceled_at', 'actual_delivery_cost', 'actual_delivery_cost_cash', 'delivery_cost_status', 'delivery_cost_updated_at', 'delivery_cost_updated_by', 'delivery_cost_reason', 'delivery_profit', 'created_at', 'updated_at', 'completed_at', 'completed_by', 'extra_data'] :
+                        ['id', 'order_number', 'status', 'receipt_type', 'branch_id', 'branch_name', 'order_date', 'orderer', 'delivery_info', 'pickup_info', 'summary', 'payment', 'items', 'memo', 'transfer_info', 'outsource_info', 'actual_delivery_cost', 'actual_delivery_cost_cash', 'delivery_cost_status', 'delivery_cost_updated_at', 'delivery_cost_updated_by', 'delivery_cost_reason', 'delivery_profit', 'created_at', 'updated_at', 'completed_at', 'completed_by', 'extra_data'] :
                         (cfg.supabase === 'customers') ?
                             ['id', 'name', 'contact', 'company_name', 'address', 'email', 'grade', 'memo', 'points', 'type', 'birthday', 'wedding_anniversary', 'founding_anniversary', 'first_visit_date', 'other_anniversary_name', 'other_anniversary', 'special_notes', 'monthly_payment_day', 'total_spent', 'order_count', 'primary_branch', 'branch', 'branches', 'is_deleted', 'extra_data', 'created_at', 'updated_at', 'last_order_date'] :
                             (cfg.supabase === 'products') ?
@@ -88,7 +116,7 @@ export async function syncFirebaseToSupabase(
                                         (cfg.supabase === 'simple_expenses') ?
                                             ['id', 'expense_date', 'amount', 'category', 'sub_category', 'description', 'supplier', 'quantity', 'unit_price', 'branch_id', 'branch_name', 'receipt_url', 'receipt_file_name', 'related_request_id', 'is_auto_generated', 'inventory_updates', 'extra_data', 'created_at', 'updated_at'] :
                                             (cfg.supabase === 'order_transfers') ?
-                                                ['id', 'original_order_id', 'order_branch_id', 'order_branch_name', 'process_branch_id', 'process_branch_name', 'transfer_date', 'transfer_reason', 'transfer_by', 'transfer_by_user', 'status', 'amount_split', 'original_order_amount', 'notes', 'accepted_at', 'accepted_by', 'rejected_at', 'rejected_by', 'completed_at', 'completed_by', 'cancelled_at', 'cancelled_by', 'cancel_reason', 'created_at', 'updated_at'] :
+                                                ['id', 'original_order_id', 'order_branch_id', 'order_branch_name', 'process_branch_id', 'process_branch_name', 'transfer_date', 'transfer_reason', 'transfer_by', 'transfer_by_user', 'status', 'amount_split', 'original_order_amount', 'notes', 'accepted_at', 'accepted_by', 'rejected_at', 'rejected_by', 'completed_at', 'completed_by', 'cancelled_at', 'cancelled_by', 'created_at', 'updated_at'] :
                                                 (cfg.supabase === 'material_requests') ?
                                                     ['id', 'request_number', 'branch_id', 'branch_name', 'requester_id', 'requester_name', 'status', 'total_amount', 'items', 'actual_purchase', 'delivery', 'created_at', 'updated_at'] :
                                                     (cfg.supabase === 'user_roles') ?

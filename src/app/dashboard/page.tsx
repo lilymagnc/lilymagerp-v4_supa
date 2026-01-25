@@ -473,7 +473,7 @@ export default function DashboardPage() {
           let queryBuilder = supabase
             .from('orders')
             .select('*')
-            .in('status', ['pending', 'processing']);
+            .in('status', ['pending', 'processing', '대기', '준비중', '처리중']);
 
           if (!isAdmin || branchFilter) {
             const bName = branchFilter || userBranch;
@@ -553,11 +553,17 @@ export default function DashboardPage() {
               pendingPaymentAmount
             }));
 
-            const dailyChartStats = statsData.filter((d: any) => d.date >= dailyStartDate);
-            const dailyData = dailyChartStats.map((day: any) => {
-              const dateObj = parseISO(day.date);
-              const weekday = koreanWeekdays[dateObj.getDay()];
-              const label = `${format(dateObj, 'M/d')} (${weekday})`;
+            // 기간 내의 모든 날짜 생성 (데이터가 없는 날도 표시하기 위함)
+            const dailyData: DailySalesData[] = [];
+            let currentDate = parseISO(dailyStartDate);
+            const endDate = parseISO(dailyEndDate);
+
+            while (currentDate <= endDate) {
+              const dateStr = format(currentDate, 'yyyy-MM-dd');
+              const day = statsData.find((d: any) => d.date === dateStr) || { date: dateStr, totalSettledAmount: 0, branches: {} };
+
+              const weekday = koreanWeekdays[currentDate.getDay()];
+              const label = `${format(currentDate, 'M/d')} (${weekday})`;
 
               const result: any = { date: label, totalSales: day.totalSettledAmount || 0 };
 
@@ -565,14 +571,10 @@ export default function DashboardPage() {
               if (day.branches) {
                 Object.entries(day.branches).forEach(([bKey, bStat]: [string, any]) => {
                   const amount = bStat.settledAmount || 0;
-                  // 키값에서 지점명 복구 시도
                   const nameWithDots = bKey.replace(/_/g, '.');
                   result[nameWithDots] = amount;
-
                   const nameWithSpaces = bKey.replace(/_/g, ' ');
                   result[nameWithSpaces] = amount;
-
-                  // 원본 키도 유지
                   result[bKey] = amount;
                 });
               }
@@ -583,16 +585,12 @@ export default function DashboardPage() {
                   const bKey = bName.replace(/\./g, '_').replace(/ /g, '_');
                   const bStat = day.branches?.[bKey] || { settledAmount: 0 };
                   result.sales = bStat.settledAmount || 0;
-
-                  // 디버그 로그 (특정 날짜)
-                  if (day.date === '2026-01-23') {
-                    console.log(`[Chart Debug 1/23] Branch=${bName}, Key=${bKey}, Sales=${result.sales}`);
-                  }
                 }
               }
 
-              return result;
-            });
+              dailyData.push(result);
+              currentDate = new Date(currentDate.setDate(currentDate.getDate() + 1));
+            }
             setDailySales(dailyData);
 
             const weeklyData = calculateWeeklyStats(statsData, weeklyStartDate, weeklyEndDate, isAdmin && (!branchFilter || branchFilter === '전체'), branchFilter || userBranch);

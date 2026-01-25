@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { format } from "date-fns";
 import { Order } from "@/hooks/use-orders";
-import { Timestamp } from "firebase/firestore";
+import { parseDate } from "@/lib/date-utils";
 import {
   User,
   Phone,
@@ -34,13 +34,7 @@ interface OrderDetailDialogProps {
   onPrintMessage?: (order: Order) => void;
 }
 
-const toLocalDate = (dateVal: any): Date => {
-  if (!dateVal) return new Date();
-  if (dateVal instanceof Timestamp) return dateVal.toDate();
-  if (typeof dateVal === 'string') return new Date(dateVal);
-  if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
-  return new Date(dateVal);
-};
+
 
 export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage }: OrderDetailDialogProps) {
   if (!order) return null;
@@ -87,7 +81,7 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
             <Badge className="bg-blue-500 text-white">완결</Badge>
             {completedAt && (
               <span className="text-xs text-gray-500">
-                {format(toLocalDate(completedAt), 'MM/dd HH:mm')}
+                {format(parseDate(completedAt), 'MM/dd HH:mm')}
               </span>
             )}
           </div>
@@ -187,7 +181,7 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
                     <span className="text-sm font-medium">주문일시</span>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    {order.orderDate && format(toLocalDate(order.orderDate), 'yyyy-MM-dd HH:mm')}
+                    {order.orderDate && format(parseDate(order.orderDate), 'yyyy-MM-dd HH:mm')}
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -501,7 +495,7 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
                       </div>
                       <p className="text-sm text-muted-foreground">
                         {order.transferInfo.transferDate &&
-                          format(toLocalDate(order.transferInfo.transferDate), 'yyyy-MM-dd HH:mm')}
+                          format(parseDate(order.transferInfo.transferDate), 'yyyy-MM-dd HH:mm')}
                       </p>
                     </div>
                   </div>
@@ -568,7 +562,7 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">발주일시</p>
                       <p className="font-medium text-sm">
-                        {order.outsourceInfo.outsourcedAt && format(toLocalDate(order.outsourceInfo.outsourcedAt), 'yyyy-MM-dd HH:mm')}
+                        {order.outsourceInfo.outsourcedAt && format(parseDate(order.outsourceInfo.outsourcedAt), 'yyyy-MM-dd HH:mm')}
                       </p>
                     </div>
                     <div className="space-y-1">
@@ -637,12 +631,12 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
                       </div>
                       {order.payment.firstPaymentDate && (
                         <div className="text-xs text-muted-foreground">
-                          선결제일: {format(toLocalDate(order.payment.firstPaymentDate), 'yyyy-MM-dd HH:mm')}
+                          선결제일: {format(parseDate(order.payment.firstPaymentDate), 'yyyy-MM-dd HH:mm')}
                         </div>
                       )}
                       {order.payment.secondPaymentDate && (
                         <div className="text-xs text-muted-foreground">
-                          후결제일: {format(toLocalDate(order.payment.secondPaymentDate), 'yyyy-MM-dd HH:mm')}
+                          후결제일: {format(parseDate(order.payment.secondPaymentDate), 'yyyy-MM-dd HH:mm')}
                         </div>
                       )}
                     </div>

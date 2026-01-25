@@ -5,6 +5,7 @@ import { updateDailyStats } from '@/lib/stats-utils';
 import { useToast } from './use-toast';
 import { useAuth } from './use-auth';
 import { subDays, startOfDay } from 'date-fns';
+import { isSettled, isCanceled } from '@/lib/order-utils';
 
 // Simplified version for the form
 interface OrderItemForm {
@@ -210,7 +211,10 @@ export function useOrders() {
         .or(`order_date.gte.${startDate},payment->>completedAt.gte.${startDate},transfer_info->>acceptedAt.gte.${startDate}`)
         .order('order_date', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase fetchOrders error:', error);
+        throw error;
+      }
       setOrders((data || []).map(mapRowToOrder));
     } catch (error) {
       console.error('주문 데이터 로딩 오류:', error);
@@ -310,7 +314,7 @@ export function useOrders() {
         summary: orderData.summary,
         payment: {
           ...orderData.payment,
-          completedAt: (orderData.payment.status === 'paid' || orderData.payment.status === 'completed') ? new Date().toISOString() : null
+          completedAt: isSettled({ status: orderData.status, payment: orderData.payment }) ? new Date().toISOString() : null
         },
         items: orderData.items,
         message: orderData.message,
@@ -388,7 +392,7 @@ export function useOrders() {
       await updateDailyStats(orderDate, orderData.branchName, {
         revenueDelta: orderData.summary.total,
         orderCountDelta: 1,
-        settledAmountDelta: (orderPayload.payment.status === 'paid' || orderPayload.payment.status === 'completed') ? orderData.summary.total : 0
+        settledAmountDelta: isSettled({ status: orderData.status, payment: orderPayload.payment }) ? orderData.summary.total : 0
       });
 
       toast({ title: '성공', description: isImmediatePickup ? '매장픽업(즉시) 주문이 완료되었습니다.' : '새 주문이 추가되었습니다.' });
@@ -411,11 +415,11 @@ export function useOrders() {
       const { error } = await supabase.from('orders').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', orderId);
       if (error) throw error;
 
-      if (newStatus === 'canceled' && order.status !== 'canceled') {
+      if (isCanceled({ status: newStatus }) && !isCanceled(order)) {
         await updateDailyStats(new Date(order.order_date), order.branch_name, {
           revenueDelta: -(order.summary?.total || 0),
           orderCountDelta: -1,
-          settledAmountDelta: (order.payment?.status === 'paid' || order.payment?.status === 'completed') ? -(order.summary?.total || 0) : 0
+          settledAmountDelta: isSettled(order) ? -(order.summary?.total || 0) : 0
         });
       }
 
@@ -460,8 +464,8 @@ export function useOrders() {
       const { error } = await supabase.from('orders').update({ payment, updated_at: new Date().toISOString() }).eq('id', orderId);
       if (error) throw error;
 
-      const isNewSettled = newStatus === 'paid' || newStatus === 'completed';
-      const wasSettled = order.payment?.status === 'paid' || order.payment?.status === 'completed';
+      const isNewSettled = isSettled({ status: order.status, payment });
+      const wasSettled = isSettled(order);
 
       if (isNewSettled && !wasSettled) {
         await updateDailyStats(new Date(), order.branch_name, {
@@ -502,8 +506,8 @@ export function useOrders() {
       else if (oldStatus === 'canceled' && newStatus !== 'canceled') revenueDelta = newTotal;
       else if (oldStatus !== 'canceled' && newStatus !== 'canceled') revenueDelta = newTotal - oldTotal;
 
-      const oldSettled = (oldOrder.payment?.status === 'paid' || oldOrder.payment?.status === 'completed') && oldStatus !== 'canceled';
-      const newSettled = (data.payment?.status === 'paid' || data.payment?.status === 'completed' || (data.payment === undefined && (oldOrder.payment?.status === 'paid' || oldOrder.payment?.status === 'completed'))) && newStatus !== 'canceled';
+      const oldSettled = isSettled(oldOrder) && !isCanceled(oldOrder);
+      const newSettled = isSettled({ status: newStatus, payment: data.payment || oldOrder.payment }) && !isCanceled({ status: newStatus });
 
       let settledDelta = 0;
       if (!oldSettled && newSettled) settledDelta = newTotal;
@@ -522,10 +526,19 @@ export function useOrders() {
       if (data.outsourceInfo) updatePayload.outsource_info = data.outsourceInfo;
       if (data.request) updatePayload.request = data.request;
 
+      // New delivery cost fields mapping
+      if (data.actualDeliveryCost !== undefined) updatePayload.actual_delivery_cost = data.actualDeliveryCost;
+      if (data.actualDeliveryCostCash !== undefined) updatePayload.actual_delivery_cost_cash = data.actualDeliveryCostCash;
+      if (data.deliveryCostStatus) updatePayload.delivery_cost_status = data.deliveryCostStatus;
+      if (data.deliveryCostUpdatedAt) updatePayload.delivery_cost_updated_at = data.deliveryCostUpdatedAt;
+      if (data.deliveryCostUpdatedBy) updatePayload.delivery_cost_updated_by = data.deliveryCostUpdatedBy;
+      if (data.deliveryCostReason) updatePayload.delivery_cost_reason = data.deliveryCostReason;
+      if (data.deliveryProfit !== undefined) updatePayload.delivery_profit = data.deliveryProfit;
+
       // 'message' column doesn't exist, store in 'extra_data'
       if (data.message) {
         // Fetch current extra_data first if needed, but we have oldOrder
-        const currentExtraData = oldOrder.extraData || {};
+        const currentExtraData = oldOrder.extra_data || {};
         updatePayload.extra_data = {
           ...currentExtraData,
           message: data.message
@@ -533,7 +546,10 @@ export function useOrders() {
       }
 
       const { error } = await supabase.from('orders').update(updatePayload).eq('id', orderId);
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase updateOrder error:', error);
+        throw error;
+      }
 
       if (revenueDelta !== 0 || settledDelta !== 0) {
         await updateDailyStats(new Date(oldOrder.order_date), oldOrder.branch_name, {
@@ -586,7 +602,7 @@ export function useOrders() {
       await updateDailyStats(new Date(order.order_date), order.branch_name, {
         revenueDelta: -(order.summary?.total || 0),
         orderCountDelta: -1,
-        settledAmountDelta: (order.payment?.status === 'paid' || order.payment?.status === 'completed') ? -(order.summary?.total || 0) : 0
+        settledAmountDelta: isSettled(order) ? -(order.summary?.total || 0) : 0
       });
 
       toast({ title: "주문 취소 완료", description: "주문이 취소되었습니다." });
@@ -623,11 +639,11 @@ export function useOrders() {
       await supabase.from('order_transfers').delete().eq('original_order_id', orderId);
       await supabase.from('orders').delete().eq('id', orderId);
 
-      if (order.status !== 'canceled') {
+      if (!isCanceled(order)) {
         await updateDailyStats(new Date(order.order_date), order.branch_name, {
           revenueDelta: -(order.summary?.total || 0),
           orderCountDelta: -1,
-          settledAmountDelta: (order.payment?.status === 'paid' || order.payment?.status === 'completed') ? -(order.summary?.total || 0) : 0
+          settledAmountDelta: isSettled(order) ? -(order.summary?.total || 0) : 0
         });
       }
 

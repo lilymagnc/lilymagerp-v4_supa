@@ -11,6 +11,7 @@ import React from 'react';
 import Image from 'next/image';
 import { ROLE_LABELS } from '@/types/user-role';
 import { NotificationCenter } from '@/components/notification-center';
+import { SyncBridgeProvider } from '@/components/sync-bridge-provider';
 
 export default function DashboardLayout({
     children,
@@ -237,7 +238,9 @@ export default function DashboardLayout({
                     </div>
                 </header>
                 <div className="p-4 lg:p-6">
-                    {children}
+                    <SyncBridgeProvider>
+                        {children}
+                    </SyncBridgeProvider>
                 </div>
             </main>
         </SidebarProvider>

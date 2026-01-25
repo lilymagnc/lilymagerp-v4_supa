@@ -203,8 +203,6 @@ export default function DailySettlementPage() {
         };
 
         let deliveryCostCashToday = 0;
-
-        // 배송비 현금 지급액 합산 (정체성 강화: 오늘 주문이거나 오늘 배송비가 수정된 모든 건)
         const processedCashOrderIds = new Set<string>();
 
         // 함수 정의: 지점 필터링 로직 (중복 방지)
@@ -218,24 +216,30 @@ export default function DailySettlementPage() {
             return isOriginal || isProcess;
         };
 
-        // 1. 당일 주문 전체에서 현금 배송비 추출
-        dailyOrders.forEach(order => {
-            if (order.actualDeliveryCostCash && isTargetBranchOrder(order)) {
-                deliveryCostCashToday += Number(order.actualDeliveryCostCash);
-                processedCashOrderIds.add(order.id);
-            }
-        });
-
-        // 2. 전체 기간 주문 중 오늘 배송비가 수정된 건 추가 합산 (이월 주문 대비)
+        // 배송비 현금 지급액 합산 (사용자 요청: 배송일 기준)
+        // 주문의 배송날짜(deliveryInfo.date)가 정산일과 일치하는 건 기준
         orders.forEach(order => {
-            if (!order.actualDeliveryCostCash || processedCashOrderIds.has(order.id)) return;
-            if (!isTargetBranchOrder(order)) return;
+            if (!order.actualDeliveryCostCash) return;
 
-            const updatedAt = parseDate(order.deliveryCostUpdatedAt);
+            const deliveryDate = order.deliveryInfo?.date || order.pickupInfo?.date;
+            if (!deliveryDate) return;
 
-            if (updatedAt && format(updatedAt, 'yyyy-MM-dd') === reportDate) {
-                deliveryCostCashToday += Number(order.actualDeliveryCostCash);
-                processedCashOrderIds.add(order.id);
+            // 문자열 날짜(YYYY-MM-DD)를 비교하기 위해 파싱 또는 직접 비교
+            // deliveryDate는 보통 '2026-01-25' 형식임
+            if (deliveryDate === reportDate) {
+                if (isTargetBranchOrder(order)) {
+                    deliveryCostCashToday += Number(order.actualDeliveryCostCash);
+                    processedCashOrderIds.add(order.id);
+                }
+            } else {
+                // 혹시 모르니 parseDate로도 확인 (Timestamp 등 대비)
+                const parsedDeliveryDate = parseDate(deliveryDate);
+                if (parsedDeliveryDate && format(parsedDeliveryDate, 'yyyy-MM-dd') === reportDate) {
+                    if (isTargetBranchOrder(order) && !processedCashOrderIds.has(order.id)) {
+                        deliveryCostCashToday += Number(order.actualDeliveryCostCash);
+                        processedCashOrderIds.add(order.id);
+                    }
+                }
             }
         });
 
