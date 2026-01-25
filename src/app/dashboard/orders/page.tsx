@@ -40,7 +40,7 @@ import { isSettled, isCanceled, isPendingPayment } from "@/lib/order-utils";
 
 
 export default function OrdersPage() {
-  const { orders, loading, fetchOrders, fetchAllOrders, updateOrderStatus, updatePaymentStatus, cancelOrder, deleteOrder } = useOrders();
+  const { orders, loading, fetchOrders, fetchOrdersByRange, fetchAllOrders, updateOrderStatus, updatePaymentStatus, cancelOrder, deleteOrder } = useOrders();
   const [isFullDataLoaded, setIsFullDataLoaded] = useState(false);
   const { branches, loading: branchesLoading } = useBranches();
   const { createTransfer, getTransferPermissions } = useOrderTransfers();
@@ -224,20 +224,39 @@ export default function OrdersPage() {
     }
   }, [searchParams, orders, router]);
 
-  // 전체 내역 불러오기 핸들러
-  const handleLoadFullData = async () => {
+  // 기간별 데이터 로드 핸들러
+  const handleLoadPeriodData = async (months: number | 'custom') => {
     try {
-      await fetchAllOrders();
-      setIsFullDataLoaded(true);
+      let start: Date;
+      const end = new Date(); // 오늘까지
+
+      if (typeof months === 'number') {
+        const today = new Date();
+        start = new Date(today.setMonth(today.getMonth() - months));
+      } else {
+        // 커스텀은 일단 전체 로드로 처리하거나, 추후 DatePicker 연동
+        // 여기서는 '전체(2년)' 정도로 가정하거나, 기존 fetchAllOrders 사용
+        await fetchAllOrders();
+        setIsFullDataLoaded(true);
+        setStartDate(undefined); // 날짜 필터 해제하여 전체 보이기
+        setEndDate(undefined);
+        toast({ title: "전체 내역 로드 완료", description: "모든 기간의 주문 데이터를 불러왔습니다." });
+        return;
+      }
+
+      await fetchOrdersByRange(start, end);
+      setIsFullDataLoaded(true); // 부분 로드지만 추가 로드 완료됨을 표시
+      setStartDate(start); // 필터도 해당 기간으로 자동 설정
+      setEndDate(end);
       toast({
-        title: "전체 내역 로드 완료",
-        description: "과거 내역을 포함한 모든 주문 데이터를 불러왔습니다."
+        title: "데이터 로드 완료",
+        description: `${months}개월 간의 주문 데이터를 불러왔습니다.`
       });
     } catch (error) {
       toast({
         variant: "destructive",
         title: "로드 실패",
-        description: "전체 내역을 불러오는 중 오류가 발생했습니다."
+        description: "데이터를 불러오는 중 오류가 발생했습니다."
       });
     }
   };
@@ -1092,16 +1111,34 @@ export default function OrdersPage() {
         description={`모든 주문 내역을 확인하고 관리하세요.${!isAdmin ? ` (${userBranch})` : ''}`}
       >
         <div className="flex flex-wrap gap-2">
-          {!isFullDataLoaded && (
-            <Button
-              variant="outline"
-              onClick={handleLoadFullData}
-              className="border-purple-200 text-purple-700 hover:bg-purple-50"
-            >
-              <RefreshCw className="mr-2 h-4 w-4" />
-              과거 내역 포함 불러오기
-            </Button>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="border-purple-200 text-purple-700 hover:bg-purple-50"
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                기간별 불러오기
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuLabel>기간 선택</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleLoadPeriodData(3)}>
+                최근 3개월
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleLoadPeriodData(6)}>
+                최근 6개월
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleLoadPeriodData(12)}>
+                최근 1년
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleLoadPeriodData('custom')}>
+                전체 내역 불러오기
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button asChild>
             <Link href="/dashboard/orders/new">
               <PlusCircle className="mr-2 h-4 w-4" />
@@ -2021,30 +2058,30 @@ export default function OrdersPage() {
                   이전
                 </Button>
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    let pageNum;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNum = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = currentPage - 2 + i;
+                  {(() => {
+                    const maxPages = 10;
+                    let startPage = Math.max(1, currentPage - Math.floor(maxPages / 2));
+                    let endPage = Math.min(totalPages, startPage + maxPages - 1);
+
+                    if (endPage - startPage + 1 < maxPages) {
+                      startPage = Math.max(1, endPage - maxPages + 1);
                     }
 
-                    return (
-                      <Button
-                        key={pageNum}
-                        variant={currentPage === pageNum ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setCurrentPage(pageNum)}
-                        className="w-8 h-8 p-0"
-                      >
-                        {pageNum}
-                      </Button>
-                    );
-                  })}
+                    return Array.from({ length: endPage - startPage + 1 }, (_, i) => {
+                      const pageNum = startPage + i;
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={currentPage === pageNum ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(pageNum)}
+                          className="w-8 h-8 p-0"
+                        >
+                          {pageNum}
+                        </Button>
+                      );
+                    });
+                  })()}
                 </div>
                 <Button
                   variant="outline"

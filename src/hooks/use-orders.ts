@@ -232,7 +232,8 @@ export function useOrders() {
         .select('*')
         .gte('order_date', start.toISOString())
         .lte('order_date', end.toISOString())
-        .order('order_date', { ascending: false });
+        .order('order_date', { ascending: false })
+        .limit(10000);
 
       if (error) throw error;
       const ordersData = (data || []).map(mapRowToOrder);
@@ -240,6 +241,7 @@ export function useOrders() {
       return ordersData;
     } catch (error) {
       console.error('Range 주문 로딩 오류:', error);
+      setOrders([]); // Clear stale data on error
       return [];
     } finally {
       setLoading(false);
@@ -252,7 +254,8 @@ export function useOrders() {
       const { data, error } = await supabase
         .from('orders')
         .select('*')
-        .order('order_date', { ascending: false });
+        .order('order_date', { ascending: false })
+        .limit(10000);
 
       if (error) throw error;
       const ordersData = (data || []).map(mapRowToOrder);
