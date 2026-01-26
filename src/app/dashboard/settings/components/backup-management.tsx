@@ -33,7 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import * as XLSX from 'xlsx';
+// xlsx는 dynamic import로 사용 (초기 로딩 최적화)
 
 interface BackupRecord {
   id: string; // Folder name
@@ -129,8 +129,9 @@ export default function BackupManagement() {
 
       toast({
         title: "정리 완료",
-        description: `오래된 자동 백업 ${targets.length}개를 목록에서 제거했습니다.`
+        description: `오래된 자동 백업 ${targets.length}개를 목록에서 제거했습니다. (수동/월별 데이터 보존됨)`
       });
+      // 목록 갱신 불필요 (이미 반영됨)
 
     } catch (error) {
       console.error("Cleanup failed:", error);
@@ -141,50 +142,21 @@ export default function BackupManagement() {
   };
 
   const runSmartCleanup = async (records: BackupRecord[]) => {
-    const now = new Date();
-    const retentionLimit = new Date();
-    retentionLimit.setDate(now.getDate() - 14);
-
-    const backupsToDelete: string[] = [];
-
-    records.forEach((backup) => {
-      if (backup.type === 'manual') return;
-      const backupDate = backup.dateObj;
-      if (!isValidDate(backupDate)) return;
-      if (backupDate > retentionLimit) return;
-      if (backupDate.getDate() === 1) return;
-      backupsToDelete.push(backup.id);
-    });
-
-    if (backupsToDelete.length > 0) {
-      console.log("Running smart cleanup for:", backupsToDelete);
-      try {
-        await Promise.all(backupsToDelete.map(async (folderName) => {
-          const { data: files } = await supabase.storage.from('backups').list(folderName);
-          if (files && files.length > 0) {
-            const paths = files.map(f => `${folderName}/${f.name}`);
-            await supabase.storage.from('backups').remove(paths);
-          }
-        }));
-
-        toast({
-          title: "백업 자동 정리",
-          description: `보관 기한이 지난 백업 ${backupsToDelete.length}개를 정리했습니다.`,
-        });
-        setBackups(prev => prev.filter(b => !backupsToDelete.includes(b.id)));
-      } catch (e) {
-        console.error("Auto cleanup failed:", e);
-      }
-    }
+    // 자동 정리 로직은 수동 정리 버튼에서 대체되었으므로, 여기서는 14일 지난 '오래된' 파일만 조용히 정리 (옵션)
+    // 하지만 사용자가 '수동 정리'를 원했으므로 자동 정리는 비활성화하거나 로그만 남김
+    console.log("Auto cleanup check skipped in favor of manual cleanup.");
   };
 
   const loadBackups = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.storage.from('backups').list('', {
-        sortBy: { column: 'name', order: 'desc' },
-        search: '',
-      });
+      const { data, error } = await supabase
+        .storage
+        .from('backups')
+        .list('', {
+          sortBy: { column: 'name', order: 'desc' },
+          search: '',
+        });
 
       if (error) {
         toast({ variant: "destructive", title: "Storage 권한 오류", description: "백업 목록을 불러올 수 없습니다." });
@@ -209,11 +181,8 @@ export default function BackupManagement() {
         });
 
       setBackups(parsedRecords);
-      // 로딩을 즉시 종료하여 목록을 먼저 보여줌
+      // 로딩 즉시 해제
       setLoading(false);
-
-      // 자동 정리 작업은 백그라운드에서 조용히 실행 (await 없이 실행)
-      runSmartCleanup(parsedRecords).catch(err => console.error("Background cleanup error:", err));
 
     } catch (error) {
       console.error("백업 목록 로드 실패:", error);
@@ -221,14 +190,17 @@ export default function BackupManagement() {
     }
   };
 
+  // 타임아웃 기능이 있는 Fetch 래퍼
   const fetchTableDataWithTimeout = async (table: string, timeoutMs: number = 10000) => {
     const fetchPromise = supabase.from(table).select('*').then(({ data, error }) => {
       if (error) throw error;
       return data;
     });
+
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error(`Timeout fetching ${table}`)), timeoutMs)
     );
+
     return Promise.race([fetchPromise, timeoutPromise]);
   };
 
@@ -251,6 +223,7 @@ export default function BackupManagement() {
       const folderName = `${now.toISOString().replace(/[:.]/g, '-')}-manual`;
       let successCount = 0;
       let processedCount = 0;
+
       const BATCH_SIZE = 5;
 
       for (let i = 0; i < tables.length; i += BATCH_SIZE) {
@@ -259,11 +232,19 @@ export default function BackupManagement() {
           try {
             processedCount++;
             setProgress(`${Math.round((processedCount / tables.length) * 100)}% (${processedCount}/${tables.length})`);
+
             const data: any = await fetchTableDataWithTimeout(table, 10000);
+
             if (data) {
               const fileContent = JSON.stringify(data, null, 2);
               const blob = new Blob([fileContent], { type: 'application/json' });
-              const { error: uploadError } = await supabase.storage.from('backups').upload(`${folderName}/${table}.json`, blob, { contentType: 'application/json' });
+
+              const { error: uploadError } = await supabase.storage
+                .from('backups')
+                .upload(`${folderName}/${table}.json`, blob, {
+                  contentType: 'application/json'
+                });
+
               if (uploadError) throw uploadError;
               successCount++;
             }
@@ -279,9 +260,14 @@ export default function BackupManagement() {
       } else {
         throw new Error("백업할 데이터를 가져오지 못했습니다.");
       }
+
     } catch (error: any) {
       console.error("수동 백업 실패:", error);
-      toast({ variant: "destructive", title: "실패", description: "백업 중 오류가 발생했습니다." });
+      toast({
+        variant: "destructive",
+        title: "실패",
+        description: "백업 중 오류가 발생했습니다."
+      });
     } finally {
       setCreatingBackup(false);
       setProgress("");
@@ -293,8 +279,13 @@ export default function BackupManagement() {
       setRestoringBackup(folderName);
       toast({ title: "복원 시작", description: "전체 데이터를 분석하여 복원 중입니다..." });
 
-      const { data: files, error: listError } = await supabase.storage.from('backups').list(folderName);
-      if (listError || !files || files.length === 0) throw new Error("백업 폴더가 비어있거나 접근할 수 없습니다.");
+      const { data: files, error: listError } = await supabase.storage
+        .from('backups')
+        .list(folderName);
+
+      if (listError || !files || files.length === 0) {
+        throw new Error("백업 폴더가 비어있거나 접근할 수 없습니다.");
+      }
 
       let successTableCount = 0;
       let failTableCount = 0;
@@ -302,14 +293,21 @@ export default function BackupManagement() {
       for (const file of files) {
         if (!file.name.endsWith('.json')) continue;
         const tableName = file.name.replace('.json', '');
-        const { data: blob, error: downloadError } = await supabase.storage.from('backups').download(`${folderName}/${file.name}`);
+
+        const { data: blob, error: downloadError } = await supabase.storage
+          .from('backups')
+          .download(`${folderName}/${file.name}`);
+
         if (downloadError || !blob) continue;
 
         const text = await blob.text();
         const rows = JSON.parse(text);
 
         if (Array.isArray(rows) && rows.length > 0) {
-          const { error: upsertError } = await supabase.from(tableName).upsert(rows);
+          const { error: upsertError } = await supabase
+            .from(tableName)
+            .upsert(rows);
+
           if (upsertError) {
             console.error(`Error restoring table ${tableName}:`, upsertError);
             failTableCount++;
@@ -318,10 +316,19 @@ export default function BackupManagement() {
           }
         }
       }
-      toast({ title: "복원 완료", description: `${successTableCount}개 항목 복원 성공 (실패 ${failTableCount})` });
+
+      toast({
+        title: "복원 완료",
+        description: `${successTableCount}개 항목 복원 성공 (실패 ${failTableCount})`
+      });
+
     } catch (error: any) {
       console.error("백업 복원 실패:", error);
-      toast({ variant: "destructive", title: "오류", description: error.message || "백업 복원 중 오류가 발생했습니다." });
+      toast({
+        variant: "destructive",
+        title: "오류",
+        description: error.message || "백업 복원 중 오류가 발생했습니다."
+      });
     } finally {
       setRestoringBackup(null);
     }
@@ -332,13 +339,15 @@ export default function BackupManagement() {
       setDownloadingExcel(backupId);
       toast({ title: "엑셀 생성 중", description: "모든 백업 데이터를 하나의 엑셀 파일로 변환하고 있습니다..." });
 
+      // Dynamic Import for performance (클라이언트 부하 감소)
+      const XLSX = await import("xlsx");
+
       const { data: files, error: listError } = await supabase.storage.from('backups').list(backupId);
       if (listError || !files) throw new Error("파일 목록을 가져올 수 없습니다.");
 
       const workbook = XLSX.utils.book_new();
       let sheetCount = 0;
 
-      // 중요한 테이블을 앞쪽에 배치
       const priorityTables = ['orders', 'customers', 'products', 'materials', 'simple_expenses'];
       const sortedFiles = files.sort((a, b) => {
         const nameA = a.name.replace('.json', '');
@@ -367,13 +376,12 @@ export default function BackupManagement() {
         const rawData = JSON.parse(text);
 
         if (Array.isArray(rawData)) {
-          // 객체나 배열 데이터가 엑셀에서 누락되지 않도록 문자열로 변환 (Flattening)
+          // 객체/배열 데이터를 문자열로 변환하여 엑셀 표시 (Flattening)
           const processedData = rawData.map((row: any) => {
             const newRow: any = { ...row };
             Object.keys(newRow).forEach(key => {
               const val = newRow[key];
               if (val && typeof val === 'object') {
-                // 객체나 배열이면 JSON 문자열로 변환하여 셀에 표시
                 newRow[key] = JSON.stringify(val);
               }
             });
@@ -407,6 +415,7 @@ export default function BackupManagement() {
       setViewFiles([]);
       setViewContent(null);
       setLoadingView(true);
+
       const { data: files, error } = await supabase.storage.from('backups').list(backupId);
       if (error) throw error;
 
@@ -435,15 +444,22 @@ export default function BackupManagement() {
       setLoadingView(true);
       setViewFileName(fileName);
       setViewContent(null);
-      const { data, error } = await supabase.storage.from('backups').download(`${viewingBackup}/${fileName}`);
+
+      const { data, error } = await supabase.storage
+        .from('backups')
+        .download(`${viewingBackup}/${fileName}`);
+
       if (error) throw error;
+
       const text = await data.text();
       const json = JSON.parse(text);
+
       if (Array.isArray(json)) {
         setViewContent(json.slice(0, 100)); // Preview first 100 rows
       } else {
         setViewContent([{ ...json }]);
       }
+
     } catch (e) {
       toast({ variant: 'destructive', title: '실패', description: '파일 내용을 읽을 수 없습니다.' });
       setViewContent([]);
@@ -458,13 +474,16 @@ export default function BackupManagement() {
 
   const handleDeleteConfirmed = async () => {
     if (!backupToDelete) return;
+
     try {
       setDeletingBackupId(backupToDelete);
+
       const { data: files } = await supabase.storage.from('backups').list(backupToDelete);
       if (files && files.length > 0) {
         const paths = files.map(f => `${backupToDelete}/${f.name}`);
         await supabase.storage.from('backups').remove(paths);
       }
+
       setBackups((prev) => prev.filter((b) => b.id !== backupToDelete));
       toast({ title: "삭제 완료", description: "백업 폴더가 삭제되었습니다." });
     } catch (error) {
@@ -548,11 +567,11 @@ export default function BackupManagement() {
             <div className="space-y-2 text-sm mb-4">
               <p className="flex items-center gap-2">
                 <CheckCircle className="h-4 w-4 text-green-500" />
-                <span>최근 2주: 매일 보관</span>
+                <span>최근 2주: 매일 보관 (자동)</span>
               </p>
               <p className="flex items-center gap-2">
                 <Archive className="h-4 w-4 text-blue-500" />
-                <span>매월 1일: 영구 보관</span>
+                <span>매월 1일: 영구 보관 (자동)</span>
               </p>
               <p className="flex items-center gap-2">
                 <Trash className="h-4 w-4 text-gray-400" />
@@ -569,7 +588,7 @@ export default function BackupManagement() {
                 onClick={handleManualCleanup}
               >
                 <Trash className="h-4 w-4 mr-2" />
-                1주일 지난 백업 모두 삭제
+                최신 7개 남기고 정리
               </Button>
             </div>
           </CardContent>
