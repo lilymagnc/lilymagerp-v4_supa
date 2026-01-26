@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { updateDailyStats } from '@/lib/stats-utils';
 import { useToast } from './use-toast';
 import { useAuth } from './use-auth';
-import { subDays, startOfDay } from 'date-fns';
+import { subDays, startOfDay, endOfDay } from 'date-fns';
 import { isSettled, isCanceled } from '@/lib/order-utils';
 
 // Simplified version for the form
@@ -227,21 +227,61 @@ export function useOrders() {
   const fetchOrdersByRange = useCallback(async (start: Date, end: Date) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .gte('order_date', start.toISOString())
-        .lte('order_date', end.toISOString())
-        .order('order_date', { ascending: false })
-        .limit(10000);
+      const rangeStart = startOfDay(start).toISOString();
+      const rangeEnd = endOfDay(end).toISOString();
 
-      if (error) throw error;
-      const ordersData = (data || []).map(mapRowToOrder);
+      console.log(`[Period Load] Fetching from ${rangeStart} to ${rangeEnd}`);
+
+      let allOrders: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*')
+          .gte('order_date', rangeStart)
+          .lte('order_date', rangeEnd)
+          .order('order_date', { ascending: false })
+          .range(from, to);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allOrders = [...allOrders, ...data];
+          console.log(`[Period Load] Chunk ${page + 1}: Fetched ${data.length} rows`);
+
+          if (data.length < pageSize) {
+            hasMore = false; // End of data
+          } else {
+            page++; // Next page
+          }
+        } else {
+          hasMore = false; // No more data
+        }
+
+        // Safety break
+        if (allOrders.length >= 20000) {
+          console.warn('[Period Load] Safety limit reached (20k rows)');
+          break;
+        }
+      }
+
+      console.log(`[Period Load] Total fetched: ${allOrders.length} rows`);
+      if (allOrders.length > 0) {
+        console.log(`[Period Load] Oldest date: ${allOrders[allOrders.length - 1].order_date}`);
+      }
+
+      const ordersData = (allOrders || []).map(mapRowToOrder);
       setOrders(ordersData);
       return ordersData;
     } catch (error) {
       console.error('Range 주문 로딩 오류:', error);
-      setOrders([]); // Clear stale data on error
+      setOrders([]);
       return [];
     } finally {
       setLoading(false);
@@ -555,10 +595,11 @@ export function useOrders() {
       }
 
       // --- [Auto-Sync Logic] Sync Delivery Cost to Simple Expenses ---
-      if (data.actualDeliveryCost !== undefined) {
+      // Execute only if delivery cost is provided AND has changed from the previous value
+      if (data.actualDeliveryCost !== undefined && data.actualDeliveryCost !== oldOrder.actual_delivery_cost) {
         const cost = data.actualDeliveryCost;
         if (cost > 0) {
-          // Check for existing linked expense
+          // Check for existing linked expense (Duplicate Check)
           // Using text search for extra_data to be safe across JSON formats
           const { data: existingExpenses } = await supabase
             .from('simple_expenses')
@@ -581,14 +622,16 @@ export function useOrders() {
             branch_name: oldOrder.branch_name,
             updated_at: new Date().toISOString(),
             extra_data: {
-              relatedOrderId: orderId,
-              ...(existingExpense?.extra_data as object || {})
+              ...(existingExpense?.extra_data as object || {}), // Preserve existing extra_data
+              relatedOrderId: orderId
             }
           };
 
           if (existingExpense) {
+            // Update existing expense
             await supabase.from('simple_expenses').update(expensePayload).eq('id', existingExpense.id);
           } else {
+            // Insert new expense
             await supabase.from('simple_expenses').insert([{
               ...expensePayload,
               id: crypto.randomUUID(),
@@ -596,9 +639,7 @@ export function useOrders() {
             }]);
           }
         } else if (cost === 0) {
-          // If cost is set to 0, maybe we should remove the expense?
-          // For safety, let's just update it to 0 or leave it. 
-          // User usually inputs 0 to clear it? Let's leave it for now to avoid accidental deletion.
+          // If cost is 0, we might strictly leave it alone or delete it, but current policy is passive.
         }
       }
       // -----------------------------------------------------------

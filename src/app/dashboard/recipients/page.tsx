@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/page-header";
-import { useRecipients } from "@/hooks/use-recipients";
+import { useRecipients, Recipient } from "@/hooks/use-recipients";
 import { useBranches } from "@/hooks/use-branches";
 import { useAuth } from "@/hooks/use-auth";
 import { Search, MapPin, Phone, Calendar, TrendingUp, Edit, Trash2, MoreHorizontal } from "lucide-react";
@@ -158,7 +158,7 @@ export default function RecipientsPage() {
               {recipients.filter(r => {
                 if (!r.lastOrderDate) return false;
                 const now = new Date();
-                const recipientDate = r.lastOrderDate.toDate();
+                const recipientDate = new Date(r.lastOrderDate);
                 return recipientDate.getMonth() === now.getMonth() &&
                   recipientDate.getFullYear() === now.getFullYear();
               }).length}
@@ -237,19 +237,19 @@ export default function RecipientsPage() {
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
-                                 <TableHeader>
-                   <TableRow>
-                     <TableHead>수령자명</TableHead>
-                     <TableHead>연락처</TableHead>
-                     <TableHead>주소</TableHead>
-                     <TableHead>지역</TableHead>
-                     <TableHead>지점</TableHead>
-                     <TableHead>수령횟수</TableHead>
-                     <TableHead>최근수령</TableHead>
-                     <TableHead>등급</TableHead>
-                     <TableHead className="w-12">작업</TableHead>
-                   </TableRow>
-                 </TableHeader>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>수령자명</TableHead>
+                    <TableHead>연락처</TableHead>
+                    <TableHead>주소</TableHead>
+                    <TableHead>지역</TableHead>
+                    <TableHead>지점</TableHead>
+                    <TableHead>수령횟수</TableHead>
+                    <TableHead>최근수령</TableHead>
+                    <TableHead>등급</TableHead>
+                    <TableHead className="w-12">작업</TableHead>
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
@@ -257,15 +257,15 @@ export default function RecipientsPage() {
                         로딩 중...
                       </TableCell>
                     </TableRow>
-                                     ) : filteredRecipients.length === 0 ? (
-                     <TableRow>
-                       <TableCell colSpan={9} className="text-center py-8">
-                         수령자가 없습니다.
-                       </TableCell>
-                     </TableRow>
-                   ) : (
+                  ) : filteredRecipients.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center py-8">
+                        수령자가 없습니다.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
                     filteredRecipients.map((recipient) => (
-                      <TableRow 
+                      <TableRow
                         key={recipient.id}
                         className="cursor-pointer hover:bg-muted/50"
                         onClick={() => handleRecipientRowClick(recipient)}
@@ -288,49 +288,49 @@ export default function RecipientsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {recipient.lastOrderDate 
-                            ? format(recipient.lastOrderDate.toDate(), "yyyy-MM-dd", { locale: ko })
+                          {recipient.lastOrderDate
+                            ? format(new Date(recipient.lastOrderDate), "yyyy-MM-dd", { locale: ko })
                             : '-'
                           }
                         </TableCell>
-                                                 <TableCell>
-                           <Badge
-                             variant={recipient.orderCount >= 5 ? "default" :
-                               recipient.orderCount >= 3 ? "secondary" : "outline"}
-                           >
-                             {recipient.orderCount >= 5 ? "VIP" :
-                               recipient.orderCount >= 3 ? "단골" : "일반"}
-                           </Badge>
-                         </TableCell>
-                         <TableCell>
-                           <DropdownMenu>
-                             <DropdownMenuTrigger asChild>
-                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                 <MoreHorizontal className="h-4 w-4" />
-                               </Button>
-                             </DropdownMenuTrigger>
-                             <DropdownMenuContent align="end">
-                               <DropdownMenuItem onClick={() => handleRecipientRowClick(recipient)}>
-                                 상세보기
-                               </DropdownMenuItem>
-                               <DropdownMenuSeparator />
-                               <DropdownMenuItem onClick={(e) => handleEditClick(e, recipient)}>
-                                 <Edit className="mr-2 h-4 w-4" />
-                                 수정
-                               </DropdownMenuItem>
-                               <DropdownMenuItem 
-                                 onClick={(e) => handleDeleteClick(e, recipient)}
-                                 className="text-destructive"
-                               >
-                                 <Trash2 className="mr-2 h-4 w-4" />
-                                 삭제
-                               </DropdownMenuItem>
-                             </DropdownMenuContent>
-                           </DropdownMenu>
-                         </TableCell>
-                       </TableRow>
-                     ))
-                   )}
+                        <TableCell>
+                          <Badge
+                            variant={recipient.orderCount >= 5 ? "default" :
+                              recipient.orderCount >= 3 ? "secondary" : "outline"}
+                          >
+                            {recipient.orderCount >= 5 ? "VIP" :
+                              recipient.orderCount >= 3 ? "단골" : "일반"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleRecipientRowClick(recipient)}>
+                                상세보기
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={(e) => handleEditClick(e, recipient)}>
+                                <Edit className="mr-2 h-4 w-4" />
+                                수정
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => handleDeleteClick(e, recipient)}
+                                className="text-destructive"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                삭제
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -397,28 +397,28 @@ export default function RecipientsPage() {
         </div>
       )}
 
-             {/* 수령자 상세 정보 다이얼로그 */}
-       <RecipientDetailDialog
-         isOpen={isDetailDialogOpen}
-         onOpenChange={setIsDetailDialogOpen}
-         recipient={selectedRecipient}
-       />
+      {/* 수령자 상세 정보 다이얼로그 */}
+      <RecipientDetailDialog
+        isOpen={isDetailDialogOpen}
+        onOpenChange={setIsDetailDialogOpen}
+        recipient={selectedRecipient}
+      />
 
-       {/* 수령자 수정 다이얼로그 */}
-       <RecipientEditDialog
-         isOpen={isEditDialogOpen}
-         onOpenChange={setIsEditDialogOpen}
-         recipient={selectedRecipient}
-         onSave={handleSaveEdit}
-       />
+      {/* 수령자 수정 다이얼로그 */}
+      <RecipientEditDialog
+        isOpen={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        recipient={selectedRecipient}
+        onSave={handleSaveEdit}
+      />
 
-       {/* 수령자 삭제 다이얼로그 */}
-       <RecipientDeleteDialog
-         isOpen={isDeleteDialogOpen}
-         onOpenChange={setIsDeleteDialogOpen}
-         recipient={selectedRecipient}
-         onDelete={handleDelete}
-       />
-     </div>
-   );
- }
+      {/* 수령자 삭제 다이얼로그 */}
+      <RecipientDeleteDialog
+        isOpen={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        recipient={selectedRecipient}
+        onDelete={handleDelete}
+      />
+    </div>
+  );
+}

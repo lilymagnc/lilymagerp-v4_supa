@@ -246,8 +246,14 @@ export default function OrdersPage() {
 
       await fetchOrdersByRange(start, end);
       setIsFullDataLoaded(true); // 부분 로드지만 추가 로드 완료됨을 표시
-      setStartDate(start); // 필터도 해당 기간으로 자동 설정
-      setEndDate(end);
+      // DB에서 이미 기간 필터링된 데이터를 가져왔으므로, 화면 필터는 해제하여 모든 데이터를 보여줌
+      setStartDate(undefined);
+      setEndDate(undefined);
+      setSelectedBranch("all");
+      setSelectedOrderStatus("all");
+      setSelectedPaymentStatus("all");
+      setSearchTerm("");
+      setCurrentPage(1);
       toast({
         title: "데이터 로드 완료",
         description: `${months}개월 간의 주문 데이터를 불러왔습니다.`
@@ -536,17 +542,21 @@ export default function OrdersPage() {
     let filtered = orders;
 
     // 권한에 따른 지점 필터링
+    const normalizeBranch = (s: string | undefined | null) => s?.replace(/\s+/g, '') || '';
+
     if (!isAdmin && userBranch) {
-      // 지점 사용자는 자신의 지점 주문과 이관받은 주문을 모두 볼 수 있음
+      const normUserBranch = normalizeBranch(userBranch);
+      // 지점 사용자는 자신의 지점 주문과 이관받은 주문을 모두 볼 수 있음 (공백 무시 비교)
       filtered = filtered.filter(order =>
-        order.branchName === userBranch ||
-        (order.transferInfo?.isTransferred && order.transferInfo?.processBranchName === userBranch)
+        normalizeBranch(order.branchName) === normUserBranch ||
+        (order.transferInfo?.isTransferred && normalizeBranch(order.transferInfo?.processBranchName) === normUserBranch)
       );
 
     } else if (selectedBranch !== "all") {
+      const normSelectedBranch = normalizeBranch(selectedBranch);
       filtered = filtered.filter(order =>
-        order.branchName === selectedBranch ||
-        (order.transferInfo?.isTransferred && order.transferInfo?.processBranchName === selectedBranch)
+        normalizeBranch(order.branchName) === normSelectedBranch ||
+        (order.transferInfo?.isTransferred && normalizeBranch(order.transferInfo?.processBranchName) === normSelectedBranch)
       );
     }
     // 검색어 필터링
@@ -615,6 +625,20 @@ export default function OrdersPage() {
     // 수령 방식 필터링
     if (selectedReceiptType !== "all") {
       filtered = filtered.filter(order => order.receiptType === selectedReceiptType);
+    }
+
+    console.log(`[Filter Debug] Total: ${orders.length}, Filtered: ${filtered.length}`);
+    if (orders.length > filtered.length) {
+      console.log(`[Filter Debug] Dropped ${orders.length - filtered.length} orders`);
+      console.log('User filter context:', { userBranch, isAdmin, selectedBranch, searchTerm, selectedOrderStatus, selectedPaymentStatus, startDate, endDate, selectedReceiptType });
+
+      const dropped = orders.find(o => !filtered.includes(o));
+      if (dropped) {
+        console.log('Sample Dropped Order:', dropped.id);
+        console.log(' - Branch:', dropped.branchName, 'vs User:', userBranch);
+        console.log(' - Status:', dropped.status);
+        console.log(' - Date:', dropped.orderDate);
+      }
     }
 
     return filtered;
