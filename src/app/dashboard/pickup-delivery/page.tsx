@@ -376,9 +376,9 @@ export default function PickupDeliveryPage() {
         ? (b.deliveryInfo?.date || '')
         : (b.pickupInfo?.date || '');
 
-      if (dateA !== dateB) return dateA.localeCompare(dateB);
+      if (dateA !== dateB) return dateB.localeCompare(dateA);
 
-      // 날짜가 같으면 시간순
+      // 날짜가 같으면 시간순 (내림차순)
       const timeA = a.receiptType === 'delivery_reservation'
         ? (a.deliveryInfo?.time || '00:00')
         : (a.pickupInfo?.time || '00:00');
@@ -386,7 +386,7 @@ export default function PickupDeliveryPage() {
         ? (b.deliveryInfo?.time || '00:00')
         : (b.pickupInfo?.time || '00:00');
 
-      return timeA.localeCompare(timeB);
+      return timeB.localeCompare(timeA);
     });
   }, [orders, isAdmin, userBranch, selectedBranch, startDate, endDate, dateFilterType, searchTerm]);
 
@@ -584,7 +584,12 @@ export default function PickupDeliveryPage() {
                 setIsDriverDialogOpen(true);
               }}
               onRowClick={(order) => { setSelectedOrder(order); setIsDialogOpen(true); }}
-              formatDateTime={(d, t) => `${format(new Date(d), 'MM/dd')} ${t}`}
+              formatDateTime={(d, t) => {
+                if (!d) return '-';
+                const date = new Date(d);
+                if (isNaN(date.getTime())) return '-';
+                return `${format(date, 'MM/dd')} ${t || ''}`;
+              }}
               getStatusBadge={(s) => s === 'processing' ? <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-none h-5 px-2 text-[10px]">배송전</Badge> : <Badge className="bg-green-100 text-green-700 border-none h-5 px-2 text-[10px]">완료</Badge>}
             />
           </TabsContent>

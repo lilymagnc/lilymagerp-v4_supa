@@ -99,7 +99,7 @@ export function DeliveryTable({
                                     {order.actualDeliveryCost ? (
                                         <div className="text-[11px]">
                                             <div className="font-bold">₩{order.actualDeliveryCost.toLocaleString()}</div>
-                                            {order.deliveryProfit !== undefined && (
+                                            {order.deliveryProfit != null && (
                                                 <div className={`font-medium ${order.deliveryProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                                     {order.deliveryProfit >= 0 ? '+' : ''}₩{order.deliveryProfit.toLocaleString()}
                                                 </div>
@@ -212,9 +212,11 @@ export function DeliveryTable({
                                 <span className="text-slate-500">배송 비용</span>
                                 <div className="text-right">
                                     <div className="font-bold">₩{order.actualDeliveryCost.toLocaleString()}</div>
-                                    <div className={order.deliveryProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
-                                        차익: {order.deliveryProfit >= 0 ? '+' : ''}₩{order.deliveryProfit?.toLocaleString()}
-                                    </div>
+                                    {order.deliveryProfit != null && (
+                                        <div className={order.deliveryProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                            차익: {order.deliveryProfit >= 0 ? '+' : ''}₩{order.deliveryProfit.toLocaleString()}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}

@@ -90,7 +90,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           const userWithRole = await fetchUserRole(session.user.email!, session.user.id);
-          setUser(userWithRole);
+          setUser((prev) => {
+            if (prev &&
+              prev.id === userWithRole.id &&
+              prev.role === userWithRole.role &&
+              prev.branchId === userWithRole.branchId &&
+              prev.franchise === userWithRole.franchise) {
+              return prev;
+            }
+            return userWithRole;
+          });
         }
       } catch (err) {
         console.error("Session error:", err);
@@ -105,7 +114,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         const userWithRole = await fetchUserRole(session.user.email!, session.user.id);
-        setUser(userWithRole);
+        setUser((prev) => {
+          if (prev &&
+            prev.id === userWithRole.id &&
+            prev.role === userWithRole.role &&
+            prev.branchId === userWithRole.branchId &&
+            prev.franchise === userWithRole.franchise) {
+            return prev;
+          }
+          return userWithRole;
+        });
       } else {
         setUser(null);
       }

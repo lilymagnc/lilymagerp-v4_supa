@@ -284,7 +284,7 @@ export default function SimpleExpensesPage() {
       // 관리자는 전체 데이터 로드
       fetchExpenses();
       // 본사 관리자인 경우 빈 branchId 데이터 자동 업데이트
-      updateEmptyBranchIds();
+      // updateEmptyBranchIds(); // Firebase function disabled after Supabase migration
     } else {
       // 기본적으로 전체 데이터 로드
       fetchExpenses();

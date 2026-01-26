@@ -172,13 +172,13 @@ export function useOrders() {
     payment: row.payment || {},
     pickupInfo: row.pickup_info,
     deliveryInfo: row.delivery_info,
-    actualDeliveryCost: row.actual_delivery_cost,
-    actualDeliveryCostCash: row.actual_delivery_cost_cash,
-    deliveryCostStatus: row.delivery_cost_status,
-    deliveryCostUpdatedAt: row.delivery_cost_updated_at,
-    deliveryCostUpdatedBy: row.delivery_cost_updated_by,
-    deliveryCostReason: row.delivery_cost_reason,
-    deliveryProfit: row.delivery_profit,
+    actualDeliveryCost: row.actual_delivery_cost ?? row.extra_data?.actualDeliveryCost ?? row.extra_data?.actual_delivery_cost,
+    actualDeliveryCostCash: row.actual_delivery_cost_cash ?? row.extra_data?.actualDeliveryCostCash ?? row.extra_data?.actual_delivery_cost_cash,
+    deliveryCostStatus: row.delivery_cost_status ?? row.extra_data?.deliveryCostStatus ?? row.extra_data?.delivery_cost_status,
+    deliveryCostUpdatedAt: row.delivery_cost_updated_at ?? row.extra_data?.deliveryCostUpdatedAt ?? row.extra_data?.delivery_cost_updated_at,
+    deliveryCostUpdatedBy: row.delivery_cost_updated_by ?? row.extra_data?.deliveryCostUpdatedBy ?? row.extra_data?.delivery_cost_updated_by,
+    deliveryCostReason: row.delivery_cost_reason ?? row.extra_data?.deliveryCostReason ?? row.extra_data?.delivery_cost_reason,
+    deliveryProfit: row.delivery_profit ?? row.extra_data?.deliveryProfit ?? row.extra_data?.delivery_profit,
     message: (() => {
       const msg = (row.message && Object.keys(row.message).length > 0) ? row.message : (row.extra_data?.message || {});
       // Normalize legacy ribbon formats if content is missing
@@ -553,6 +553,55 @@ export function useOrders() {
         console.error('Supabase updateOrder error:', error);
         throw error;
       }
+
+      // --- [Auto-Sync Logic] Sync Delivery Cost to Simple Expenses ---
+      if (data.actualDeliveryCost !== undefined) {
+        const cost = data.actualDeliveryCost;
+        if (cost > 0) {
+          // Check for existing linked expense
+          // Using text search for extra_data to be safe across JSON formats
+          const { data: existingExpenses } = await supabase
+            .from('simple_expenses')
+            .select('id, extra_data')
+            .eq('category', 'transport')
+            .or(`sub_category.eq.DELIVERY,sub_category.eq.delivery`)
+            .like('extra_data', `%${orderId}%`) // Simplified robust check
+            .limit(1);
+
+          const existingExpense = existingExpenses && existingExpenses.length > 0 ? existingExpenses[0] : null;
+
+          const expensePayload = {
+            expense_date: data.deliveryInfo?.date || oldOrder.delivery_info?.date || new Date().toISOString(),
+            amount: cost,
+            category: 'transport',
+            sub_category: 'DELIVERY',
+            description: `배송비 (주문: ${oldOrder.orderer?.name || '미지정'})`,
+            supplier: data.deliveryInfo?.driverName || oldOrder.delivery_info?.driverName || '배송기사',
+            branch_id: oldOrder.branch_id,
+            branch_name: oldOrder.branch_name,
+            updated_at: new Date().toISOString(),
+            extra_data: {
+              relatedOrderId: orderId,
+              ...(existingExpense?.extra_data as object || {})
+            }
+          };
+
+          if (existingExpense) {
+            await supabase.from('simple_expenses').update(expensePayload).eq('id', existingExpense.id);
+          } else {
+            await supabase.from('simple_expenses').insert([{
+              ...expensePayload,
+              id: crypto.randomUUID(),
+              created_at: new Date().toISOString()
+            }]);
+          }
+        } else if (cost === 0) {
+          // If cost is set to 0, maybe we should remove the expense?
+          // For safety, let's just update it to 0 or leave it. 
+          // User usually inputs 0 to clear it? Let's leave it for now to avoid accidental deletion.
+        }
+      }
+      // -----------------------------------------------------------
 
       if (revenueDelta !== 0 || settledDelta !== 0) {
         await updateDailyStats(new Date(oldOrder.order_date), oldOrder.branch_name, {

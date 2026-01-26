@@ -1,10 +1,10 @@
 "use client";
+
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PageHeader } from "@/components/page-header";
 import { useToast } from "@/hooks/use-toast";
@@ -16,8 +16,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import { CalendarIcon, Store, Settings } from "lucide-react";
-import { BranchDiscountSettings, DiscountRate } from "@/types/discount";
+import { CalendarIcon, Store, Settings, Loader2 } from "lucide-react";
+import { BranchDiscountSettings, DiscountRate, GlobalDiscountSettings } from "@/types/discount";
+
 const DEFAULT_DISCOUNT_RATES: DiscountRate[] = [
   { rate: 5, label: "5%", isActive: true },
   { rate: 10, label: "10%", isActive: true },
@@ -30,12 +31,36 @@ const DEFAULT_DISCOUNT_RATES: DiscountRate[] = [
   { rate: 45, label: "45%", isActive: true },
   { rate: 50, label: "50%", isActive: true },
 ];
+
 export default function DiscountSettingsPage() {
   const { user } = useAuth();
   const { branches } = useBranches();
-  const { discountSettings, updateGlobalSettings, updateBranchSettings } = useDiscountSettings();
+  const { discountSettings, updateGlobalSettings, updateBranchSettings, loading: settingsLoading } = useDiscountSettings();
   const { toast } = useToast();
-  // 권한 확인
+
+  // Local state for forms
+  const [globalForm, setGlobalForm] = useState<GlobalDiscountSettings | null>(null);
+  const [branchForms, setBranchForms] = useState<Record<string, BranchDiscountSettings>>({});
+
+  // Track if we have synced with server data at least once
+  const [isSynced, setIsSynced] = useState(false);
+
+  // Sync state when data is loaded (only if not already synced or explicit refresh needed)
+  useEffect(() => {
+    if (discountSettings && !isSynced) {
+      setGlobalForm({
+        startDate: new Date(discountSettings.globalSettings.startDate),
+        endDate: new Date(discountSettings.globalSettings.endDate),
+        allowDuplicateDiscount: discountSettings.globalSettings.allowDuplicateDiscount,
+        allowPointAccumulation: discountSettings.globalSettings.allowPointAccumulation,
+        minOrderAmount: discountSettings.globalSettings.minOrderAmount,
+      });
+      setBranchForms(discountSettings.branchSettings);
+      setIsSynced(true);
+    }
+  }, [discountSettings, isSynced]);
+
+
   if (user?.role !== '본사 관리자') {
     return (
       <div className="flex items-center justify-center h-64">
@@ -46,31 +71,22 @@ export default function DiscountSettingsPage() {
       </div>
     );
   }
-  // 전역 설정 상태
-  const [globalSettings, setGlobalSettings] = useState({
-    startDate: new Date(),
-    endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-    allowDuplicateDiscount: false,
-    allowPointAccumulation: true,
-    minOrderAmount: 10000,
-  });
-  // 지점별 설정 상태
-  const [branchSettings, setBranchSettings] = useState<Record<string, BranchDiscountSettings>>({});
-  useEffect(() => {
-    if (discountSettings) {
-      setGlobalSettings({
-        startDate: new Date(discountSettings.globalSettings.startDate),
-        endDate: new Date(discountSettings.globalSettings.endDate),
-        allowDuplicateDiscount: discountSettings.globalSettings.allowDuplicateDiscount,
-        allowPointAccumulation: discountSettings.globalSettings.allowPointAccumulation,
-        minOrderAmount: discountSettings.globalSettings.minOrderAmount,
-      });
-      setBranchSettings(discountSettings.branchSettings);
-    }
-  }, [discountSettings]);
+
+  if (settingsLoading && !isSynced) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <span className="ml-2">설정 불러오는 중...</span>
+      </div>
+    );
+  }
+
+  if (!globalForm) return null; // Should not happen after loading
+
   const handleGlobalSettingsSave = async () => {
     try {
-      await updateGlobalSettings(globalSettings);
+      if (!globalForm) return;
+      await updateGlobalSettings(globalForm);
       toast({
         title: "성공",
         description: "전역 설정이 저장되었습니다.",
@@ -83,9 +99,12 @@ export default function DiscountSettingsPage() {
       });
     }
   };
+
   const handleBranchSettingsSave = async (branchId: string) => {
     try {
-      await updateBranchSettings(branchId, branchSettings[branchId]);
+      const form = branchForms[branchId];
+      if (!form) return;
+      await updateBranchSettings(branchId, form);
       toast({
         title: "성공",
         description: "지점 설정이 저장되었습니다.",
@@ -98,20 +117,22 @@ export default function DiscountSettingsPage() {
       });
     }
   };
+
   const toggleBranchDiscount = (branchId: string) => {
-    const currentSettings = branchSettings[branchId] || {
+    const currentSettings = branchForms[branchId] || {
       isActive: false,
       startDate: new Date(),
       endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
       discountRates: DEFAULT_DISCOUNT_RATES,
       customRate: 0,
-      minOrderAmount: globalSettings.minOrderAmount,
-      allowDuplicateDiscount: globalSettings.allowDuplicateDiscount,
-      allowPointAccumulation: globalSettings.allowPointAccumulation,
+      minOrderAmount: globalForm.minOrderAmount, // Use global as default
+      allowDuplicateDiscount: globalForm.allowDuplicateDiscount,
+      allowPointAccumulation: globalForm.allowPointAccumulation,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    setBranchSettings(prev => ({
+
+    setBranchForms(prev => ({
       ...prev,
       [branchId]: {
         ...currentSettings,
@@ -119,13 +140,16 @@ export default function DiscountSettingsPage() {
       },
     }));
   };
+
   const toggleDiscountRate = (branchId: string, rate: number) => {
-    const currentSettings = branchSettings[branchId];
+    const currentSettings = branchForms[branchId];
     if (!currentSettings) return;
-    const updatedRates = currentSettings.discountRates.map(r =>
+
+    const updatedRates = (currentSettings.discountRates || DEFAULT_DISCOUNT_RATES).map(r =>
       r.rate === rate ? { ...r, isActive: !r.isActive } : r
     );
-    setBranchSettings(prev => ({
+
+    setBranchForms(prev => ({
       ...prev,
       [branchId]: {
         ...currentSettings,
@@ -133,12 +157,14 @@ export default function DiscountSettingsPage() {
       },
     }));
   };
+
   return (
     <div>
       <PageHeader
         title="할인 설정"
         description="지점별 할인율 및 정책을 관리합니다."
       />
+
       {/* 전역 설정 */}
       <Card className="mb-6">
         <CardHeader>
@@ -160,12 +186,12 @@ export default function DiscountSettingsPage() {
                     variant="outline"
                     className={cn(
                       "w-full justify-start text-left font-normal",
-                      !globalSettings.startDate && "text-muted-foreground"
+                      !globalForm.startDate && "text-muted-foreground"
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {globalSettings.startDate ? (
-                      format(globalSettings.startDate, "PPP", { locale: ko })
+                    {globalForm.startDate ? (
+                      format(globalForm.startDate, "PPP", { locale: ko })
                     ) : (
                       <span>날짜 선택</span>
                     )}
@@ -174,8 +200,8 @@ export default function DiscountSettingsPage() {
                 <PopoverContent className="w-auto p-0">
                   <Calendar
                     mode="single"
-                    selected={globalSettings.startDate}
-                    onSelect={(date) => date && setGlobalSettings(prev => ({ ...prev, startDate: date }))}
+                    selected={globalForm.startDate}
+                    onSelect={(date) => date && setGlobalForm(prev => ({ ...prev!, startDate: date }))}
                     initialFocus
                   />
                 </PopoverContent>
@@ -189,12 +215,12 @@ export default function DiscountSettingsPage() {
                     variant="outline"
                     className={cn(
                       "w-full justify-start text-left font-normal",
-                      !globalSettings.endDate && "text-muted-foreground"
+                      !globalForm.endDate && "text-muted-foreground"
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {globalSettings.endDate ? (
-                      format(globalSettings.endDate, "PPP", { locale: ko })
+                    {globalForm.endDate ? (
+                      format(globalForm.endDate, "PPP", { locale: ko })
                     ) : (
                       <span>날짜 선택</span>
                     )}
@@ -203,34 +229,36 @@ export default function DiscountSettingsPage() {
                 <PopoverContent className="w-auto p-0">
                   <Calendar
                     mode="single"
-                    selected={globalSettings.endDate}
-                    onSelect={(date) => date && setGlobalSettings(prev => ({ ...prev, endDate: date }))}
+                    selected={globalForm.endDate}
+                    onSelect={(date) => date && setGlobalForm(prev => ({ ...prev!, endDate: date }))}
                     initialFocus
                   />
                 </PopoverContent>
               </Popover>
             </div>
           </div>
+
           <div className="space-y-2">
             <Label>최소 주문 금액</Label>
             <Input
               type="number"
-              value={globalSettings.minOrderAmount}
-              onChange={(e) => setGlobalSettings(prev => ({ 
-                ...prev, 
-                minOrderAmount: Number(e.target.value) 
+              value={globalForm.minOrderAmount}
+              onChange={(e) => setGlobalForm(prev => ({
+                ...prev!,
+                minOrderAmount: Number(e.target.value)
               }))}
               placeholder="10000"
             />
           </div>
+
           <div className="space-y-2">
             <div className="flex items-center space-x-2">
               <Checkbox
                 id="allow-duplicate"
-                checked={globalSettings.allowDuplicateDiscount}
-                onCheckedChange={(checked) => setGlobalSettings(prev => ({ 
-                  ...prev, 
-                  allowDuplicateDiscount: checked as boolean 
+                checked={globalForm.allowDuplicateDiscount}
+                onCheckedChange={(checked) => setGlobalForm(prev => ({
+                  ...prev!,
+                  allowDuplicateDiscount: checked as boolean
                 }))}
               />
               <Label htmlFor="allow-duplicate">포인트와 할인 중복 허용</Label>
@@ -238,20 +266,22 @@ export default function DiscountSettingsPage() {
             <div className="flex items-center space-x-2">
               <Checkbox
                 id="allow-points"
-                checked={globalSettings.allowPointAccumulation}
-                onCheckedChange={(checked) => setGlobalSettings(prev => ({ 
-                  ...prev, 
-                  allowPointAccumulation: checked as boolean 
+                checked={globalForm.allowPointAccumulation}
+                onCheckedChange={(checked) => setGlobalForm(prev => ({
+                  ...prev!,
+                  allowPointAccumulation: checked as boolean
                 }))}
               />
               <Label htmlFor="allow-points">할인 시 포인트 적립 허용</Label>
             </div>
           </div>
+
           <Button onClick={handleGlobalSettingsSave} className="w-full">
             전역 설정 저장
           </Button>
         </CardContent>
       </Card>
+
       {/* 지점별 설정 */}
       <Card>
         <CardHeader>
@@ -265,8 +295,9 @@ export default function DiscountSettingsPage() {
         </CardHeader>
         <CardContent className="space-y-6">
           {branches.filter(branch => branch.type !== '본사').map((branch) => {
-            const branchSetting = branchSettings[branch.id];
+            const branchSetting = branchForms[branch.id];
             const isActive = branchSetting?.isActive || false;
+
             return (
               <div key={branch.id} className="border rounded-lg p-4">
                 <div className="flex items-center justify-between mb-4">
@@ -283,10 +314,11 @@ export default function DiscountSettingsPage() {
                     {isActive ? "할인 비활성화" : "할인 활성화"}
                   </Button>
                 </div>
+
                 {isActive && branchSetting && (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                      {branchSetting.discountRates.map((rate) => (
+                      {(branchSetting.discountRates || DEFAULT_DISCOUNT_RATES).map((rate) => (
                         <div key={rate.rate} className="flex items-center space-x-2">
                           <Checkbox
                             checked={rate.isActive}
@@ -296,14 +328,15 @@ export default function DiscountSettingsPage() {
                         </div>
                       ))}
                     </div>
+
                     <div className="space-y-2">
                       <Label>수동 할인율 (최대 50%)</Label>
                       <Input
                         type="number"
-                        value={branchSetting.customRate}
+                        value={branchSetting.customRate || 0}
                         onChange={(e) => {
                           const value = Math.min(Math.max(0, Number(e.target.value)), 50);
-                          setBranchSettings(prev => ({
+                          setBranchForms(prev => ({
                             ...prev,
                             [branch.id]: {
                               ...prev[branch.id],
@@ -316,14 +349,15 @@ export default function DiscountSettingsPage() {
                         className="w-32"
                       />
                     </div>
+
                     <div className="space-y-2">
-                      <Label>지점별 최소 주문 금액 (기본값 사용 시 비워두세요)</Label>
+                      <Label>지점별 최소 주문 금액 (비워두면 0)</Label>
                       <Input
                         type="number"
-                        value={branchSetting.minOrderAmount || ""}
+                        value={branchSetting.minOrderAmount || 0}
                         onChange={(e) => {
                           const value = e.target.value ? Number(e.target.value) : 0;
-                          setBranchSettings(prev => ({
+                          setBranchForms(prev => ({
                             ...prev,
                             [branch.id]: {
                               ...prev[branch.id],
@@ -331,9 +365,10 @@ export default function DiscountSettingsPage() {
                             },
                           }));
                         }}
-                        placeholder="기본값 사용"
+                        placeholder="0"
                       />
                     </div>
+
                     <Button
                       onClick={() => handleBranchSettingsSave(branch.id)}
                       className="w-full"

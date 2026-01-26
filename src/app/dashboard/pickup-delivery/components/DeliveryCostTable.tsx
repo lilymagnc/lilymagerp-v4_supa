@@ -28,6 +28,7 @@ export function DeliveryCostTable({ orders, onCostInput }: DeliveryCostTableProp
         <TableHeader>
           <TableRow className="bg-slate-50">
             <TableHead className="w-[100px]">주문번호</TableHead>
+            <TableHead>배송일시</TableHead>
             <TableHead>수령자</TableHead>
             <TableHead>배송지</TableHead>
             <TableHead>배송기사</TableHead>
@@ -43,6 +44,12 @@ export function DeliveryCostTable({ orders, onCostInput }: DeliveryCostTableProp
             <TableRow key={order.id} className="hover:bg-slate-50/50">
               <TableCell className="font-mono text-[10px] text-slate-400">
                 {order.id.slice(0, 8)}
+              </TableCell>
+              <TableCell>
+                <div className="flex flex-col text-xs">
+                  <span className="font-medium">{order.deliveryInfo?.date || '-'}</span>
+                  <span className="text-slate-500">{order.deliveryInfo?.time || '-'}</span>
+                </div>
               </TableCell>
               <TableCell className="font-medium">{order.deliveryInfo?.recipientName || '-'}</TableCell>
               <TableCell>
@@ -63,14 +70,14 @@ export function DeliveryCostTable({ orders, onCostInput }: DeliveryCostTableProp
                 ₩{(order.summary?.deliveryFee || 0).toLocaleString()}
               </TableCell>
               <TableCell className="text-sm font-bold">
-                {order.actualDeliveryCost ? (
+                {order.actualDeliveryCost != null ? (
                   `₩${order.actualDeliveryCost.toLocaleString()}`
                 ) : (
                   <span className="text-slate-300 font-normal italic">미입력</span>
                 )}
               </TableCell>
               <TableCell>
-                {order.deliveryProfit !== undefined ? (
+                {order.deliveryProfit != null ? (
                   <Badge variant="outline" className={`border-none px-0 font-bold ${order.deliveryProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {order.deliveryProfit >= 0 ? '+' : ''}₩{order.deliveryProfit.toLocaleString()}
                   </Badge>
@@ -79,7 +86,7 @@ export function DeliveryCostTable({ orders, onCostInput }: DeliveryCostTableProp
                 )}
               </TableCell>
               <TableCell>
-                {order.actualDeliveryCost ? (
+                {order.actualDeliveryCost != null ? (
                   <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none px-2 h-5 text-[10px]">입력완료</Badge>
                 ) : (
                   <Badge variant="secondary" className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-none px-2 h-5 text-[10px]">미입력</Badge>
@@ -93,7 +100,7 @@ export function DeliveryCostTable({ orders, onCostInput }: DeliveryCostTableProp
                   className="h-8 px-3 border-blue-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300"
                 >
                   <DollarSign className="w-3.5 h-3.5 mr-1" />
-                  {order.actualDeliveryCost ? '수정' : '입력'}
+                  {order.actualDeliveryCost != null ? '수정' : '입력'}
                 </Button>
               </TableCell>
             </TableRow>

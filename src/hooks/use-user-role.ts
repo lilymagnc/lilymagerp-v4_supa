@@ -61,7 +61,7 @@ export function useUserRole() {
     } finally {
       setLoading(false);
     }
-  }, [user, toast]);
+  }, [user?.email, user?.id, toast]);
 
   const createDefaultUserRole = async (email: string, existingRole: string) => {
     try {
