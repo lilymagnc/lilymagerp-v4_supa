@@ -1,43 +1,45 @@
+-- [2] POINT_HISTORY 테이블은 이미 생성됨 (생략)
 
--- [1] BUDGETS 테이블 생성
-CREATE TABLE IF NOT EXISTS public.budgets (
+
+-- [3] EMAIL_TEMPLATES 테이블 생성
+CREATE TABLE IF NOT EXISTS public.email_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    category TEXT,
-    fiscal_year INTEGER NOT NULL,
-    fiscal_month INTEGER,
-    allocated_amount NUMERIC DEFAULT 0,
-    used_amount NUMERIC DEFAULT 0,
-    remaining_amount NUMERIC DEFAULT 0,
-    branch_id TEXT,
-    branch_name TEXT,
-    department_id TEXT,
-    department_name TEXT,
-    approval_limits JSONB, -- { manager: 0, director: 0 ... }
-    is_active BOOLEAN DEFAULT true,
+    description TEXT,
+    content TEXT,
+    category TEXT, -- 'delivery', 'order', 'status', 'birthday', 'custom'
+    is_html BOOLEAN DEFAULT false,
+    is_favorite BOOLEAN DEFAULT false,
+    created_by TEXT, -- user_id
+    variables TEXT[], -- 템플릿 변수 목록
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- RLS 활성화
-ALTER TABLE public.budgets ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all access to budgets" ON public.budgets FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE public.email_templates ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all access to email_templates" ON public.email_templates FOR ALL USING (true) WITH CHECK (true);
 
 
--- [2] POINT_HISTORY 테이블 생성 (고객 포인트 이력)
-CREATE TABLE IF NOT EXISTS public.point_history (
+-- [4] HR_DOCUMENTS 테이블 생성 (인사 서류)
+CREATE TABLE IF NOT EXISTS public.hr_documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    customer_id UUID REFERENCES public.customers(id) ON DELETE SET NULL,
-    customer_name TEXT,
-    customer_contact TEXT,
-    previous_points INTEGER DEFAULT 0,
-    new_points INTEGER DEFAULT 0,
-    difference INTEGER DEFAULT 0,
-    reason TEXT,
-    modifier TEXT, -- 수정자 (직원)
-    created_at TIMESTAMPTZ DEFAULT now()
+    user_id UUID REFERENCES auth.users(id), -- 수파베이스 Auth 유저와 연결
+    user_name TEXT,
+    document_type TEXT NOT NULL,
+    submission_date TIMESTAMPTZ DEFAULT now(),
+    status TEXT DEFAULT '처리중', -- '처리중', '승인', '반려'
+    contents JSONB, -- 신청서 상세 내용
+    file_url TEXT,
+    original_file_name TEXT,
+    submission_method TEXT,
+    extracted_from_file BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- RLS 활성화
-ALTER TABLE public.point_history ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all access to point_history" ON public.point_history FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE public.hr_documents ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all access to hr_documents" ON public.hr_documents FOR ALL USING (true) WITH CHECK (true);
+
+

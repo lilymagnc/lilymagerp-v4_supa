@@ -4,8 +4,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
-import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -17,9 +16,9 @@ const NewHRRequestPage = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const formRef = useRef<HTMLDivElement>(null);
-  
+
   const [documentType, setDocumentType] = useState<'휴직원' | '퇴직원' | '휴가원'>('휴직원');
-  
+
   // User profile info
   const [department, setDepartment] = useState('');
   const [position, setPosition] = useState('');
@@ -38,20 +37,39 @@ const NewHRRequestPage = () => {
 
   useEffect(() => {
     if (user) {
-      setName(user.displayName || '');
-      // 휴가원일 때는 비상연락처를 사용자 정보의 전화번호로 기본 설정하지 않을 수 있으므로,
-      // documentType에 따라 조건부로 설정하거나 사용자가 직접 입력하도록 둡니다.
-      // setContact(user.phoneNumber || ''); 
+      setName(user.email?.split('@')[0] || ''); // Default to cached name or part of email
+
       const fetchUserData = async () => {
-        const userDocRef = doc(db, "users", user.uid);
-        const userDoc = await getDoc(userDocRef);
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          setDepartment(userData.department || '');
-          setPosition(userData.position || '');
-          if (userData.joinDate) {
-            setJoinDate(userData.joinDate.toDate().toISOString().split('T')[0]);
+        try {
+          // Try to fetch additional info from employees table if linked by email, or extra_data in user_roles if we added it.
+          // For now, we'll try to get the user's name correctly from public.users or user_roles.
+          // Note: Standard Supabase auth user metadata might allow 'full_name'.
+
+          // Attempt to fetch from 'employees' table first if it exists and matches email
+          if (user.email) {
+            const { data: employeeData } = await supabase
+              .from('employees')
+              .select('name, department, position, hire_date')
+              .eq('email', user.email)
+              .maybeSingle();
+
+            if (employeeData) {
+              if (employeeData.name) setName(employeeData.name);
+              if (employeeData.department) setDepartment(employeeData.department);
+              if (employeeData.position) setPosition(employeeData.position);
+              if (employeeData.hire_date) setJoinDate(employeeData.hire_date.split('T')[0]);
+            } else {
+              // Fallback: Check if we have name in user_roles or users table
+              const { data: userData } = await supabase
+                .from('users')
+                .select('name')
+                .eq('email', user.email)
+                .maybeSingle();
+              if (userData?.name) setName(userData.name);
+            }
           }
+        } catch (error) {
+          console.error("Error fetching user data:", error);
         }
       };
       fetchUserData();
@@ -72,9 +90,9 @@ const NewHRRequestPage = () => {
         contact,
         handover,
       };
-    } else if (documentType === '퇴직원') { 
+    } else if (documentType === '퇴직원') {
       contents = {
-        department, position, name, 
+        department, position, name,
         joinDate: joinDate ? new Date(joinDate) : null,
         endDate: endDate ? new Date(endDate) : null, // 퇴직예정일
         reason,
@@ -91,28 +109,28 @@ const NewHRRequestPage = () => {
     }
 
     const doc = {
-        documentType,
-        userName: name,
-        submissionDate: { toDate: () => new Date() },
-        contents
+      documentType,
+      userName: name,
+      submissionDate: { toDate: () => new Date() },
+      contents
     }
 
     const root = createRoot(printableElement);
     root.render(<PrintableHRForm document={doc as any} />);
 
     setTimeout(async () => {
-        const canvas = await html2canvas(printableElement, { scale: 2 });
-        const data = canvas.toDataURL('image/png');
+      const canvas = await html2canvas(printableElement, { scale: 2 });
+      const data = canvas.toDataURL('image/png');
 
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const imgProperties = pdf.getImageProperties(data);
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (imgProperties.height * pdfWidth) / imgProperties.width;
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProperties = pdf.getImageProperties(data);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProperties.height * pdfWidth) / imgProperties.width;
 
-        pdf.addImage(data, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`${name}_${documentType}.pdf`);
+      pdf.addImage(data, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${name}_${documentType}.pdf`);
 
-        root.unmount();
+      root.unmount();
     }, 500);
   };
 
@@ -135,9 +153,9 @@ const NewHRRequestPage = () => {
         contact,
         handover,
       };
-    } else if (documentType === '퇴직원') { 
+    } else if (documentType === '퇴직원') {
       contents = {
-        department, position, name, 
+        department, position, name,
         joinDate: joinDate ? new Date(joinDate) : null,
         endDate: endDate ? new Date(endDate) : null, // 퇴직예정일
         reason,
@@ -154,16 +172,20 @@ const NewHRRequestPage = () => {
     }
 
     try {
-      await addDoc(collection(db, 'hr_documents'), {
-        userId: user.uid,
-        userName: name,
-        documentType,
-        submissionDate: serverTimestamp(),
+      const { error } = await supabase.from('hr_documents').insert({
+        user_id: user.id,
+        user_name: name,
+        document_type: documentType,
+        submission_date: new Date().toISOString(),
         status: '처리중',
         contents,
+        submission_method: 'online-form',
+        extracted_from_file: false
       });
 
-      toast({ variant: "success", title: "성공", description: "신청서가 성공적으로 제출되었습니다." });
+      if (error) throw error;
+
+      toast({ variant: "default", title: "성공", description: "신청서가 성공적으로 제출되었습니다." });
       router.push('/dashboard/hr/requests');
     } catch (error) {
       console.error("Form submission error:", error);
@@ -180,7 +202,7 @@ const NewHRRequestPage = () => {
       <div ref={formRef} className="p-8">
         <div className="flex justify-center mb-8">
           <div className="tabs tabs-boxed">
-            <a className={`tab ${documentType === '휴직원' ? 'tab-active' : ''}`} onClick={() => setDocumentType('휴직원')}>휴직원</a> 
+            <a className={`tab ${documentType === '휴직원' ? 'tab-active' : ''}`} onClick={() => setDocumentType('휴직원')}>휴직원</a>
             <a className={`tab mx-2 ${documentType === '퇴직원' ? 'tab-active' : ''}`} onClick={() => setDocumentType('퇴직원')}>퇴직원</a>
             <a className={`tab ${documentType === '휴가원' ? 'tab-active' : ''}`} onClick={() => setDocumentType('휴가원')}>휴가원</a>
           </div>
@@ -207,7 +229,7 @@ const NewHRRequestPage = () => {
                 <label className="label"><span className="label-text">성명</span></label>
                 <input type="text" className="input input-bordered w-full" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
-              {documentType === '퇴직원' && 
+              {documentType === '퇴직원' &&
                 <div className="form-control">
                   <label className="label"><span className="label-text">입사일</span></label>
                   <input type="date" className="input input-bordered w-full" value={joinDate} onChange={(e) => setJoinDate(e.target.value)} />
@@ -256,7 +278,7 @@ const NewHRRequestPage = () => {
           ) : (
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">휴가 신청 내용</h3>
-               <div className="form-control">
+              <div className="form-control">
                 <label className="label"><span className="label-text">휴가 종류</span></label>
                 <select className="select select-bordered w-full" value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
                   <option>연차</option>
@@ -274,7 +296,7 @@ const NewHRRequestPage = () => {
                   <input type="date" className="input input-bordered w-full" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
                 </div>
               </div>
-               <div className="form-control">
+              <div className="form-control">
                 <label className="label"><span className="label-text">휴가 사유</span></label>
                 <input type="text" placeholder="예: 개인 사정" className="input input-bordered w-full" value={reason} onChange={(e) => setReason(e.target.value)} required />
               </div>

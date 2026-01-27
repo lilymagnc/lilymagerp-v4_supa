@@ -7,10 +7,13 @@ import { collection, getDocs, Timestamp } from 'firebase/firestore';
 let adminDb: admin.firestore.Firestore | null = null;
 if (typeof window === 'undefined') {
     try {
-        // Use GOOGLE_APPLICATION_CREDENTIALS env var
-        admin.initializeApp({
-            credential: admin.credential.applicationDefault()
-        });
+        if (!admin.apps.length) {
+            // Use GOOGLE_APPLICATION_CREDENTIALS env var
+            admin.initializeApp({
+                credential: admin.credential.applicationDefault(),
+                projectId: 'lilymagerp-fs1'
+            });
+        }
         adminDb = admin.firestore();
     } catch (e) {
         console.error('Admin SDK init error:', e);
@@ -64,6 +67,9 @@ export async function syncFirebaseToSupabase(
         { firebase: 'orderTransfers', supabase: 'order_transfers', label: '주문이관' },
         { firebase: 'materialRequests', supabase: 'material_requests', label: '자재요청' },
         { firebase: 'dailyStats', supabase: 'daily_stats', label: '일별통계' },
+        { firebase: 'hr_documents', supabase: 'hr_documents', label: '인사서류' },
+        { firebase: 'pointHistory', supabase: 'point_history', label: '포인트이력' },
+        { firebase: 'emailTemplates', supabase: 'email_templates', label: '이메일템플릿' },
     ];
 
     const collectionsToSync = targetCollection
@@ -123,7 +129,13 @@ export async function syncFirebaseToSupabase(
                                                         ['id', 'user_id', 'email', 'role', 'permissions', 'branch_id', 'branch_name', 'is_active', 'created_at', 'updated_at'] :
                                                         (cfg.supabase === 'daily_stats') ?
                                                             ['date', 'total_order_count', 'total_revenue', 'total_settled_amount', 'branches', 'extra_data', 'last_updated'] :
-                                                            [];
+                                                            (cfg.supabase === 'hr_documents') ?
+                                                                ['id', 'user_id', 'user_name', 'document_type', 'submission_date', 'status', 'file_url', 'original_file_name', 'submission_method', 'contents', 'extracted_from_file', 'created_at', 'updated_at'] :
+                                                                (cfg.supabase === 'point_history') ?
+                                                                    ['id', 'customer_id', 'customer_name', 'customer_contact', 'previous_points', 'new_points', 'difference', 'reason', 'modifier', 'created_at'] :
+                                                                    (cfg.supabase === 'email_templates') ?
+                                                                        ['id', 'name', 'description', 'content', 'category', 'is_html', 'is_favorite', 'created_by', 'variables', 'created_at', 'updated_at'] :
+                                                                        [];
 
                     const fieldMap: Record<string, string> = {
                         orderNumber: 'order_number',
@@ -190,7 +202,22 @@ export async function syncFirebaseToSupabase(
                         requestNumber: 'request_number',
                         totalAmount: 'total_amount',
                         userId: 'user_id',
-                        isActive: 'is_active'
+                        isActive: 'is_active',
+                        userName: 'user_name',
+                        documentType: 'document_type',
+                        submissionDate: 'submission_date',
+                        fileUrl: 'file_url',
+                        originalFileName: 'original_file_name',
+                        submissionMethod: 'submission_method',
+                        extractedFromFile: 'extracted_from_file',
+                        customerId: 'customer_id',
+                        customerName: 'customer_name',
+                        customerContact: 'customer_contact',
+                        previousPoints: 'previous_points',
+                        newPoints: 'new_points',
+                        isHtml: 'is_html',
+                        isFavorite: 'is_favorite',
+                        createdBy: 'created_by'
                     };
 
                     for (const [key, value] of Object.entries(data)) {
