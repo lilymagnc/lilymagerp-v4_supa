@@ -235,6 +235,9 @@ export default function DashboardLayout({
                         {/* Header content can go here if needed */}
                     </div>
                     <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/manual')} title="사용자 매뉴얼">
+                            <BookUser className="h-5 w-5" />
+                        </Button>
                         <NotificationCenter />
                     </div>
                 </header>
