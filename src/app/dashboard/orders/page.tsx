@@ -875,17 +875,8 @@ export default function OrdersPage() {
     const today = new Date();
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const todayOrders = filteredOrders.filter(order => {
-      if (!order.orderDate) return false;
-      let orderDate: Date;
-      if (typeof order.orderDate === 'string') {
-        orderDate = new Date(order.orderDate);
-      } else if (order.orderDate.seconds) {
-        orderDate = new Date(order.orderDate.seconds * 1000);
-      } else if (typeof order.orderDate.toDate === 'function') {
-        orderDate = order.orderDate.toDate();
-      } else {
-        return false;
-      }
+      const orderDate = parseDate(order.orderDate);
+      if (!orderDate) return false;
       const orderDateOnly = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate());
       const isToday = orderDateOnly.getTime() === todayStart.getTime();
 
@@ -941,17 +932,8 @@ export default function OrdersPage() {
 
     // 이번 달 주문 (해당 지점에서 발주한 주문만 포함, 수주받은 주문은 건수만)
     const thisMonthOrders = filteredOrders.filter(order => {
-      if (!order.orderDate) return false;
-      let orderDate: Date;
-      if (typeof order.orderDate === 'string') {
-        orderDate = new Date(order.orderDate);
-      } else if (order.orderDate.seconds) {
-        orderDate = new Date(order.orderDate.seconds * 1000);
-      } else if (typeof order.orderDate.toDate === 'function') {
-        orderDate = order.orderDate.toDate();
-      } else {
-        return false;
-      }
+      const orderDate = parseDate(order.orderDate);
+      if (!orderDate) return false;
       const isThisMonth = orderDate.getMonth() === today.getMonth() &&
         orderDate.getFullYear() === today.getFullYear();
 

@@ -6,6 +6,7 @@ import { Trophy, MapPin, TrendingUp, Users } from "lucide-react";
 import { Customer } from "@/hooks/use-customers";
 import { useOrders } from "@/hooks/use-orders";
 import { useMemo } from "react";
+import { parseDate } from "@/lib/date-utils";
 
 interface CustomerStatsCardsProps {
   customers: Customer[];
@@ -18,42 +19,42 @@ export function CustomerStatsCards({ customers, selectedBranch }: CustomerStatsC
   // 지점별 포인트 사용 통계 계산
   const branchPointStats = useMemo(() => {
     const stats: Record<string, { totalPointsUsed: number; totalCustomers: number; topCustomer: Customer | null }> = {};
-    
+
     customers.forEach(customer => {
       const branches = customer.branches || {};
       const primaryBranch = customer.primaryBranch || customer.branch;
-      
+
       // 고객이 등록된 모든 지점 처리 ("all" 제외)
-      const customerBranches = Object.keys(branches).length > 0 
+      const customerBranches = Object.keys(branches).length > 0
         ? Object.keys(branches).filter(branch => branch !== "all" && branch !== "")
         : [primaryBranch].filter(branch => branch && branch !== "all" && branch !== "");
-      
+
       customerBranches.forEach(branchName => {
         if (!stats[branchName]) {
           stats[branchName] = { totalPointsUsed: 0, totalCustomers: 0, topCustomer: null };
         }
-        
+
         stats[branchName].totalCustomers++;
-        
+
         // 해당 고객의 주문에서 포인트 사용량 계산
-        const customerOrders = orders.filter(order => 
+        const customerOrders = orders.filter(order =>
           (order.orderer?.name === customer.name && order.orderer?.contact === customer.contact) ||
           order.orderer?.id === customer.id
         );
-        
-        const pointsUsed = customerOrders.reduce((total, order) => 
+
+        const pointsUsed = customerOrders.reduce((total, order) =>
           total + (order.summary?.pointsUsed || 0), 0
         );
-        
+
         stats[branchName].totalPointsUsed += pointsUsed;
-        
+
         // 해당 지점에서 가장 많은 포인트를 가진 고객 찾기
         if (!stats[branchName].topCustomer || (customer.points || 0) > (stats[branchName].topCustomer.points || 0)) {
           stats[branchName].topCustomer = customer;
         }
       });
     });
-    
+
     return stats;
   }, [customers, orders]);
 
@@ -64,21 +65,21 @@ export function CustomerStatsCards({ customers, selectedBranch }: CustomerStatsC
       .slice(0, 10)
       .map((customer, index) => {
         // 최근 주문에서 지점 정보 가져오기
-        const customerOrders = orders.filter(order => 
+        const customerOrders = orders.filter(order =>
           (order.orderer?.name === customer.name && order.orderer?.contact === customer.contact) ||
           order.orderer?.id === customer.id
         ).sort((a, b) => {
-          const dateA = a.orderDate?.toDate ? a.orderDate.toDate() : new Date(a.orderDate);
-          const dateB = b.orderDate?.toDate ? b.orderDate.toDate() : new Date(b.orderDate);
+          const dateA = parseDate(a.orderDate) || new Date();
+          const dateB = parseDate(b.orderDate) || new Date();
           return dateB.getTime() - dateA.getTime();
         });
-        
-        const lastOrderBranch = customerOrders[0]?.branchName || 
-          (customer.primaryBranch && customer.primaryBranch !== "all" ? customer.primaryBranch : "") || 
-          (customer.branch && customer.branch !== "all" ? customer.branch : "") || 
+
+        const lastOrderBranch = customerOrders[0]?.branchName ||
+          (customer.primaryBranch && customer.primaryBranch !== "all" ? customer.primaryBranch : "") ||
+          (customer.branch && customer.branch !== "all" ? customer.branch : "") ||
           '정보 없음';
         const totalOrderAmount = customerOrders.reduce((total, order) => total + (order.summary?.total || 0), 0);
-        
+
         return {
           ...customer,
           rank: index + 1,
@@ -90,7 +91,7 @@ export function CustomerStatsCards({ customers, selectedBranch }: CustomerStatsC
   }, [customers, orders]);
 
   // 선택된 지점에 따른 필터링
-  const displayBranchStats = selectedBranch && selectedBranch !== "all" 
+  const displayBranchStats = selectedBranch && selectedBranch !== "all"
     ? { [selectedBranch]: branchPointStats[selectedBranch] }
     : branchPointStats;
 

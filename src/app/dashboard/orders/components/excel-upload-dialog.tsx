@@ -11,6 +11,7 @@ import { useBranches } from "@/hooks/use-branches";
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, XCircle, Download, Trash2, RefreshCw } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Timestamp } from "firebase/firestore";
+import { parseDate } from "@/lib/date-utils";
 
 interface ExcelUploadDialogProps {
   isOpen: boolean;
@@ -401,9 +402,7 @@ export function ExcelUploadDialog({ isOpen, onOpenChange }: ExcelUploadDialogPro
       for (const doc of querySnapshot.docs) {
         const existingOrder = doc.data();
         if (existingOrder.orderDate) {
-          const existingDate = existingOrder.orderDate.toDate ?
-            existingOrder.orderDate.toDate() :
-            new Date(existingOrder.orderDate);
+          const existingDate = parseDate(existingOrder.orderDate) || new Date();
 
           // 같은 날짜인지 확인
           if (existingDate >= startOfDay && existingDate <= endOfDay) {

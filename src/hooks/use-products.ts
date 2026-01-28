@@ -88,7 +88,7 @@ export function useProducts() {
         totalStock
       });
     } catch (error) {
-      console.error("Error fetching stats:", error);
+      coole.error("Error fetching stats:", error);
     }
   }, []);
 

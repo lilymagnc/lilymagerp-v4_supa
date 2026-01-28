@@ -7,13 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
-  ClipboardList, 
-  Eye, 
-  ShoppingCart, 
-  CheckCircle, 
-  Truck, 
-  Package, 
+import {
+  ClipboardList,
+  Eye,
+  ShoppingCart,
+  CheckCircle,
+  Truck,
+  Package,
   Clock,
   AlertCircle,
   ChevronDown,
@@ -30,6 +30,7 @@ import {
 import { useAuth } from '@/hooks/use-auth';
 import { useMaterialRequests } from '@/hooks/use-material-requests';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabase';
 import type { MaterialRequest, RequestStatus } from '@/types/material-request';
 import { REQUEST_STATUS_LABELS, URGENCY_LABELS } from '@/types/material-request';
 interface RequestStatusTrackerProps {
@@ -52,62 +53,50 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
     if (!user) return;
     try {
       let fetchedRequests: MaterialRequest[];
+
       if (user.role === '본사 관리자') {
         if (selectedBranch) {
-          // 선택된 지점의 요청만 조회
-          try {
-            const { getDocs, collection, query, where } = await import('firebase/firestore');
-            const { db } = await import('@/lib/firebase');
-            const branchesQuery = query(
-              collection(db, 'branches'),
-              where('name', '==', selectedBranch)
-            );
-            const branchesSnapshot = await getDocs(branchesQuery);
-            if (!branchesSnapshot.empty) {
-              const branchId = branchesSnapshot.docs[0].id;
-              fetchedRequests = await getRequestsByBranchId(branchId);
-            } else {
-              fetchedRequests = await getRequestsByBranch(selectedBranch);
-            }
-          } catch (error) {
-            console.error('branchId 조회 실패, branchName으로 대체:', error);
+          // 선택된 지점의 요청만 조회 by Branch ID if possible
+          const { data: branchData } = await supabase
+            .from('branches')
+            .select('id')
+            .eq('name', selectedBranch)
+            .maybeSingle();
+
+          if (branchData) {
+            fetchedRequests = await getRequestsByBranchId(branchData.id);
+          } else {
+            // Fallback to name if not found (though unusual)
             fetchedRequests = await getRequestsByBranch(selectedBranch);
           }
         } else {
           fetchedRequests = await getAllRequests();
         }
       } else if (user.franchise) {
-        // branchId로 직접 쿼리 (기존 인덱스 활용)
-        try {
-          // 먼저 지점 정보를 가져와서 branchId를 찾습니다
-          const { getDocs, collection, query, where } = await import('firebase/firestore');
-          const { db } = await import('@/lib/firebase');
-          const branchesQuery = query(
-            collection(db, 'branches'),
-            where('name', '==', user.franchise)
-          );
-          const branchesSnapshot = await getDocs(branchesQuery);
-          if (!branchesSnapshot.empty) {
-            const branchId = branchesSnapshot.docs[0].id;
-            fetchedRequests = await getRequestsByBranchId(branchId);
-          } else {
-            fetchedRequests = await getRequestsByBranch(user.franchise);
-          }
-        } catch (error) {
-          console.error('branchId 조회 실패, branchName으로 대체:', error);
+        // 프랜차이즈 사용자: 자신의 지점 요청만 조회
+        const { data: branchData } = await supabase
+          .from('branches')
+          .select('id')
+          .eq('name', user.franchise)
+          .maybeSingle();
+
+        if (branchData) {
+          fetchedRequests = await getRequestsByBranchId(branchData.id);
+        } else {
           fetchedRequests = await getRequestsByBranch(user.franchise);
         }
       } else {
         fetchedRequests = [];
       }
-      // 안전한 timestamp 정렬
+
+      // 안전한 timestamp 정렬 (Supabase returns ISO strings for createdAt)
       setRequests(fetchedRequests.sort((a, b) => {
         const getTimestamp = (timestamp: any) => {
           if (!timestamp) return 0;
-          if (timestamp.toMillis) return timestamp.toMillis();
-          if (timestamp.seconds) return timestamp.seconds * 1000;
+          if (timestamp.toMillis) return timestamp.toMillis(); // Legacy Firebase
+          if (timestamp.seconds) return timestamp.seconds * 1000; // Legacy Firebase
           if (timestamp instanceof Date) return timestamp.getTime();
-          return new Date(timestamp).getTime();
+          return new Date(timestamp).getTime(); // ISO string
         };
         return getTimestamp(b.createdAt) - getTimestamp(a.createdAt);
       }));
@@ -232,14 +221,14 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
     };
   };
   const urgentRequests = useMemo(() => {
-    return requests.filter(request => 
+    return requests.filter(request =>
       request.requestedItems.some(item => item.urgency === 'urgent') &&
       !['completed', 'delivered'].includes(request.status)
     );
   }, [requests]);
   const deliveryAlerts = useMemo(() => {
-    return requests.filter(request => 
-      request.status === 'shipping' || 
+    return requests.filter(request =>
+      request.status === 'shipping' ||
       (request.status === 'delivered' && !request.delivery?.deliveryDate)
     );
   }, [requests]);
@@ -364,7 +353,7 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
                 return (
                   <div key={request.id} className="border rounded-lg">
                     {/* 요청 헤더 */}
-                    <div 
+                    <div
                       className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
                       onClick={() => toggleRequestExpansion(request.id)}
                     >
@@ -397,8 +386,8 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
                                 <Minus className="h-3 w-3 text-gray-500" />
                               )}
                               <span className={
-                                comparison.isHigher ? 'text-red-600' : 
-                                comparison.isLower ? 'text-green-600' : 'text-gray-600'
+                                comparison.isHigher ? 'text-red-600' :
+                                  comparison.isLower ? 'text-green-600' : 'text-gray-600'
                               }>
                                 {comparison.difference > 0 ? '+' : ''}{comparison.difference.toLocaleString()}원
                               </span>
@@ -502,8 +491,8 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
                       </div>
                       {/* 진행률 표시 */}
                       <div className="mt-2">
-                        <Progress 
-                          value={getStatusProgress(request.status)} 
+                        <Progress
+                          value={getStatusProgress(request.status)}
                           className="h-1"
                         />
                       </div>
@@ -530,10 +519,9 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
                                 </div>
                                 <div>
                                   <p className="text-muted-foreground">차이</p>
-                                  <p className={`font-medium flex items-center gap-1 ${
-                                    comparison.isHigher ? 'text-red-600' : 
+                                  <p className={`font-medium flex items-center gap-1 ${comparison.isHigher ? 'text-red-600' :
                                     comparison.isLower ? 'text-green-600' : 'text-gray-600'
-                                  }`}>
+                                    }`}>
                                     {comparison.isHigher ? (
                                       <TrendingUp className="h-3 w-3" />
                                     ) : comparison.isLower ? (
@@ -659,9 +647,9 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
               })}
               {requests.length > displayCount && (
                 <div className="text-center pt-2">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setDisplayCount(prev => prev + 5)}
                   >
                     더 보기 ({requests.length - displayCount}개 더)

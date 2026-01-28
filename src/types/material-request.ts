@@ -1,7 +1,9 @@
 import { Timestamp } from 'firebase/firestore';
 // 요청 상태 enum (배송 단계 포함)
-export type RequestStatus = 
+export type RequestStatus =
   | 'submitted'    // 요청됨
+  | 'reviewing'    // 검토중
+  | 'purchasing'   // 구매중
   | 'purchased'    // 구매완료
   | 'shipping'     // 배송중
   | 'delivered'    // 배송완료
@@ -9,7 +11,7 @@ export type RequestStatus =
 // 긴급도 타입
 export type UrgencyLevel = 'normal' | 'urgent';
 // 구매 품목 상태
-export type PurchaseItemStatus = 
+export type PurchaseItemStatus =
   | 'purchased'    // 구매완료
   | 'unavailable'  // 구매불가
   | 'substituted'  // 대체품
@@ -173,6 +175,8 @@ export interface ActualPurchaseInputData {
 // 상태 라벨 매핑
 export const REQUEST_STATUS_LABELS: Record<RequestStatus, string> = {
   submitted: '요청됨',
+  reviewing: '검토중',
+  purchasing: '구매중',
   purchased: '구매완료',
   shipping: '배송중',
   delivered: '배송완료',
@@ -210,7 +214,7 @@ export const generateBatchNumber = (): string => {
 };
 // 알림 관련 타입
 export type NotificationType = 'material_request';
-export type NotificationSubType = 
+export type NotificationSubType =
   | 'request_submitted'   // 요청 제출됨
   | 'purchase_completed'  // 구매 완료됨
   | 'shipping_started'    // 배송 시작됨
@@ -328,7 +332,7 @@ export const getUrgencyColor = (urgency: UrgencyLevel): string => {
   return urgency === 'urgent' ? 'red' : 'gray';
 };
 export const calculateTotalAmount = (items: RequestItem[]): number => {
-  return items.reduce((total, item) => 
+  return items.reduce((total, item) =>
     total + (item.requestedQuantity * item.estimatedPrice), 0
   );
 };
@@ -337,7 +341,7 @@ export const calculateActualTotalAmount = (items: ActualPurchaseItem[]): number 
 };
 // 상태 전이 검증 함수
 export const canTransitionTo = (
-  currentStatus: RequestStatus, 
+  currentStatus: RequestStatus,
   newStatus: RequestStatus
 ): boolean => {
   const validTransitions: Record<RequestStatus, RequestStatus[]> = {

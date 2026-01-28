@@ -4,6 +4,7 @@ import { ChecklistRecord, ChecklistTemplate } from '@/types/checklist';
 import { SimpleExpense } from '@/types/simple-expense';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
+import { parseDate } from './date-utils';
 
 // Product 인터페이스 정의
 interface Product {
@@ -286,7 +287,7 @@ export const exportPickupDeliveryToExcel = (
 ) => {
   // 날짜 필터링
   const filteredOrders = orders.filter(order => {
-    const orderDate = order.orderDate?.toDate?.() || new Date(order.orderDate);
+    const orderDate = parseDate(order.orderDate) || new Date();
     const orderDateStr = orderDate.toISOString().split('T')[0];
     return orderDateStr >= startDate && orderDateStr <= endDate;
   });
@@ -305,7 +306,7 @@ export const exportPickupDeliveryToExcel = (
 
   // 데이터 변환
   const data = filteredOrders.map(order => {
-    const orderDate = order.orderDate?.toDate?.() || new Date(order.orderDate);
+    const orderDate = parseDate(order.orderDate) || new Date();
     const formattedOrderDate = orderDate.toLocaleString('ko-KR', {
       year: 'numeric',
       month: '2-digit',
@@ -449,7 +450,7 @@ export const exportOrdersToExcel = (orders: any[], startDate?: string, endDate?:
     let filteredOrders = orders;
     if (startDate && endDate) {
       filteredOrders = orders.filter(order => {
-        const orderDate = order.orderDate?.toDate?.() || new Date(order.orderDate);
+        const orderDate = parseDate(order.orderDate) || new Date();
         const orderDateStr = orderDate.toISOString().split('T')[0];
         return orderDateStr >= startDate && orderDateStr <= endDate;
       });
@@ -465,7 +466,7 @@ export const exportOrdersToExcel = (orders: any[], startDate?: string, endDate?:
 
     // 데이터 변환
     const data = filteredOrders.map(order => {
-      const orderDate = order.orderDate?.toDate?.() || new Date(order.orderDate);
+      const orderDate = parseDate(order.orderDate) || new Date();
       const formattedOrderDate = orderDate.toLocaleString('ko-KR', {
         year: 'numeric',
         month: '2-digit',
@@ -638,12 +639,7 @@ export const exportToExcel = (
     let filteredExpenses = expenses;
     if (startDate && endDate) {
       filteredExpenses = expenses.filter(expense => {
-        let expenseDate: Date;
-        if (expense.date && typeof expense.date === 'object' && 'toDate' in expense.date) {
-          expenseDate = expense.date.toDate();
-        } else {
-          expenseDate = new Date(expense.date as unknown as string | number);
-        }
+        const expenseDate = parseDate(expense.date) || new Date();
         const expenseDateStr = expenseDate.toISOString().split('T')[0];
         return expenseDateStr >= startDate && expenseDateStr <= endDate;
       });
@@ -651,12 +647,7 @@ export const exportToExcel = (
 
     const headers = ['날짜', '카테고리', '항목', '금액', '지점명', '담당자', '메모', '생성일'];
     const excelData = filteredExpenses.map(expense => {
-      let expenseDate: Date;
-      if (expense.date && typeof expense.date === 'object' && 'toDate' in expense.date) {
-        expenseDate = expense.date.toDate();
-      } else {
-        expenseDate = new Date(expense.date as unknown as string | number);
-      }
+      const expenseDate = parseDate(expense.date) || new Date();
       return [
         format(expenseDate, 'yyyy-MM-dd', { locale: ko }),
         expense.category || '-',

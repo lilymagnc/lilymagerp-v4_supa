@@ -29,6 +29,7 @@ import { useProducts } from '@/hooks/use-products';
 import { useCustomers } from '@/hooks/use-customers';
 import { format, subDays, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
 import { ko } from 'date-fns/locale';
+import { parseDate } from '@/lib/date-utils';
 import { YearEndExportDialog } from './components/year-end-export-dialog';
 
 // 통계 데이터 타입 정의
@@ -135,7 +136,7 @@ export default function StatsDashboard() {
 
     const { from, to } = getDateRange();
     const filteredOrders = orders.filter(order => {
-      const orderDate = order.orderDate instanceof Date ? order.orderDate : order.orderDate.toDate();
+      const orderDate = parseDate(order.orderDate) || new Date();
       const isInDateRange = orderDate >= from && orderDate <= to;
 
       // 해당 지점이 발주했거나 수주한 주문인 경우 포함
@@ -164,7 +165,7 @@ export default function StatsDashboard() {
         : null;
       const split = transfer ? (transfer.amountSplit || { orderBranch: 100, processBranch: 0 }) : { orderBranch: 100, processBranch: 0 };
 
-      const orderDate = order.orderDate instanceof Date ? order.orderDate : order.orderDate.toDate();
+      const orderDate = parseDate(order.orderDate) || new Date();
       const dateKey = format(orderDate, 'yyyy-MM-dd');
 
       // 1. 발주 지점 지분 정산
@@ -317,7 +318,7 @@ export default function StatsDashboard() {
       // 어제 매출 비교 로직 추가
       const yesterday = subDays(new Date(), 1);
       const yesterdayOrders = orders.filter(order => {
-        const orderDate = order.orderDate instanceof Date ? order.orderDate : order.orderDate.toDate();
+        const orderDate = parseDate(order.orderDate) || new Date();
         return format(orderDate, 'yyyy-MM-dd') === format(yesterday, 'yyyy-MM-dd') && order.status !== 'canceled';
       });
       const yesterdaySales = yesterdayOrders.reduce((sum, order) => sum + order.summary.total, 0);
@@ -586,7 +587,7 @@ export default function StatsDashboard() {
               {stats && stats.productSales.length > 0 ? (
                 <div className="space-y-4">
                   {stats.productSales.map((product, index) => (
-                    <div key={product.productId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div key={product.productId || `product-${index}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div className="flex items-center gap-3">
                         <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600">
                           {index + 1}
