@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { createContext, useEffect, useState, ReactNode, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Loader2 } from 'lucide-react';
 
@@ -83,6 +83,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  // useRef를 사용하여 useEffect 의존성 루프 없이 최신 user 상태 추적
+  const userRef = useRef<UserProfile | null>(null);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
   useEffect(() => {
     let mounted = true;
 
@@ -123,16 +130,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!mounted) return;
 
       const { data: { session } } = await supabase.auth.getSession();
+      const currentUser = userRef.current; // Ref에서 최신 상태 읽기
+
       if (session?.user) {
         // 현재 상태가 없거나(메모리 소실), 정보가 다르면 복구
-        if (!user || user.id !== session.user.id) {
+        if (!currentUser || currentUser.id !== session.user.id) {
           console.log("Recovering session on window focus...");
           const userWithRole = await fetchUserRole(session.user.email!, session.user.id);
           if (mounted) setUser(userWithRole);
         }
       } else {
         // 세션이 만료된 상태라면 로그아웃 처리
-        if (user && mounted) {
+        if (currentUser && mounted) {
           console.log("Session expired on focus, signing out...");
           setUser(null);
         }
@@ -156,8 +165,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // 불필요한 DB 호출 최소화: 이미 유저 정보가 있고 토큰만 바뀐 경우 스킵 가능하나,
         // 안전을 위해 ID 비교 후 업데이트
         if (mounted) {
+          const currentUser = userRef.current; // Ref에서 최신 상태 읽기
+
           // 현재 유저 정보가 없으면 바로 가져오기
-          if (!user) {
+          if (!currentUser) {
             const userWithRole = await fetchUserRole(session.user.email!, session.user.id);
             setUser(userWithRole);
           } else {
@@ -180,7 +191,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       window.removeEventListener('visibilitychange', handleFocus);
       subscription.unsubscribe();
     };
-  }, [fetchUserRole, user]); // user를 의존성에 추가하여 비교 가능하게 함
+  }, [fetchUserRole]); // user 의존성 제거됨
 
   const signOut = async () => {
     await supabase.auth.signOut();
