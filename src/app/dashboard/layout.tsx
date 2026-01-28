@@ -34,7 +34,8 @@ export default function DashboardLayout({
         router.push('/login');
     };
 
-    if (loading || roleLoading || !user) {
+    // roleLoading을 제거하여 역할 로딩 중에도 UI가 렌더링되도록 변경 (무한 루프 방지 및 반응성 향상)
+    if (loading || !user) {
         return (
             <div className="flex items-center justify-center min-h-screen">
                 <div className="text-center">
