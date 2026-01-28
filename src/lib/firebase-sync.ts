@@ -1,22 +1,33 @@
 import admin from 'firebase-admin';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, Timestamp } from 'firebase/firestore';
+import { collection as firestoreCollection, getDocs } from 'firebase/firestore';
 
 // Initialize Firebase Admin SDK (server side)
 let adminDb: admin.firestore.Firestore | null = null;
 if (typeof window === 'undefined') {
     try {
         if (!admin.apps.length) {
-            // Use GOOGLE_APPLICATION_CREDENTIALS env var
-            admin.initializeApp({
-                credential: admin.credential.applicationDefault(),
-                projectId: 'lilymagerp-fs1'
-            });
+            const serviceAccountPath = require('path').resolve(process.cwd(), 'firebase-service-account.json');
+            const fs = require('fs');
+
+            if (fs.existsSync(serviceAccountPath)) {
+                console.log('[Firebase Sync] Using service account file for Admin SDK');
+                admin.initializeApp({
+                    credential: admin.credential.cert(serviceAccountPath),
+                    projectId: 'lilymagerp-fs1'
+                });
+            } else {
+                console.warn('[Firebase Sync] Service account file not found, falling back to applicationDefault');
+                admin.initializeApp({
+                    credential: admin.credential.applicationDefault(),
+                    projectId: 'lilymagerp-fs1'
+                });
+            }
         }
         adminDb = admin.firestore();
     } catch (e) {
-        console.error('Admin SDK init error:', e);
+        console.error('[Firebase Sync] Admin SDK init error:', e);
     }
 }
 
@@ -83,9 +94,11 @@ export async function syncFirebaseToSupabase(
             if (adminDb) {
                 // Admin SDK uses its own collection method
                 snapshot = await adminDb.collection(cfg.firebase).get();
+            } else if (db) {
+                // Client SDK fallback (server-side only if db is initialized)
+                snapshot = await getDocs(firestoreCollection(db, cfg.firebase));
             } else {
-                // Client SDK fallback
-                snapshot = await getDocs(collection(db, cfg.firebase));
+                throw new Error('No Firebase database available (Admin or Client)');
             }
             const total = snapshot.size;
             let synced = 0;
@@ -288,9 +301,9 @@ export async function syncFirebaseToSupabase(
                 docBatches.push(uniquePayloads.slice(i, i + BATCH_SIZE));
             }
 
-            // Upsert in batches
+            // Upsert in batches using Admin Client (Service Role)
             for (const batch of docBatches) {
-                const { error } = await (supabase.from(cfg.supabase) as any)
+                const { error } = await supabaseAdmin.from(cfg.supabase)
                     .upsert(batch, { onConflict: conflictKey });
 
                 if (error) {
@@ -317,9 +330,12 @@ export async function syncFirebaseToSupabase(
         }
     }
 
+    const allFailed = collectionsToSync.length > 0 &&
+        Object.values(results).every((r: any) => r.error || (r.total > 0 && r.synced === 0));
+
     return {
-        success: true,
-        message: 'Sync completed',
+        success: !allFailed,
+        message: allFailed ? 'Sync failed' : 'Sync completed',
         details: results
     };
 }
