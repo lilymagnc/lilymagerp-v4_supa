@@ -1,31 +1,31 @@
 import { createClient } from '@supabase/supabase-js';
 
-// v4-supa-debug-v1: 환경 변수 문제를 진단하기 위한 디버그 로그와 로직 보강
-let supabaseInstance: any = null;
+// 환경 변수 가져오기 및 검증
+const getSupabaseConfig = () => {
+    // 1. URL
+    const rawUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+    // http로 시작하지 않으면(빈 문자열 포함) 기본값이나 에러 처리
+    const supabaseUrl = rawUrl.startsWith('http')
+        ? rawUrl
+        : 'https://xphvycuaffifjgjaiqxe.supabase.co';
 
-export const supabase = new Proxy({} as any, {
-    get(_, prop) {
-        if (!supabaseInstance) {
-            const rawUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
-            const rawKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+    // 2. Key
+    const rawKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+    // 키가 없으면 더미 키라도 넣어서 크래시 방지 (단, 실제 요청은 실패함)
+    const supabaseKey = rawKey || 'dummy-key';
 
-            // 실제 주소인지 검증 (http로 시작해야 함)
-            const isActualUrl = rawUrl.startsWith('http');
-            const finalUrl = isActualUrl ? rawUrl : 'https://xphvycuaffifjgjaiqxe.supabase.co';
-            const finalKey = rawKey || 'dummy-key';
+    return { supabaseUrl, supabaseKey };
+};
 
-            // 보안을 위해 앞부분만 로그에 노출
-            if (typeof window !== 'undefined') {
-                console.log(`[Supabase Init] URL: ${finalUrl.substring(0, 15)}... (isActual: ${isActualUrl})`);
-            }
+const { supabaseUrl, supabaseKey } = getSupabaseConfig();
 
-            supabaseInstance = createClient(finalUrl, finalKey);
-        }
-        return (supabaseInstance as any)[prop];
-    }
+// 싱글톤 인스턴스 생성
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+        persistSession: true, // 세션 자동 저장 (localStorage)
+        autoRefreshToken: true, // 토큰 자동 갱신
+        detectSessionInUrl: true,
+        storageKey: 'supabase-auth-token', // 명시적인 키 이름 설정 (충돌 방지)
+    },
+    // 전역적인 에러 처리가 필요하다면 여기서 옵션 추가 가능
 });
-
-
-
-
-

@@ -84,13 +84,58 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+
     // 1. Get initial session
-    const getInitialSession = async () => {
+    const initializeAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
+
+        if (error) {
+          console.error("Session init error:", error);
+          if (mounted) {
+            setUser(null);
+            setLoading(false);
+          }
+          return;
+        }
+
         if (session?.user) {
           const userWithRole = await fetchUserRole(session.user.email!, session.user.id);
+          if (mounted) setUser(userWithRole);
+        } else {
+          if (mounted) setUser(null);
+        }
+      } catch (err) {
+        console.error("Unexpected auth error:", err);
+        if (mounted) setUser(null);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    initializeAuth();
+
+    // 2. Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // console.log("Auth state change:", event); // 디버깅용 로그
+
+      if (event === 'SIGNED_OUT') {
+        if (mounted) {
+          setUser(null);
+          setLoading(false);
+        }
+        return;
+      }
+
+      if (session?.user) {
+        // 토큰 갱신 등의 이벤트에서는 굳이 다시 DB를 조회할 필요가 없을 수도 있으나,
+        // 역할 변경 등을 감지하기 위해 조회하되, 현재 상태와 비교하여 불필요한 업데이트 방지
+        const userWithRole = await fetchUserRole(session.user.email!, session.user.id);
+
+        if (mounted) {
           setUser((prev) => {
+            // 깊은 비교를 통해 불필요한 리렌더링 방지
             if (prev &&
               prev.id === userWithRole.id &&
               prev.role === userWithRole.role &&
@@ -100,37 +145,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             }
             return userWithRole;
           });
+          setLoading(false);
         }
-      } catch (err) {
-        console.error("Session error:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    getInitialSession();
-
-    // 2. Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        const userWithRole = await fetchUserRole(session.user.email!, session.user.id);
-        setUser((prev) => {
-          if (prev &&
-            prev.id === userWithRole.id &&
-            prev.role === userWithRole.role &&
-            prev.branchId === userWithRole.branchId &&
-            prev.franchise === userWithRole.franchise) {
-            return prev;
-          }
-          return userWithRole;
-        });
       } else {
-        setUser(null);
+        // 세션이 없는 경우 (초기 로딩 제외)
+        if (mounted && event !== 'INITIAL_SESSION') {
+          setUser(null);
+          setLoading(false);
+        }
       }
-      setLoading(false);
     });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, [fetchUserRole]);
