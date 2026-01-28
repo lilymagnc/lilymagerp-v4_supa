@@ -82,51 +82,53 @@ export async function GET(req: NextRequest) {
 
 async function cleanupOldBackups() {
     try {
-        // 백업 목록 조회
-        const { data: list, error } = await supabase.storage.from('backups').list('', {
+        const RETENTION_DAYS = 7; // [조정] 14일에서 7일로 변경
+        const now = new Date();
+
+        // 1. 새 백업 버킷(backups) 정리
+        const { data: list, error: listError } = await supabase.storage.from('backups').list('', {
             limit: 100,
-            sortBy: { column: 'name', order: 'asc' } // 오래된 순
+            sortBy: { column: 'name', order: 'asc' }
         });
 
-        if (error || !list) return;
+        if (!listError && list) {
+            for (const item of list) {
+                if (!item.name.includes('-auto')) continue;
+                const datePart = item.name.substring(0, 10);
+                const backupDate = new Date(datePart);
+                if (isNaN(backupDate.getTime())) continue;
 
-        const RETENTION_DAYS = 14;
-        const now = new Date();
-        const deleteCandidates: string[] = [];
+                const diffDays = Math.ceil(Math.abs(now.getTime() - backupDate.getTime()) / (1000 * 60 * 60 * 24));
 
-        for (const item of list) {
-            // 폴더명이 날짜로 시작하고 '-auto'로 끝나는지 확인
-            // 예: 2026-05-20...-auto
-            if (!item.name.includes('-auto')) continue;
-
-            // 날짜 파싱 (앞 10자리 yyyy-mm-dd 이용)
-            const datePart = item.name.substring(0, 10);
-            const backupDate = new Date(datePart);
-
-            if (isNaN(backupDate.getTime())) continue;
-
-            // 날짜 차이 계산
-            const diffTime = Math.abs(now.getTime() - backupDate.getTime());
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-            if (diffDays > RETENTION_DAYS) {
-                deleteCandidates.push(item.name);
+                if (diffDays > RETENTION_DAYS) {
+                    console.log(`[Backup Cleanup] Deleting from 'backups': ${item.name}`);
+                    const { data: files } = await supabase.storage.from('backups').list(item.name);
+                    if (files && files.length > 0) {
+                        await supabase.storage.from('backups').remove(files.map(f => `${item.name}/${f.name}`));
+                    }
+                }
             }
         }
 
-        console.log(`[Backup Cleanup] Found ${deleteCandidates.length} old backups to delete:`, deleteCandidates);
+        // 2. 구형 백업 폴더(general/backups) 정리 - 앞으로 쌓이지 않게 감시 대상에 포함
+        const { data: genList, error: genError } = await supabase.storage.from('general').list('backups', { limit: 100 });
+        if (!genError && genList) {
+            for (const item of genList) {
+                // 폴더명에서 날짜 추출 (ISO 형식 또는 yyyy-mm-dd)
+                const datePart = item.name.substring(0, 10);
+                const backupDate = new Date(datePart);
+                if (isNaN(backupDate.getTime())) continue;
 
-        // 삭제 실행
-        for (const folder of deleteCandidates) {
-            // 폴더 내부 파일 목록 조회
-            const { data: files } = await supabase.storage.from('backups').list(folder);
-            if (files && files.length > 0) {
-                const paths = files.map(f => `${folder}/${f.name}`);
-                // 파일 일괄 삭제
-                await supabase.storage.from('backups').remove(paths);
+                const diffDays = Math.ceil(Math.abs(now.getTime() - backupDate.getTime()) / (1000 * 60 * 60 * 24));
+
+                if (diffDays > RETENTION_DAYS) {
+                    console.log(`[Backup Cleanup] Deleting legacy from 'general/backups': ${item.name}`);
+                    const { data: files } = await supabase.storage.from('general').list(`backups/${item.name}`);
+                    if (files && files.length > 0) {
+                        await supabase.storage.from('general').remove(files.map(f => `backups/${item.name}/${f.name}`));
+                    }
+                }
             }
-            // 빈 폴더 자체는 남을 수 있으나(Supabase Storage 특성), 내용은 비워짐. 
-            // Storage API상 폴더 삭제 개념이 모호하므로 파일 삭제로 충분.
         }
 
     } catch (error) {
