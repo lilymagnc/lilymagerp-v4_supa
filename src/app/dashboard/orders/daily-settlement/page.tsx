@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Calendar, Target, DollarSign, ArrowRightLeft, RefreshCw, ChevronLeft, ChevronRight, FileText, XCircle, Download, Save, ShoppingCart } from "lucide-react";
-import { format, subDays, addDays, startOfDay, endOfDay } from "date-fns";
+import { format, subDays, addDays, startOfDay, endOfDay, differenceInDays } from "date-fns";
 import { useOrders, Order } from "@/hooks/use-orders";
 import { useBranches } from "@/hooks/use-branches";
 import { useAuth } from "@/hooks/use-auth";
@@ -30,7 +30,7 @@ export default function DailySettlementPage() {
     const { branches, loading: branchesLoading } = useBranches();
     const { products, loading: productsLoading } = useProducts();
     const { expenses, fetchExpenses, calculateStats, loading: expensesLoading } = useSimpleExpenses();
-    const { getSettlement, saveSettlement, loading: settlementLoading } = useDailySettlements();
+    const { getSettlement, saveSettlement, findLastSettlementBefore, loading: settlementLoading } = useDailySettlements();
     const { user } = useAuth();
 
     const [reportDate, setReportDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -62,20 +62,16 @@ export default function DailySettlementPage() {
     const currentTargetBranch = isAdmin ? selectedBranch : userBranch;
     const currentBranchId = branches.find(b => b.name === currentTargetBranch)?.id;
 
-    // 비용 및 정산 데이터 불러오기 (최적화됨)
+    // 비용 및 정산 데이터 불러오기 (최적화됨 + 자동계산)
     useEffect(() => {
         const loadData = async () => {
             console.log('🔍 Settlement Load Check:', {
                 currentBranchId,
                 currentTargetBranch,
                 reportDate,
-                user: user?.email,
-                userBranch,
-                isAdmin
             });
 
             if (currentTargetBranch === 'all') {
-                // 전체 보기일 때는 개별 지점 정산(시재) 데이터는 로드하지 않지만 주문 데이터는 로드함
                 await fetchOrdersForSettlement(reportDate);
                 setSettlementRecord(null);
                 setVaultDeposit(0);
@@ -88,14 +84,14 @@ export default function DailySettlementPage() {
                 return;
             }
 
-            console.log('✅ Loading settlement data...');
+            console.log('✅ Loading settlement data & history...');
 
             const dateFrom = new Date(reportDate + 'T00:00:00');
             const dateTo = new Date(reportDate + 'T23:59:59');
             const prevDate = format(subDays(new Date(reportDate), 1), 'yyyy-MM-dd');
 
-            // 병렬 처리를 통한 로딩 속도 개선
-            const [settlementResult, prevSettlementResult, _expensesResult, _ordersResult] = await Promise.all([
+            // 1. 기본 데이터 병렬 로드 (오늘 정산, 어제 정산, 오늘 비용, 전체 주문)
+            const [settlementResult, prevSettlementResult, _expensesToday, _ordersResult] = await Promise.all([
                 getSettlement(currentBranchId, reportDate),
                 getSettlement(currentBranchId, prevDate),
                 fetchExpenses({
@@ -106,20 +102,134 @@ export default function DailySettlementPage() {
                 fetchOrdersForSettlement(reportDate)
             ]);
 
-            console.log('📊 Data loaded:', {
-                settlement: settlementResult,
-                prevSettlement: prevSettlementResult,
-                ordersCount: _ordersResult?.length
-            });
-
             setSettlementRecord(settlementResult);
             setVaultDeposit(settlementResult?.vaultDeposit || 0);
             setManualPreviousBalance(settlementResult?.previousVaultBalance || 0);
-            setPrevSettlementRecord(prevSettlementResult);
+
+            // 2. 어제 정산 기록이 없는 경우 -> 과거 기록부터 갭(Gap) 계산하여 자동 복원
+            if (!prevSettlementResult) {
+                console.log('⚠️ No previous settlement found. Attempting recursive calculation...');
+                const lastRecord = await findLastSettlementBefore(currentBranchId, prevDate);
+
+                if (lastRecord) {
+                    console.log(`Found last saved record at ${lastRecord.date}. Calculating gap...`);
+                    const gapStart = addDays(parseDate(lastRecord.date) || new Date(), 1);
+                    const gapEnd = new Date(prevDate);
+
+                    const daysDiff = differenceInDays(gapEnd, gapStart);
+
+                    if (daysDiff >= 0 && daysDiff < 60) { // 60일 이내 공백만 자동 계산
+                        // 갭 기간의 전체 지출 불러오기
+                        // 주의: loadData 내부 스코프에서 fetchExpenses 사용
+                        // useSimpleExpenses의 fetchExpenses는 결과를 리턴함
+                        const { expenses: gapExpenses } = await fetchExpenses({
+                            branchId: currentBranchId,
+                            dateFrom: gapStart,
+                            dateTo: new Date(prevDate + 'T23:59:59')
+                        });
+
+                        // 주문 데이터는 _ordersResult에 모두 있다고 가정 (fetchOrdersForSettlement가 전체 로드라면)
+                        // 만약 _ordersResult가 reportDate만 가져온다면 gapOrders 별도 로드 필요.
+                        // useOrders 구현상 fetchOrdersForSettlement는 'select *'로 전체 로드함. (limit 있을 수 있음)
+                        // 안전을 위해 _ordersResult 필터링 사용
+
+                        let runningBalance = (lastRecord.previousVaultBalance + (lastRecord.cashSalesToday || 0) - lastRecord.vaultDeposit - (lastRecord.deliveryCostCashToday || 0) - (lastRecord.cashExpenseToday || 0));
+
+                        // 날짜별 순회 (gapStart -> prevDate)
+                        let currentDate = gapStart;
+                        let virtualPrevRecord: DailySettlementRecord | null = null;
+
+                        while (currentDate <= gapEnd) {
+                            const dateStr = format(currentDate, 'yyyy-MM-dd');
+
+                            // 해당 날짜의 Cash Flow 계산
+                            // Orders
+                            const dayOrders = (_ordersResult || []).filter((o: Order) => {
+                                const od = parseDate(o.orderDate);
+                                return od && format(od, 'yyyy-MM-dd') === dateStr && o.branchName === currentTargetBranch;
+                            });
+
+                            // Expenses
+                            const dayExpenses = (gapExpenses || []).filter(e => {
+                                const ed = parseDate(e.date);
+                                return ed && format(ed, 'yyyy-MM-dd') === dateStr;
+                            });
+
+                            // Calculate
+                            let cashSales = 0;
+                            let deliveryCash = 0;
+                            // 주문 기반 현금 매출 & 배송비
+                            dayOrders.forEach((o: Order) => {
+                                if (o.payment?.method === 'cash' && (o.payment.status === 'paid' || o.payment.status === 'completed')) {
+                                    cashSales += o.summary.total;
+                                }
+                                if (o.actualDeliveryCostCash) {
+                                    deliveryCash += o.actualDeliveryCostCash;
+                                }
+                            });
+
+                            // 지출 기반 기타 현금 지출 (운송비 제외) & 지출 기반 배송비(보정)
+                            let otherCashExpense = 0;
+                            let expenseDeliveryCash = 0;
+
+                            dayExpenses.forEach(e => {
+                                const isCash = e.paymentMethod === 'cash' || e.description?.includes('현금');
+                                if (isCash) {
+                                    if (e.category === SimpleExpenseCategory.TRANSPORT) {
+                                        expenseDeliveryCash += e.amount;
+                                    } else {
+                                        otherCashExpense += e.amount;
+                                    }
+                                }
+                            });
+
+                            const finalDeliveryCash = Math.max(deliveryCash, expenseDeliveryCash);
+
+                            // 당일(순회중인 날짜)이 '어제(prevDate)'라면, 이 값을 virtualPrevRecord로 설정
+                            if (dateStr === prevDate) {
+                                virtualPrevRecord = {
+                                    id: `virtual_${dateStr}`,
+                                    branchId: currentBranchId,
+                                    branchName: currentTargetBranch,
+                                    date: dateStr,
+                                    previousVaultBalance: runningBalance, // 어제의 시작 잔액
+                                    cashSalesToday: cashSales,
+                                    deliveryCostCashToday: finalDeliveryCash,
+                                    cashExpenseToday: otherCashExpense,
+                                    vaultDeposit: 0, // 자동 계산 시 입금은 0 가정
+                                    createdAt: new Date(),
+                                    updatedAt: new Date()
+                                };
+                            }
+
+                            // 다음 날을 위한 잔액 업데이트 (마감)
+                            runningBalance = runningBalance + cashSales - 0 - finalDeliveryCash - otherCashExpense; // deposit 0
+
+                            currentDate = addDays(currentDate, 1);
+                        }
+
+                        if (virtualPrevRecord) {
+                            console.log('✅ Virtual Previous Settlement Record Created:', virtualPrevRecord);
+                            setPrevSettlementRecord(virtualPrevRecord);
+                        } else {
+                            setPrevSettlementRecord(null);
+                        }
+
+                    } else {
+                        console.warn('Gap too large for auto-calculation or invalid dates');
+                        setPrevSettlementRecord(null);
+                    }
+                } else {
+                    console.log('No historical record found. Starting fresh.');
+                    setPrevSettlementRecord(null);
+                }
+            } else {
+                setPrevSettlementRecord(prevSettlementResult);
+            }
         };
 
         loadData();
-    }, [currentBranchId, reportDate, currentTargetBranch, getSettlement, fetchExpenses, fetchOrdersForSettlement]);
+    }, [currentBranchId, reportDate, currentTargetBranch, getSettlement, fetchExpenses, fetchOrdersForSettlement, findLastSettlementBefore]);
 
     const loading = ordersLoading || branchesLoading || productsLoading || expensesLoading || settlementLoading;
 

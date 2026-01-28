@@ -192,21 +192,31 @@ export function ExpenseInputForm({
   // 중복 데이터 체크 함수
   const checkDuplicateData = useCallback(async (processedData: any[]) => {
     try {
-      // 현재 지점의 기존 지출 데이터를 직접 Firestore에서 가져오기
-      const { collection, query, where, orderBy, getDocs } = await import('firebase/firestore');
-      const { db } = await import('@/lib/firebase');
+      // Supabase에서 중복 데이터 확인
+      const { supabase } = await import('@/lib/supabase');
 
-      const q = query(
-        collection(db, 'simpleExpenses'),
-        where('branchId', '==', selectedBranchId || ''),
-        orderBy('date', 'desc')
-      );
+      // 날짜 범위 확인 (데이터 중 가장 이른 날짜와 늦은 날짜)
+      const dates = processedData.map(d => d.purchaseDate);
+      const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
+      const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
 
-      const snapshot = await getDocs(q);
-      const existingExpenses = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      // 날짜 범위를 조금 여유있게 잡음
+      minDate.setDate(minDate.getDate() - 1);
+      maxDate.setDate(maxDate.getDate() + 1);
+
+      let query = supabase
+        .from('simple_expenses')
+        .select('id, expense_date, supplier, description, branch_id, extra_data')
+        .gte('expense_date', minDate.toISOString())
+        .lte('expense_date', maxDate.toISOString());
+
+      if (selectedBranchId) {
+        query = query.eq('branch_id', selectedBranchId);
+      }
+
+      const { data: existingExpenses, error } = await query;
+
+      if (error) throw error;
 
       const duplicates: any[] = [];
       const uniqueData: any[] = [];
@@ -215,9 +225,10 @@ export function ExpenseInputForm({
         const purchaseDateStr = item.purchaseDate.toISOString().split('T')[0];
 
         // 중복 체크: 같은 날짜, 같은 구매처, 같은 품목명
-        const isDuplicate = existingExpenses.some((existing: any) => {
-          if (!existing.date) return false;
-          const existingDateStr = existing.date.toDate().toISOString().split('T')[0];
+        const isDuplicate = existingExpenses?.some((existing: any) => {
+          if (!existing.expense_date) return false;
+          // Supabase returns date string, no .toDate() needed
+          const existingDateStr = new Date(existing.expense_date).toISOString().split('T')[0];
           return (
             existingDateStr === purchaseDateStr &&
             existing.supplier === item['구매처'] &&
@@ -237,6 +248,7 @@ export function ExpenseInputForm({
 
       return { duplicates, uniqueData };
     } catch (error) {
+      console.error('Duplicate check error:', error);
       return { duplicates: [], uniqueData: processedData };
     }
   }, [selectedBranchId]);

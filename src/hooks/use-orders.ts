@@ -594,52 +594,101 @@ export function useOrders() {
         throw error;
       }
 
-      // --- [Auto-Sync Logic] Sync Delivery Cost to Simple Expenses ---
-      // Execute only if delivery cost is provided AND has changed from the previous value
-      if (data.actualDeliveryCost !== undefined && data.actualDeliveryCost !== oldOrder.actual_delivery_cost) {
-        const cost = data.actualDeliveryCost;
-        if (cost > 0) {
-          // Check for existing linked expense (Duplicate Check)
-          // Using text search for extra_data to be safe across JSON formats
-          const { data: existingExpenses } = await supabase
-            .from('simple_expenses')
-            .select('id, extra_data')
-            .eq('category', 'transport')
-            .or(`sub_category.eq.DELIVERY,sub_category.eq.delivery`)
-            .like('extra_data', `%${orderId}%`) // Simplified robust check
-            .limit(1);
+      // --- [Auto-Sync Logic] Sync Delivery Cost (Standard & Cash) to Simple Expenses ---
+      // 동기화 로직: 
+      // 1. 실제 배송료(Standard): 주문 수정 시 입력한 '실제 배송비(actualDeliveryCost)'를 지출로 기록 (전산 배송비 아님, 사용자가 직접 입력한 값)
+      // 2. 추가 현금 배송비(Cash): 기사님께 별도로 드리는 현금(actualDeliveryCostCash)을 지출로 기록 (현금출납장에 반영됨)
 
-          const existingExpense = existingExpenses && existingExpenses.length > 0 ? existingExpenses[0] : null;
+      const newDeliveryCost = data.actualDeliveryCost !== undefined ? data.actualDeliveryCost : oldOrder.actual_delivery_cost;
+      const newDeliveryCash = data.actualDeliveryCostCash !== undefined ? data.actualDeliveryCostCash : oldOrder.actual_delivery_cost_cash;
 
-          const expensePayload = {
-            expense_date: data.deliveryInfo?.date || oldOrder.delivery_info?.date || new Date().toISOString(),
-            amount: cost,
+      const supplierName = data.deliveryInfo?.driverName || oldOrder.delivery_info?.driverName || '배송기사';
+      const expenseDate = data.deliveryInfo?.date || oldOrder.delivery_info?.date || new Date().toISOString();
+      const recipientName = oldOrder.delivery_info?.recipientName || oldOrder.orderer?.name || '미지정';
+
+      if (data.actualDeliveryCost !== undefined || data.actualDeliveryCostCash !== undefined || data.deliveryInfo !== undefined) {
+
+        // 1. 기존 지출 내역 모두 조회 (relatedOrderId 이용)
+        const { data: existingExpenses } = await supabase
+          .from('simple_expenses')
+          .select('id, extra_data, description')
+          .contains('extra_data', { relatedOrderId: orderId });
+
+        // --- A. 실제 배송비 (Standard) 처리 ---
+        const standardExpense = existingExpenses?.find(e =>
+          e.extra_data?.type === 'standard_delivery_fee' ||
+          (!e.extra_data?.type && e.description.includes('실제 배송료')) // 하위 호환성
+        );
+
+        if (newDeliveryCost && newDeliveryCost > 0) {
+          const standardPayload = {
+            expense_date: expenseDate,
+            amount: newDeliveryCost,
             category: 'transport',
             sub_category: 'DELIVERY',
-            description: `배송비 (주문: ${oldOrder.orderer?.name || '미지정'})`,
-            supplier: data.deliveryInfo?.driverName || oldOrder.delivery_info?.driverName || '배송기사',
+            description: `실제 배송료 - ${recipientName}`,
+            supplier: supplierName,
             branch_id: oldOrder.branch_id,
             branch_name: oldOrder.branch_name,
             updated_at: new Date().toISOString(),
             extra_data: {
-              ...(existingExpense?.extra_data as object || {}), // Preserve existing extra_data
-              relatedOrderId: orderId
+              ...(standardExpense?.extra_data as object || {}),
+              relatedOrderId: orderId,
+              type: 'standard_delivery_fee'
             }
           };
 
-          if (existingExpense) {
-            // Update existing expense
-            await supabase.from('simple_expenses').update(expensePayload).eq('id', existingExpense.id);
+          if (standardExpense) {
+            await supabase.from('simple_expenses').update(standardPayload).eq('id', standardExpense.id);
           } else {
-            // Insert new expense
             await supabase.from('simple_expenses').insert([{
-              ...expensePayload,
+              ...standardPayload,
               id: crypto.randomUUID(),
               created_at: new Date().toISOString()
             }]);
           }
-        } else if (cost === 0) {
-          // If cost is 0, we might strictly leave it alone or delete it, but current policy is passive.
+        } else if (standardExpense) {
+          // 금액이 0원이거나 없는데 기존 내역이 있으면 삭제
+          await supabase.from('simple_expenses').delete().eq('id', standardExpense.id);
+        }
+
+        // --- B. 기사님 현금 지급 (Cash) 처리 ---
+        const cashExpense = existingExpenses?.find(e =>
+          e.extra_data?.type === 'driver_cash_payment' ||
+          (!e.extra_data?.type && (e.description.includes('추가현금') || e.description.includes('현금지급') || e.description.includes('배송비 현금지급'))) // 하위 호환성
+        );
+
+        if (newDeliveryCash && newDeliveryCash > 0) {
+          const cashPayload = {
+            expense_date: expenseDate,
+            amount: newDeliveryCash,
+            category: 'transport', // 운송비
+            sub_category: 'DELIVERY',
+            description: `추가현금배송비 - ${recipientName}`,
+            supplier: supplierName,
+            branch_id: oldOrder.branch_id,
+            branch_name: oldOrder.branch_name,
+            updated_at: new Date().toISOString(),
+            extra_data: {
+              ...(cashExpense?.extra_data as object || {}),
+              relatedOrderId: orderId,
+              type: 'driver_cash_payment',
+              payment_method: 'cash' // 현금 지급 명시
+            }
+          };
+
+          if (cashExpense) {
+            await supabase.from('simple_expenses').update(cashPayload).eq('id', cashExpense.id);
+          } else {
+            await supabase.from('simple_expenses').insert([{
+              ...cashPayload,
+              id: crypto.randomUUID(),
+              created_at: new Date().toISOString()
+            }]);
+          }
+        } else if (cashExpense) {
+          // 금액이 0원이거나 없는데 기존 내역이 있으면 삭제
+          await supabase.from('simple_expenses').delete().eq('id', cashExpense.id);
         }
       }
       // -----------------------------------------------------------

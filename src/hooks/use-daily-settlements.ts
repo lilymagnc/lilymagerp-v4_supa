@@ -9,26 +9,23 @@ export function useDailySettlements() {
     const { toast } = useToast();
 
     const getSettlement = useCallback(async (branchId: string, date: string): Promise<DailySettlementRecord | null> => {
-        // Table doesn't exist in Supabase yet - settlements work without saved records
-        return null;
-
-        /* Disabled until table is created
         if (!branchId || !date) return null;
         setLoading(true);
         try {
-            // Check if table exists first to prevent 404 errors in console
             const { data, error } = await supabase.from('daily_settlements')
                 .select('*')
                 .eq('branch_id', branchId)
                 .eq('date', date)
                 .maybeSingle();
 
-            // Silently handle table not found error (PGRST205)
-            if (error && error.code === 'PGRST205') {
+            if (error) {
+                // Ignore specific error codes if needed, or log
+                if (error.code !== 'PGRST116' && error.code !== 'PGRST205') {
+                    console.error('Error fetching settlement:', error);
+                }
                 return null;
             }
 
-            if (error) throw error;
             if (data) {
                 return {
                     id: data.id,
@@ -42,13 +39,55 @@ export function useDailySettlements() {
                 } as DailySettlementRecord;
             }
             return null;
-        } catch (error) {
-            // Silently handle missing table - not critical for viewing settlements
+        } catch (error: any) {
+            // Silently handle missing table error
+            if (error?.code !== 'PGRST205' && !error?.message?.includes('Could not find the table')) {
+                console.error('Settlement fetch error:', error);
+            }
             return null;
         } finally {
             setLoading(false);
         }
-        */
+    }, []);
+
+    const findLastSettlementBefore = useCallback(async (branchId: string, beforeDate: string): Promise<DailySettlementRecord | null> => {
+        if (!branchId || !beforeDate) return null;
+        try {
+            const { data, error } = await supabase.from('daily_settlements')
+                .select('*')
+                .eq('branch_id', branchId)
+                .lt('date', beforeDate)
+                .order('date', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (error) {
+                if (error.code !== 'PGRST116' && error.code !== 'PGRST205') {
+                    console.error('Error finding last settlement:', error);
+                }
+                return null;
+            }
+
+            if (data) {
+                return {
+                    id: data.id,
+                    branchId: data.branch_id,
+                    branchName: data.branch_name,
+                    date: data.date,
+                    status: data.status,
+                    createdAt: data.created_at,
+                    updatedAt: data.updated_at,
+                    ...data.settlement_data
+                } as DailySettlementRecord;
+            }
+            return null;
+        } catch (error: any) {
+            // Silently handle missing table error
+            if (error?.code !== 'PGRST205' && !error?.message?.includes('Could not find the table')) {
+                console.error('Last settlement search error:', error);
+            }
+            return null;
+        }
     }, []);
 
     const saveSettlement = useCallback(async (data: Partial<DailySettlementRecord>) => {
@@ -95,6 +134,6 @@ export function useDailySettlements() {
     }, [toast]);
 
     return {
-        loading, getSettlement, saveSettlement
+        loading, getSettlement, saveSettlement, findLastSettlementBefore
     };
 }

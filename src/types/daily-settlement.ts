@@ -5,6 +5,7 @@ export interface DailySettlementRecord {
     branchId: string;
     branchName: string;
     date: string; // YYYY-MM-DD
+    status?: string;
     previousVaultBalance: number; // 전일 시재
     vaultDeposit: number;        // 시재 입금 (금고 -> 은행)
     cashSalesToday?: number;     // 당일 현금 매출 (스냅샷)
@@ -13,6 +14,6 @@ export interface DailySettlementRecord {
     manualTransportAmount?: number;  // 수동 입력 운송비 금액
     cashExpenseToday?: number;   // 기타 현금 지출 합계 (간편지출)
     memo?: string;
-    createdAt: Timestamp;
-    updatedAt: Timestamp;
+    createdAt: any;
+    updatedAt: any;
 }
