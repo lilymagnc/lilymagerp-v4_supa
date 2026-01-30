@@ -136,7 +136,9 @@ const HRManagementPage = () => {
       if (error) throw error;
 
       toast({ variant: 'default', title: '성공', description: `문서 상태가 '${status}'으로 변경되었습니다.` });
-      // Optimistic update or wait for realtime
+
+      // 즉시 목록 새로고침
+      await fetchDocuments();
     } catch (error) {
       console.error("Status update error:", error);
       toast({ variant: 'destructive', title: '오류', description: '상태 변경 중 오류가 발생했습니다.' });
@@ -152,26 +154,9 @@ const HRManagementPage = () => {
     try {
       // 1. Delete file from Storage if exists
       if (document.file_url) {
-        // Extract path from URL or logic.
-        // Assuming file_url is the full path or relative path stored in DB.
-        // The upload logic stores: `${user.id}/${Date.now()}_${sanitizedFileName}`
-        // If file_url is a public URL, we need to extract the path.
-        // But the upload logic in previous step (122) didn't explicitly save 'file_path', just 'file_url'.
-        // Let's try to parse it or just try deleting if we have the path.
-        // If we only have the public URL, we might need to rely on the table storing the path.
-        // For now, let's assume we can't easily delete the file without the path if only URL is stored.
-        // However, the upload code `const { data: { publicUrl } }` suggests we stored the public URL.
-        // To delete, we need the path 'bucket/path'.
-        // Supabase storage delete requires the path relative to the bucket.
-        // If we can't derive it, we might leave a limitless file.
-        // PROPER FIX: We should store 'file_path' in the DB too.
-        // But for now, to replicate previous behavior, we'll try to delete from DB at least.
-
-        // Attempt to extract path from public URL if standard format
-        // Standard: .../storage/v1/object/public/hr_submissions/userId/file...
-        const pathMatch = document.file_url.match(/hr_submissions\/(.*)/);
+        const pathMatch = document.file_url.match(/hr-submissions\/(.*)/);
         if (pathMatch && pathMatch[1]) {
-          await supabase.storage.from('hr_submissions').remove([pathMatch[1]]);
+          await supabase.storage.from('hr-submissions').remove([pathMatch[1]]);
         }
       }
 
@@ -189,6 +174,8 @@ const HRManagementPage = () => {
         setIsDetailViewOpen(false);
         setSelectedDoc(null);
       }
+
+      await fetchDocuments();
     } catch (error) {
       console.error("Delete error:", error);
       toast({ variant: 'destructive', title: '오류', description: '문서 삭제 중 오류가 발생했습니다.' });
@@ -248,16 +235,21 @@ const HRManagementPage = () => {
                       <Button variant="outline" size="sm" onClick={() => handleViewDetails(doc)}>
                         <Eye className="mr-2 h-4 w-4" /> 상세 보기
                       </Button>
-                      {doc.status === '처리중' && (
-                        <>
-                          <Button variant="default" size="sm" onClick={() => handleStatusChange(doc.id, '승인')} className="bg-green-600 hover:bg-green-700 text-white">
-                            <CheckCircle className="mr-2 h-4 w-4" /> 승인
-                          </Button>
-                          <Button variant="destructive" size="sm" onClick={() => handleStatusChange(doc.id, '반려')}>
-                            <XCircle className="mr-2 h-4 w-4" /> 반려
-                          </Button>
-                        </>
+
+                      {/* 승인 버튼: 현재 상태가 '승인'이 아닐 때 표시 */}
+                      {doc.status !== '승인' && (
+                        <Button variant="default" size="sm" onClick={() => handleStatusChange(doc.id, '승인')} className="bg-green-600 hover:bg-green-700 text-white">
+                          <CheckCircle className="mr-2 h-4 w-4" /> 승인
+                        </Button>
                       )}
+
+                      {/* 반려 버튼: 현재 상태가 '반려'가 아닐 때 표시 */}
+                      {doc.status !== '반려' && (
+                        <Button variant="destructive" size="sm" onClick={() => handleStatusChange(doc.id, '반려')}>
+                          <XCircle className="mr-2 h-4 w-4" /> 반려
+                        </Button>
+                      )}
+
                       <Button
                         variant="outline"
                         size="sm"

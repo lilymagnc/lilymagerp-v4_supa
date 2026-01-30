@@ -31,7 +31,7 @@ const NewHRRequestPage = () => {
   const [contact, setContact] = useState('');
   const [handover, setHandover] = useState('');
   const [joinDate, setJoinDate] = useState('');
-  const [leaveType, setLeaveType] = useState('연차'); // For vacation form
+  const [leaveType, setLeaveType] = useState('유급휴가'); // For vacation form
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -281,7 +281,8 @@ const NewHRRequestPage = () => {
               <div className="form-control">
                 <label className="label"><span className="label-text">휴가 종류</span></label>
                 <select className="select select-bordered w-full" value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
-                  <option>연차</option>
+                  <option>유급휴가</option>
+                  <option>무급휴가</option>
                   <option>병가</option>
                   <option>경조사</option>
                   <option>공가</option>
