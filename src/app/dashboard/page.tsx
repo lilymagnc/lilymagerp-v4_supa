@@ -19,7 +19,7 @@ import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, end
 import { ko } from "date-fns/locale";
 import { getWeatherInfo, getWeatherEmoji, WeatherInfo } from "@/lib/weather-service";
 import BulletinBoard from '@/components/dashboard/bulletin-board';
-import { fetchDailyStats } from "@/lib/stats-utils";
+import { fetchDailyStats, sanitizeBranchKey } from "@/lib/stats-utils";
 import { parseDate } from "@/lib/date-utils";
 interface DashboardStats {
   totalRevenue: number;
@@ -84,7 +84,7 @@ interface MonthlySalesData {
   branchSales?: { [branchName: string]: number };
 }
 
-function calculateWeeklyStats(statsData: any[], startDate: string, endDate: string, isAllBranches: boolean, branchFilter?: string) {
+function calculateWeeklyStats(statsData: any[], startDate: string, endDate: string, isAllBranches: boolean, branchFilter?: string, branches: any[] = []) {
   const weeklyMap: { [key: string]: any } = {};
 
   statsData.forEach(day => {
@@ -114,23 +114,28 @@ function calculateWeeklyStats(statsData: any[], startDate: string, endDate: stri
       if (day.branches) {
         Object.entries(day.branches).forEach(([bKey, bStat]: [string, any]) => {
           const amount = bStat.settledAmount || 0;
-          const actualBranchName = bKey.replace(/_/g, '.');
-          // Recharts가 인식할 수 있도록 객체 루트에 지점명 속성 추가
+          // 지점명을 찾아서 정확한 속성명으로 설정 (Recharts 연동용)
+          const branch = branches.find(b => sanitizeBranchKey(b.name) === bKey);
+          const actualBranchName = branch ? branch.name : bKey.replace(/_/g, '.');
+
           weeklyMap[weekKey][actualBranchName] = (weeklyMap[weekKey][actualBranchName] || 0) + amount;
           weeklyMap[weekKey].branchSales[actualBranchName] = (weeklyMap[weekKey].branchSales[actualBranchName] || 0) + amount;
         });
       }
     } else if (branchFilter) {
-      const bKey = branchFilter.replace(/\./g, '_');
+      const bKey = sanitizeBranchKey(branchFilter);
       const bStat = day.branches?.[bKey];
-      weeklyMap[weekKey].sales += bStat?.settledAmount || 0;
+      const amount = bStat?.settledAmount || 0;
+      weeklyMap[weekKey].sales += amount;
+      // isAdmin 모드에서 특정 지점 선택 시에도 브랜치명 속성을 넣어줘야 차트에 표시됨
+      weeklyMap[weekKey][branchFilter] = (weeklyMap[weekKey][branchFilter] || 0) + amount;
     }
   });
 
   return Object.values(weeklyMap).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 }
 
-function calculateMonthlyStats(statsData: any[], startDate: string, endDate: string, isAllBranches: boolean, branchFilter?: string) {
+function calculateMonthlyStats(statsData: any[], startDate: string, endDate: string, isAllBranches: boolean, branchFilter?: string, branches: any[] = []) {
   const monthlyMap: { [key: string]: any } = {};
 
   statsData.forEach(day => {
@@ -153,16 +158,21 @@ function calculateMonthlyStats(statsData: any[], startDate: string, endDate: str
       if (day.branches) {
         Object.entries(day.branches).forEach(([bKey, bStat]: [string, any]) => {
           const amount = bStat.settledAmount || 0;
-          const actualBranchName = bKey.replace(/_/g, '.');
-          // Recharts가 인식할 수 있도록 객체 루트에 지점명 속성 추가
+          // 지점명을 찾아서 정확한 속성명으로 설정 (Recharts 연동용)
+          const branch = branches.find(b => sanitizeBranchKey(b.name) === bKey);
+          const actualBranchName = branch ? branch.name : bKey.replace(/_/g, '.');
+
           monthlyMap[monthKey][actualBranchName] = (monthlyMap[monthKey][actualBranchName] || 0) + amount;
           monthlyMap[monthKey].branchSales[actualBranchName] = (monthlyMap[monthKey].branchSales[actualBranchName] || 0) + amount;
         });
       }
     } else if (branchFilter) {
-      const bKey = branchFilter.replace(/\./g, '_');
+      const bKey = sanitizeBranchKey(branchFilter);
       const bStat = day.branches?.[bKey];
-      monthlyMap[monthKey].sales += bStat?.settledAmount || 0;
+      const amount = bStat?.settledAmount || 0;
+      monthlyMap[monthKey].sales += amount;
+      // isAdmin 모드에서 특정 지점 선택 시에도 브랜치명 속성을 넣어줘야 차트에 표시됨
+      monthlyMap[monthKey][branchFilter] = (monthlyMap[monthKey][branchFilter] || 0) + amount;
     }
   });
 
@@ -218,11 +228,12 @@ export default function DashboardPage() {
 
   const currentFilteredBranch = useMemo(() => {
     if (isAdmin) {
-      return (selectedBranchFilter === '전체' || !selectedBranchFilter) ? null : selectedBranchFilter;
+      // 본사 관리자는 대시보드에서 항상 전체 데이터를 봅니다.
+      return null;
     } else {
       return userBranch;
     }
-  }, [isAdmin, selectedBranchFilter, userBranch]);
+  }, [isAdmin, userBranch]);
 
   const [stats, setStats] = useState<DashboardStats>({
     totalRevenue: 0,
@@ -571,10 +582,9 @@ export default function DashboardPage() {
               if (day.branches) {
                 Object.entries(day.branches).forEach(([bKey, bStat]: [string, any]) => {
                   const amount = bStat.settledAmount || 0;
-                  const nameWithDots = bKey.replace(/_/g, '.');
-                  result[nameWithDots] = amount;
-                  const nameWithSpaces = bKey.replace(/_/g, ' ');
-                  result[nameWithSpaces] = amount;
+                  const branch = branches.find(b => sanitizeBranchKey(b.name) === bKey);
+                  const name = branch ? branch.name : bKey.replace(/_/g, '.');
+                  result[name] = amount;
                   result[bKey] = amount;
                 });
               }
@@ -582,9 +592,11 @@ export default function DashboardPage() {
               if (!isAdmin || branchFilter) {
                 const bName = branchFilter || userBranch;
                 if (bName) {
-                  const bKey = bName.replace(/\./g, '_').replace(/ /g, '_');
+                  const bKey = sanitizeBranchKey(bName);
                   const bStat = day.branches?.[bKey] || { settledAmount: 0 };
                   result.sales = bStat.settledAmount || 0;
+                  // isAdmin 모드에서 특정 지점 선택 시에도 브랜치명 속성을 넣어줘야 차트에 표시됨
+                  result[bName] = (result[bName] || 0) + result.sales;
                 }
               }
 
@@ -593,10 +605,10 @@ export default function DashboardPage() {
             }
             setDailySales(dailyData);
 
-            const weeklyData = calculateWeeklyStats(statsData, weeklyStartDate, weeklyEndDate, isAdmin && (!branchFilter || branchFilter === '전체'), branchFilter || userBranch);
+            const weeklyData = calculateWeeklyStats(statsData, weeklyStartDate, weeklyEndDate, isAdmin && (!branchFilter || branchFilter === '전체'), branchFilter || userBranch, branches);
             setWeeklySales(weeklyData as any);
 
-            const monthlyData = calculateMonthlyStats(statsData, monthlyStartDate, monthlyEndDate, isAdmin && (!branchFilter || branchFilter === '전체'), branchFilter || userBranch);
+            const monthlyData = calculateMonthlyStats(statsData, monthlyStartDate, monthlyEndDate, isAdmin && (!branchFilter || branchFilter === '전체'), branchFilter || userBranch, branches);
             setMonthlySales(monthlyData as any);
           }
         } catch (err) {
@@ -805,7 +817,8 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* 본사 관리자용 지점 필터링 드롭다운 */}
+      {/* 본사 관리자용 지점 필터링 드롭다운 제거 (요청에 따라 통합 데이터만 표시) */}
+      {/* 
       {isAdmin && (
         <Card>
           <CardContent className="pt-6">
@@ -831,6 +844,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       )}
+      */}
 
       {/* 상단 통계 카드 */}
       <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">

@@ -6,7 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Lilymag ERP",
+  title: "Lilymag ERP-supa ",
   description: "플라워샵 주문관리및 가맹점 관리를 위한 ERP 시스템",
 };
 
