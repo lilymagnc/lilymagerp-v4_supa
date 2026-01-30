@@ -95,23 +95,25 @@ export function QuotationForm({ initialData, onSubmit, onDataChange, isSubmittin
 
     // Summary State
     const [discountRate, setDiscountRate] = useState(0);
-    const [includeVat, setIncludeVat] = useState<boolean>(() => {
-        if (initialData?.summary?.includeVat !== undefined) {
-            return initialData.summary.includeVat;
-        }
-        return false; // Default explicitly to false
-    });
+    // Initialize VAT state: strictly default to false if no initial data
+    const [includeVat, setIncludeVat] = useState<boolean>(initialData?.summary?.includeVat ?? false);
     const [notes, setNotes] = useState(initialData?.notes || "");
     const [terms, setTerms] = useState(initialData?.terms || "본 견적서는 발행일로부터 7일간 유효합니다.");
 
-    // Generate Quotation Number if new
+    // Initialization Effect for New Quotations
     useEffect(() => {
-        if (!initialData && !quotationNumber) {
-            const dateStr = format(new Date(), "yyyyMMdd");
-            const randomStr = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-            setQuotationNumber(`Q-${dateStr}-${randomStr}`);
+        if (!initialData) {
+            // STRICTLY enforce VAT to false for new documents
+            setIncludeVat(false);
+
+            // Generate Quotation Number if not present
+            if (!quotationNumber) {
+                const dateStr = format(new Date(), "yyyyMMdd");
+                const randomStr = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+                setQuotationNumber(`Q-${dateStr}-${randomStr}`);
+            }
         }
-    }, [initialData, quotationNumber]);
+    }, [initialData]); // Run when initialData is determined (usually on mount)
 
     // Set default branch for branch users
     useEffect(() => {
