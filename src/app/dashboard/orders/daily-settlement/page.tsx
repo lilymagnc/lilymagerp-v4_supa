@@ -60,7 +60,7 @@ export default function DailySettlementPage() {
 
     // 현재 보고 있는 기준 지점
     const currentTargetBranch = isAdmin ? selectedBranch : userBranch;
-    const currentBranchId = branches.find(b => b.name === currentTargetBranch)?.id;
+    const currentBranchId = branches.find(b => b.name?.trim() === currentTargetBranch?.trim())?.id;
 
     // 비용 및 정산 데이터 불러오기 (최적화됨 + 자동계산)
     useEffect(() => {
@@ -133,7 +133,13 @@ export default function DailySettlementPage() {
                         // useOrders 구현상 fetchOrdersForSettlement는 'select *'로 전체 로드함. (limit 있을 수 있음)
                         // 안전을 위해 _ordersResult 필터링 사용
 
-                        let runningBalance = (lastRecord.previousVaultBalance + (lastRecord.cashSalesToday || 0) - lastRecord.vaultDeposit - (lastRecord.deliveryCostCashToday || 0) - (lastRecord.cashExpenseToday || 0));
+                        let runningBalance = (
+                            Number(lastRecord.previousVaultBalance || 0) +
+                            Number(lastRecord.cashSalesToday || 0) -
+                            Number(lastRecord.vaultDeposit || 0) -
+                            Number(lastRecord.deliveryCostCashToday || 0) -
+                            Number(lastRecord.cashExpenseToday || 0)
+                        );
 
                         // 날짜별 순회 (gapStart -> prevDate)
                         let currentDate = gapStart;
@@ -594,9 +600,17 @@ export default function DailySettlementPage() {
         const otherCashExpenses = otherCashExpensesList.reduce((sum, e) => sum + e.amount, 0);
 
         // 이전 잔액 결정: 수동 입력값이 있으면 우선
-        const prevBalance = manualPreviousBalance || (prevSettlementRecord ?
-            (prevSettlementRecord.previousVaultBalance + (prevSettlementRecord.cashSalesToday || 0) - prevSettlementRecord.vaultDeposit - (prevSettlementRecord.deliveryCostCashToday || 0) - (prevSettlementRecord.cashExpenseToday || 0))
-            : 0);
+        // settlementRecord가 존재하면 해당 기록의 previousVaultBalance를 우선적으로 사용 (0 포함)
+        const prevBalance = (manualPreviousBalance !== 0) ? manualPreviousBalance :
+            (settlementRecord ? Number(settlementRecord.previousVaultBalance || 0) :
+                (prevSettlementRecord ?
+                    (Number(prevSettlementRecord.previousVaultBalance || 0) +
+                        Number(prevSettlementRecord.cashSalesToday || 0) -
+                        Number(prevSettlementRecord.vaultDeposit || 0) -
+                        Number(prevSettlementRecord.deliveryCostCashToday || 0) -
+                        Number(prevSettlementRecord.cashExpenseToday || 0))
+                    : 0));
+
         const remaining = prevBalance + cashSales - vaultDeposit - deliveryCostCash - otherCashExpenses;
 
         return {
