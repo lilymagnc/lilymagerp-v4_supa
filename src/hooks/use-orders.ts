@@ -200,25 +200,41 @@ export function useOrders() {
     extraData: row.extra_data
   });
 
-  const fetchOrders = useCallback(async (days: number = 30) => {
+  const fetchOrders = useCallback(async (days: number = 60) => {
     try {
       setLoading(true);
       const startDate = subDays(startOfDay(new Date()), days).toISOString();
 
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .or(`order_date.gte.${startDate},payment->>completedAt.gte.${startDate},transfer_info->>acceptedAt.gte.${startDate}`)
-        .order('order_date', { ascending: false });
+      // Implement pagination to get more than 1000 orders if necessary
+      let allData: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
 
-      if (error) {
-        console.error('Supabase fetchOrders error:', error);
-        throw error;
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*')
+          .or(`order_date.gte.${startDate},payment->>completedAt.gte.${startDate},transfer_info->>acceptedAt.gte.${startDate}`)
+          .order('order_date', { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) throw error;
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          if (data.length < pageSize) hasMore = false;
+          else page++;
+        } else {
+          hasMore = false;
+        }
+
+        // Safety limit for general fetch
+        if (allData.length >= 5000) break;
       }
-      setOrders((data || []).map(mapRowToOrder));
+
+      setOrders(allData.map(mapRowToOrder));
     } catch (error) {
       console.error('주문 데이터 로딩 오류:', error);
-      console.error("Error details:", JSON.stringify(error, null, 2));
     } finally {
       setLoading(false);
     }
@@ -309,19 +325,35 @@ export function useOrders() {
     }
   }, []);
 
-  const fetchOrdersForSettlement = useCallback(async (targetDateStr: string) => {
+  const fetchOrdersForSettlement = useCallback(async (targetDateStr: string, startDateStr?: string) => {
     try {
       setLoading(true);
 
-      // Fetch all orders (we'll filter in memory for more flexibility)
+      const end = `${targetDateStr}T23:59:59.999`;
+      // Buffer of 1 day before the target/start date to handle UTC/KST overlap
+      const effectiveStart = startDateStr
+        ? `${subDays(new Date(startDateStr), 1).toISOString().split('T')[0]}T00:00:00`
+        : `${subDays(new Date(targetDateStr), 1).toISOString().split('T')[0]}T00:00:00`;
+
+      console.log(`[Settlement Load] Fetching from ${effectiveStart} to ${end}`);
+
       const { data, error } = await supabase
         .from('orders')
         .select('*')
-        .order('order_date', { ascending: false });
+        .or(`order_date.gte.${effectiveStart},payment->>completedAt.gte.${effectiveStart},transfer_info->>acceptedAt.gte.${effectiveStart}`)
+        .filter('order_date', 'lte', end)
+        .order('order_date', { ascending: false })
+        .limit(5000);
 
       if (error) throw error;
       const ordersData = (data || []).map(mapRowToOrder);
-      setOrders(ordersData);
+
+      setOrders(prev => {
+        const existingIds = new Set(ordersData.map(o => o.id));
+        const filteredPrev = prev.filter(o => !existingIds.has(o.id));
+        return [...ordersData, ...filteredPrev];
+      });
+
       return ordersData;
     } catch (error) {
       console.error("정산 데이터 로딩 오류:", error);

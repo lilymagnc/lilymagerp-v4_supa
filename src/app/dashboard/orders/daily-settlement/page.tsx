@@ -128,10 +128,10 @@ export default function DailySettlementPage() {
                             dateTo: new Date(prevDate + 'T23:59:59')
                         });
 
-                        // 주문 데이터는 _ordersResult에 모두 있다고 가정 (fetchOrdersForSettlement가 전체 로드라면)
-                        // 만약 _ordersResult가 reportDate만 가져온다면 gapOrders 별도 로드 필요.
-                        // useOrders 구현상 fetchOrdersForSettlement는 'select *'로 전체 로드함. (limit 있을 수 있음)
-                        // 안전을 위해 _ordersResult 필터링 사용
+                        // 갭 기간의 전체 주문 불러오기 (v4_supa에서는 range 지원하는 fetchOrdersForSettlement 사용)
+                        const gapOrders = await fetchOrdersForSettlement(prevDate, format(gapStart, 'yyyy-MM-dd'));
+                        // _ordersResult 대신 gapOrders와 _ordersResult를 통합하여 사용
+                        const combinedOrders = [...(gapOrders || []), ...(_ordersResult || [])];
 
                         let runningBalance = (
                             Number(lastRecord.previousVaultBalance || 0) +
@@ -150,13 +150,13 @@ export default function DailySettlementPage() {
 
                             // 해당 날짜의 Cash Flow 계산
                             // Orders
-                            const dayOrders = (_ordersResult || []).filter((o: Order) => {
+                            const dayOrders = (combinedOrders || []).filter((o: Order) => {
                                 const od = parseDate(o.orderDate);
                                 return od && format(od, 'yyyy-MM-dd') === dateStr && o.branchName === currentTargetBranch;
                             });
 
                             // Expenses
-                            const dayExpenses = (gapExpenses || []).filter(e => {
+                            const dayExpenses = (gapExpenses || []).filter((e: any) => {
                                 const ed = parseDate(e.date);
                                 return ed && format(ed, 'yyyy-MM-dd') === dateStr;
                             });
