@@ -1,5 +1,3 @@
-import { Timestamp } from "firebase/firestore";
-
 export interface QuotationItem {
   id: string; // Product ID or custom ID
   name: string;
@@ -11,10 +9,11 @@ export interface QuotationItem {
 
 export interface Quotation {
   id: string;
+  type: 'quotation' | 'receipt' | 'statement'; // Added type
   quotationNumber: string; // e.g., Q-20231027-001
-  createdAt: Timestamp | Date;
-  updatedAt: Timestamp | Date;
-  validUntil: Timestamp | Date;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  validUntil: Date | string;
 
   customer: {
     id?: string;
@@ -50,6 +49,7 @@ export interface Quotation {
     contact: string;
     email: string;
     businessNumber: string;
+    account?: string;
   };
 
   createdBy: string; // User ID

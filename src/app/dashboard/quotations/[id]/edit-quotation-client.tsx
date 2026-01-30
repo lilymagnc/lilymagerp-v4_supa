@@ -6,8 +6,6 @@ import { PageHeader } from "@/components/page-header";
 import { QuotationForm } from "../components/quotation-form";
 import { useQuotations } from "@/hooks/use-quotations";
 import { Quotation } from "@/types/quotation";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PrintableQuotation } from "../components/printable-quotation";
 import { Button } from "@/components/ui/button";
@@ -19,18 +17,18 @@ interface EditQuotationClientProps {
 
 export function EditQuotationClient({ id }: EditQuotationClientProps) {
     const router = useRouter();
-    const { updateQuotation } = useQuotations();
+    const { updateQuotation, fetchQuotationById } = useQuotations();
     const [quotation, setQuotation] = useState<Quotation | null>(null);
+    const [previewData, setPreviewData] = useState<Omit<Quotation, 'id'> | null>(null);
     const [loading, setLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
-        const fetchQuotation = async () => {
+        const loadQuotation = async () => {
             try {
-                const docRef = doc(db, 'quotations', id);
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                    setQuotation({ id: docSnap.id, ...docSnap.data() } as Quotation);
+                const data = await fetchQuotationById(id);
+                if (data) {
+                    setQuotation(data);
                 } else {
                     router.push('/dashboard/quotations');
                 }
@@ -40,8 +38,8 @@ export function EditQuotationClient({ id }: EditQuotationClientProps) {
                 setLoading(false);
             }
         };
-        fetchQuotation();
-    }, [id, router]);
+        loadQuotation();
+    }, [id, router, fetchQuotationById]);
 
     const handleSubmit = async (data: Omit<Quotation, 'id'>) => {
         setIsSubmitting(true);
@@ -93,7 +91,10 @@ export function EditQuotationClient({ id }: EditQuotationClientProps) {
                 }
             `}</style>
             <div className="print:hidden">
-                <PageHeader title="견적서 수정" description="견적서 내용을 수정합니다.">
+                <PageHeader
+                    title={`${(previewData?.type || quotation.type) === 'receipt' ? '간이영수증' : (previewData?.type || quotation.type) === 'statement' ? '거래명세서' : '견적서'} 수정`}
+                    description="문서 내용을 수정합니다."
+                >
                     <Button onClick={handlePrint} variant="outline">
                         <Printer className="mr-2 h-4 w-4" />
                         인쇄 / PDF 저장
@@ -103,7 +104,12 @@ export function EditQuotationClient({ id }: EditQuotationClientProps) {
 
             <div className="grid gap-8 xl:grid-cols-2 print:block">
                 <div className="xl:col-span-1 print:hidden">
-                    <QuotationForm initialData={quotation} onSubmit={handleSubmit} isSubmitting={isSubmitting} />
+                    <QuotationForm
+                        initialData={quotation}
+                        onSubmit={handleSubmit}
+                        onDataChange={setPreviewData}
+                        isSubmitting={isSubmitting}
+                    />
                 </div>
                 <div className="xl:col-span-1 print:col-span-full">
                     <div className="sticky top-6 border rounded-lg overflow-hidden shadow-lg bg-white print:static print:border-none print:shadow-none">
@@ -112,7 +118,7 @@ export function EditQuotationClient({ id }: EditQuotationClientProps) {
                         </div>
                         <div className="overflow-auto max-h-[800px] print:overflow-visible print:max-h-none">
                             <div id="printable-quotation-area">
-                                <PrintableQuotation data={quotation} />
+                                <PrintableQuotation data={(previewData || quotation) as Quotation} />
                             </div>
                         </div>
                     </div>

@@ -87,7 +87,7 @@ export default function StatementPrintPage() {
 
     const summary = {
       totalOrders: customerOrders.length,
-      totalAmount: customerOrders.reduce((sum, order) => sum + (order.summary.total || 0), 0),
+      totalAmount: customerOrders.reduce((sum, order) => sum + (order.summary.subtotal || (order.summary.total - (order.summary.deliveryFee || 0)) || 0), 0),
       totalDeliveryFee: customerOrders.reduce((sum, order) => sum + (order.summary.deliveryFee || 0), 0),
       grandTotal: customerOrders.reduce((sum, order) => sum + (order.summary.total || 0), 0)
     };
@@ -456,29 +456,34 @@ export default function StatementPrintPage() {
                 </tr>
               ) : (
                 statementData.orders.map((order, orderIndex) => {
-                  // 주문의 각 상품을 개별 행으로 표시
-                  return order.items.map((item, itemIndex) => (
-                    <tr key={`${order.id}-${itemIndex}`}>
-                      <td>
-                        {(() => {
-                          const orderDate = toLocalDate(order.orderDate);
-                          return format(orderDate, "yyyy-MM-dd", { locale: ko });
-                        })()}
-                      </td>
-                      <td>
-                        {item.name}
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        {item.quantity}
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        {item.price.toLocaleString()}원
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        {(item.price * item.quantity).toLocaleString()}원
-                      </td>
+                  const orderDate = toLocalDate(order.orderDate);
+                  const formattedDate = format(orderDate, "yyyy-MM-dd", { locale: ko });
+
+                  // 주문의 각 상품 행 생성
+                  const itemRows = order.items.map((item, itemIndex) => (
+                    <tr key={`${order.id}-item-${itemIndex}`}>
+                      <td>{formattedDate}</td>
+                      <td>{item.name}</td>
+                      <td style={{ textAlign: 'right' }}>{item.quantity}</td>
+                      <td style={{ textAlign: 'right' }}>{item.price.toLocaleString()}원</td>
+                      <td style={{ textAlign: 'right' }}>{(item.price * item.quantity).toLocaleString()}원</td>
                     </tr>
                   ));
+
+                  // 배송비가 있으면 배송비 행 추가
+                  if (order.summary.deliveryFee && order.summary.deliveryFee > 0) {
+                    itemRows.push(
+                      <tr key={`${order.id}-delivery`}>
+                        <td>{formattedDate}</td>
+                        <td>배송비</td>
+                        <td style={{ textAlign: 'right' }}>1</td>
+                        <td style={{ textAlign: 'right' }}>{order.summary.deliveryFee.toLocaleString()}원</td>
+                        <td style={{ textAlign: 'right' }}>{order.summary.deliveryFee.toLocaleString()}원</td>
+                      </tr>
+                    );
+                  }
+
+                  return itemRows;
                 })
               )}
             </tbody>

@@ -12,7 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQuotations } from "@/hooks/use-quotations";
 import { format } from "date-fns";
-import { Timestamp } from "firebase/firestore";
 
 export default function QuotationsPage() {
     const router = useRouter();
@@ -20,8 +19,8 @@ export default function QuotationsPage() {
     const [searchTerm, setSearchTerm] = useState("");
 
     const filteredQuotations = quotations.filter(q =>
-        q.customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        q.quotationNumber.toLowerCase().includes(searchTerm.toLowerCase())
+        (q.customer?.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (q.quotationNumber || "").toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     const getStatusBadge = (status: string) => {
@@ -34,24 +33,31 @@ export default function QuotationsPage() {
         }
     };
 
-    const formatDate = (date: Timestamp | Date) => {
+    const formatDate = (date: any) => {
         if (!date) return "-";
-        const d = date instanceof Timestamp ? date.toDate() : date;
-        return format(d, "yyyy-MM-dd");
+        return format(new Date(date), "yyyy-MM-dd");
+    };
+
+    const getDocTypeBadge = (type: string) => {
+        switch (type) {
+            case 'receipt': return <Badge variant="secondary" className="bg-blue-100 text-blue-800">간이영수증</Badge>;
+            case 'statement': return <Badge variant="secondary" className="bg-purple-100 text-purple-800">거래명세서</Badge>;
+            default: return <Badge variant="secondary" className="bg-slate-100 text-slate-800">견적서</Badge>;
+        }
     };
 
     const handleDelete = async (id: string) => {
-        if (window.confirm("정말로 이 견적서를 삭제하시겠습니까?")) {
+        if (window.confirm("정말로 이 문서를 삭제하시겠습니까?")) {
             await deleteQuotation(id);
         }
     };
 
     return (
         <div>
-            <PageHeader title="견적서 관리" description="고객 견적서를 작성하고 관리합니다.">
+            <PageHeader title="거래 문서 관리" description="견적서, 간이영수증, 거래명세서를 작성하고 관리합니다.">
                 <Button onClick={() => router.push('/dashboard/quotations/new')}>
                     <PlusCircle className="mr-2 h-4 w-4" />
-                    견적서 작성
+                    문서 작성
                 </Button>
             </PageHeader>
 
@@ -61,7 +67,7 @@ export default function QuotationsPage() {
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
                             type="search"
-                            placeholder="고객명, 견적서 번호 검색..."
+                            placeholder="고객명, 문서 번호 검색..."
                             className="pl-8"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
@@ -79,7 +85,8 @@ export default function QuotationsPage() {
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>견적서 번호</TableHead>
+                                <TableHead>종류</TableHead>
+                                <TableHead>문서 번호</TableHead>
                                 <TableHead>지점</TableHead>
                                 <TableHead>고객명</TableHead>
                                 <TableHead>작성일</TableHead>
@@ -92,13 +99,14 @@ export default function QuotationsPage() {
                         <TableBody>
                             {filteredQuotations.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                                        등록된 견적서가 없습니다.
+                                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                                        등록된 문서가 없습니다.
                                     </TableCell>
                                 </TableRow>
                             ) : (
                                 filteredQuotations.map((quotation) => (
                                     <TableRow key={quotation.id} className="cursor-pointer hover:bg-muted/50" onClick={() => router.push(`/dashboard/quotations/${quotation.id}`)}>
+                                        <TableCell>{getDocTypeBadge(quotation.type || 'quotation')}</TableCell>
                                         <TableCell className="font-medium">{quotation.quotationNumber}</TableCell>
                                         <TableCell>{quotation.branchName}</TableCell>
                                         <TableCell>{quotation.customer.name}</TableCell>

@@ -121,9 +121,9 @@ export default function DashboardLayout({
                             <SidebarMenuButton onClick={() => router.push('/dashboard/partners')}><Briefcase />거래처 관리</SidebarMenuButton>
                         </SidebarMenuItem>
 
-                        {/* 견적서 관리 (모든 사용자) */}
+                        {/* 거래 문서 관리 (모든 사용자) */}
                         <SidebarMenuItem>
-                            <SidebarMenuButton onClick={() => router.push('/dashboard/quotations')}><ClipboardList />견적서 관리</SidebarMenuButton>
+                            <SidebarMenuButton onClick={() => router.push('/dashboard/quotations')}><ClipboardList />거래 문서 관리</SidebarMenuButton>
                         </SidebarMenuItem>
 
                         {/* 인사 서류 신청 (모든 사용자) */}

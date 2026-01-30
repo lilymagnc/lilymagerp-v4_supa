@@ -11,18 +11,31 @@ export function useQuotations(branchId?: string) {
 
     const mapRowToQuotation = (row: any): Quotation => ({
         id: row.id,
+        type: row.type || 'quotation',
         quotationNumber: row.quotation_number,
-        customerId: row.customer_id,
-        customerName: row.customer_name,
-        customerContact: row.customer_contact,
-        branchId: row.branch_id,
+        createdAt: new Date(row.created_at),
+        updatedAt: new Date(row.updated_at),
+        validUntil: new Date(row.valid_until || row.expiry_date),
+        customer: row.customer || {
+            id: row.customer_id,
+            name: row.customer_name || "",
+            contact: row.customer_contact || "",
+        },
         items: row.items || [],
-        totalAmount: row.total_amount,
-        expiryDate: row.expiry_date ? new Date(row.expiry_date) : undefined,
+        summary: row.summary || {
+            subtotal: row.total_amount || 0,
+            discountAmount: 0,
+            taxAmount: 0,
+            totalAmount: row.total_amount || 0,
+            includeVat: true
+        },
         status: row.status,
         notes: row.notes,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at
+        terms: row.terms,
+        branchId: row.branch_id,
+        branchName: row.branch_name,
+        provider: row.provider,
+        createdBy: row.created_by
     });
 
     const fetchQuotations = useCallback(async () => {
@@ -42,6 +55,22 @@ export function useQuotations(branchId?: string) {
             setLoading(false);
         }
     }, [branchId, toast]);
+
+    const fetchQuotationById = useCallback(async (id: string) => {
+        try {
+            const { data, error } = await supabase
+                .from('quotations')
+                .select('*')
+                .eq('id', id)
+                .single();
+
+            if (error) throw error;
+            return mapRowToQuotation(data);
+        } catch (error) {
+            console.error("Error fetching quotation:", error);
+            return null;
+        }
+    }, []);
 
     useEffect(() => {
         fetchQuotations();
@@ -67,18 +96,25 @@ export function useQuotations(branchId?: string) {
             const id = crypto.randomUUID();
             const payload = {
                 id,
+                type: quotationData.type || 'quotation',
                 quotation_number: quotationData.quotationNumber,
-                customer_id: quotationData.customerId,
-                customer_name: quotationData.customerName,
-                customer_contact: quotationData.customerContact,
-                branch_id: quotationData.branchId,
+                created_at: new Date(quotationData.createdAt as any).toISOString(),
+                updated_at: new Date().toISOString(),
+                valid_until: new Date(quotationData.validUntil as any).toISOString(),
+                customer: quotationData.customer,
+                customer_id: quotationData.customer.id,
+                customer_name: quotationData.customer.name,
+                customer_contact: quotationData.customer.contact,
                 items: quotationData.items,
-                total_amount: quotationData.totalAmount,
-                expiry_date: quotationData.expiryDate ? new Date(quotationData.expiryDate).toISOString() : null,
+                summary: quotationData.summary,
+                total_amount: quotationData.summary.totalAmount,
                 status: quotationData.status,
                 notes: quotationData.notes,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
+                terms: quotationData.terms,
+                branch_id: quotationData.branchId,
+                branch_name: quotationData.branchName,
+                provider: quotationData.provider,
+                created_by: quotationData.createdBy
             };
 
             const { error } = await supabase.from('quotations').insert([payload]);
@@ -99,16 +135,26 @@ export function useQuotations(branchId?: string) {
                 updated_at: new Date().toISOString()
             };
 
+            if (quotationData.type) payload.type = quotationData.type;
             if (quotationData.quotationNumber) payload.quotation_number = quotationData.quotationNumber;
-            if (quotationData.customerId) payload.customer_id = quotationData.customerId;
-            if (quotationData.customerName) payload.customer_name = quotationData.customerName;
-            if (quotationData.customerContact) payload.customer_contact = quotationData.customerContact;
-            if (quotationData.branchId) payload.branch_id = quotationData.branchId;
+            if (quotationData.customer) {
+                payload.customer = quotationData.customer;
+                payload.customer_id = quotationData.customer.id;
+                payload.customer_name = quotationData.customer.name;
+                payload.customer_contact = quotationData.customer.contact;
+            }
             if (quotationData.items) payload.items = quotationData.items;
-            if (quotationData.totalAmount !== undefined) payload.total_amount = quotationData.totalAmount;
-            if (quotationData.expiryDate) payload.expiry_date = new Date(quotationData.expiryDate).toISOString();
+            if (quotationData.summary) {
+                payload.summary = quotationData.summary;
+                payload.total_amount = quotationData.summary.totalAmount;
+            }
+            if (quotationData.validUntil) payload.valid_until = new Date(quotationData.validUntil as any).toISOString();
             if (quotationData.status) payload.status = quotationData.status;
             if (quotationData.notes) payload.notes = quotationData.notes;
+            if (quotationData.terms) payload.terms = quotationData.terms;
+            if (quotationData.branchId) payload.branch_id = quotationData.branchId;
+            if (quotationData.branchName) payload.branch_name = quotationData.branchName;
+            if (quotationData.provider) payload.provider = quotationData.provider;
 
             const { error } = await supabase.from('quotations').update(payload).eq('id', id);
             if (error) throw error;
@@ -135,6 +181,6 @@ export function useQuotations(branchId?: string) {
     }, [toast]);
 
     return {
-        quotations, loading, addQuotation, updateQuotation, deleteQuotation
+        quotations, loading, fetchQuotationById, addQuotation, updateQuotation, deleteQuotation
     };
 }

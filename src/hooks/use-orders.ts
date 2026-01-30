@@ -325,6 +325,31 @@ export function useOrders() {
     }
   }, []);
 
+  const fetchOrdersByCustomer = useCallback(async (customerId: string, startDate?: Date, endDate?: Date) => {
+    try {
+      setLoading(true);
+      let query = supabase
+        .from('orders')
+        .select('*')
+        .eq('orderer->>id', customerId)
+        .order('order_date', { ascending: false });
+
+      if (startDate) query = query.gte('order_date', startOfDay(startDate).toISOString());
+      if (endDate) query = query.lte('order_date', endOfDay(endDate).toISOString());
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      return (data || []).map(mapRowToOrder);
+    } catch (error) {
+      console.error('고객 주문 조회 오류:', error);
+      toast({ variant: 'destructive', title: '조회 실패', description: '고객 주문 내역을 불러오지 못했습니다.' });
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
   const fetchOrdersForSettlement = useCallback(async (targetDateStr: string, startDateStr?: string) => {
     try {
       setLoading(true);
@@ -877,7 +902,8 @@ export function useOrders() {
     cancelOrder,
     deleteOrder,
     completeDelivery,
-    fetchOrdersForSettlement
+    fetchOrdersForSettlement,
+    fetchOrdersByCustomer
   };
 }
 

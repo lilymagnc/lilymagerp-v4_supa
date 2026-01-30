@@ -59,11 +59,11 @@ export function StatementDialog({ isOpen, onOpenChange, customer }: StatementDia
     const customerOrders = orders.filter(order => {
       let orderDate: Date;
       const orderDateValue = order.orderDate as any;
-      
+
       // Firebase Timestamp 객체인 경우
       if (orderDateValue && typeof orderDateValue.toDate === 'function') {
         orderDate = orderDateValue.toDate();
-      } 
+      }
       // Timestamp 객체의 seconds/nanoseconds 구조인 경우
       else if (orderDateValue && typeof orderDateValue.seconds === 'number') {
         orderDate = new Date(orderDateValue.seconds * 1000);
@@ -72,15 +72,15 @@ export function StatementDialog({ isOpen, onOpenChange, customer }: StatementDia
       else {
         orderDate = new Date(orderDateValue);
       }
-      
-      return order.orderer.contact === customer.contact && 
-             orderDate >= startDate && 
-             orderDate <= new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59);
+
+      return order.orderer.contact === customer.contact &&
+        orderDate >= startDate &&
+        orderDate <= new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59);
     });
 
     const summary = {
       totalOrders: customerOrders.length,
-      totalAmount: customerOrders.reduce((sum, order) => sum + (order.summary.total || 0), 0),
+      totalAmount: customerOrders.reduce((sum, order) => sum + (order.summary.subtotal || (order.summary.total - (order.summary.deliveryFee || 0)) || 0), 0),
       totalDeliveryFee: customerOrders.reduce((sum, order) => sum + (order.summary.deliveryFee || 0), 0),
       grandTotal: customerOrders.reduce((sum, order) => sum + (order.summary.total || 0), 0)
     };
@@ -98,14 +98,14 @@ export function StatementDialog({ isOpen, onOpenChange, customer }: StatementDia
     if (!statementData || !customer) {
       return;
     }
-    
+
     // 인쇄 페이지로 이동
     const params = new URLSearchParams({
       customerId: customer.id,
       startDate: startDate!.toISOString(),
       endDate: endDate!.toISOString()
     });
-    
+
     router.push(`/dashboard/customers/statement/print?${params.toString()}`);
     onOpenChange(false); // 다이얼로그 닫기
   };
@@ -231,7 +231,7 @@ export function StatementDialog({ isOpen, onOpenChange, customer }: StatementDia
                       <span>{(() => {
                         const orderDateValue = order.orderDate as any;
                         let orderDate: Date;
-                        
+
                         if (orderDateValue && typeof orderDateValue.toDate === 'function') {
                           orderDate = orderDateValue.toDate();
                         } else if (orderDateValue && typeof orderDateValue.seconds === 'number') {
@@ -239,7 +239,7 @@ export function StatementDialog({ isOpen, onOpenChange, customer }: StatementDia
                         } else {
                           orderDate = new Date(orderDateValue);
                         }
-                        
+
                         return format(orderDate, "MM/dd", { locale: ko });
                       })()}</span>
                       <span>{order.summary.total?.toLocaleString()}원</span>
@@ -258,8 +258,8 @@ export function StatementDialog({ isOpen, onOpenChange, customer }: StatementDia
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             취소
           </Button>
-          <Button 
-            onClick={generateStatement} 
+          <Button
+            onClick={generateStatement}
             disabled={!statementData || statementData.orders.length === 0}
           >
             인쇄하기

@@ -8,6 +8,9 @@ export interface SystemSettings {
   siteDescription: string;
   contactEmail: string;
   contactPhone: string;
+  representative: string;
+  businessNumber: string;
+  address: string;
   defaultDeliveryFee: number;
   freeDeliveryThreshold: number;
   emailNotifications: boolean;
@@ -46,8 +49,11 @@ export interface SystemSettings {
 export const defaultSettings: SystemSettings = {
   siteName: "릴리맥 ERP",
   siteDescription: "플라워샵 주문관리 및 가맹점 관리를 위한 ERP 시스템",
-  contactEmail: "admin@lilymag.com",
-  contactPhone: "02-1234-5678",
+  contactEmail: "lilymagshop@naver.com",
+  contactPhone: "010-3911-8206",
+  representative: "김대표",
+  businessNumber: "111-22-33333",
+  address: "서울특별시 영등포구 국제금융로6길 33 1002호",
   defaultDeliveryFee: 3000,
   freeDeliveryThreshold: 50000,
   emailNotifications: true,

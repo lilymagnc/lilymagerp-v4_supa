@@ -20,29 +20,57 @@ import { useCustomers, Customer } from "@/hooks/use-customers";
 import { useProducts, Product } from "@/hooks/use-products";
 import { useBranches } from "@/hooks/use-branches";
 import { useAuth } from "@/hooks/use-auth";
-import { Timestamp } from "firebase/firestore";
+import { useSettings } from "@/hooks/use-settings";
+import { useUserRole } from "@/hooks/use-user-role";
 import { Switch } from "@/components/ui/switch";
 import { debounce } from "lodash";
+import { useOrders, Order } from "@/hooks/use-orders";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface QuotationFormProps {
     initialData?: Quotation;
     onSubmit: (data: Omit<Quotation, 'id'>) => Promise<void>;
+    onDataChange?: (data: Omit<Quotation, 'id'>) => void;
     isSubmitting: boolean;
 }
 
-export function QuotationForm({ initialData, onSubmit, isSubmitting }: QuotationFormProps) {
+export function QuotationForm({ initialData, onSubmit, onDataChange, isSubmitting }: QuotationFormProps) {
     const router = useRouter();
     const { user } = useAuth();
     const { customers } = useCustomers();
-    const { products } = useProducts();
+    const { products, fetchProducts } = useProducts();
     const { branches } = useBranches();
+    const { settings } = useSettings();
+    const { userRole, isHQManager } = useUserRole();
+    const { fetchOrdersByCustomer } = useOrders();
+
+    // Import Purchase History State
+    const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+    const [importStartDate, setImportStartDate] = useState<Date>(new Date(new Date().setMonth(new Date().getMonth() - 3)));
+    const [importEndDate, setImportEndDate] = useState<Date>(new Date());
+    const [availableOrders, setAvailableOrders] = useState<Order[]>([]);
+    const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
+    const [importLoading, setImportLoading] = useState(false);
+
+    // Fetch products on load
+    useEffect(() => {
+        fetchProducts();
+    }, [fetchProducts]);
 
     const [selectedBranchId, setSelectedBranchId] = useState(initialData?.branchId || "");
+    const [type, setType] = useState<'quotation' | 'receipt' | 'statement'>(initialData?.type || 'quotation');
 
     const [quotationNumber, setQuotationNumber] = useState(initialData?.quotationNumber || "");
-    const [validUntil, setValidUntil] = useState<Date | undefined>(
-        initialData?.validUntil ? (initialData.validUntil instanceof Timestamp ? initialData.validUntil.toDate() : initialData.validUntil) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // Default 7 days
-    );
+    const [validUntil, setValidUntil] = useState<Date | undefined>(() => {
+        if (initialData?.validUntil) {
+            const date = new Date(initialData.validUntil);
+            // If date is 1970 (e.g. from null/zero in DB), default to today
+            if (date.getFullYear() === 1970) return new Date();
+            return date;
+        }
+        return new Date();
+    });
 
     // Customer State
     const [customerName, setCustomerName] = useState(initialData?.customer.name || "");
@@ -67,7 +95,12 @@ export function QuotationForm({ initialData, onSubmit, isSubmitting }: Quotation
 
     // Summary State
     const [discountRate, setDiscountRate] = useState(0);
-    const [includeVat, setIncludeVat] = useState(initialData?.summary?.includeVat ?? true);
+    const [includeVat, setIncludeVat] = useState<boolean>(() => {
+        if (initialData?.summary?.includeVat !== undefined) {
+            return initialData.summary.includeVat;
+        }
+        return false; // Default explicitly to false
+    });
     const [notes, setNotes] = useState(initialData?.notes || "");
     const [terms, setTerms] = useState(initialData?.terms || "본 견적서는 발행일로부터 7일간 유효합니다.");
 
@@ -80,15 +113,24 @@ export function QuotationForm({ initialData, onSubmit, isSubmitting }: Quotation
         }
     }, [initialData, quotationNumber]);
 
-    // Set default branch for non-HQ users
+    // Set default branch for branch users
     useEffect(() => {
-        if (user && user.franchise !== '본사' && !selectedBranchId) {
-            const userBranch = branches.find(b => b.name === user.franchise);
-            if (userBranch) {
-                setSelectedBranchId(userBranch.id);
+        if (!initialData && !selectedBranchId && branches.length > 0) {
+            if (userRole?.branchId) {
+                setSelectedBranchId(userRole.branchId);
+            } else if (user?.franchise && user.franchise !== '본사') {
+                const userBranch = branches.find(b => b.name === user.franchise);
+                if (userBranch) {
+                    setSelectedBranchId(userBranch.id);
+                }
+            } else if (isHQManager()) {
+                const hqBranch = branches.find(b => b.type === '본사' || b.name.includes('플라워랩'));
+                if (hqBranch) {
+                    setSelectedBranchId(hqBranch.id);
+                }
             }
         }
-    }, [user, branches, selectedBranchId]);
+    }, [user, userRole, branches, selectedBranchId, initialData, isHQManager]);
 
     // Calculate Summary
     const summary = useMemo(() => {
@@ -106,6 +148,63 @@ export function QuotationForm({ initialData, onSubmit, isSubmitting }: Quotation
             includeVat
         };
     }, [items, discountRate, includeVat]);
+
+    // Provider Info based on selected branch
+    const provider = useMemo(() => {
+        const selectedBranch = branches.find(b => b.id === selectedBranchId);
+        return {
+            name: selectedBranch?.name || settings.siteName || "릴리맥 (LilyMag)",
+            representative: selectedBranch?.manager || settings.representative || "김선영",
+            address: selectedBranch?.address || settings.address || "서울시 영등포구 국제금융로8길 25 주택건설회관 B1",
+            contact: selectedBranch?.phone || settings.contactPhone || "02-782-4563",
+            email: settings.contactEmail || "lilymagshop@naver.com",
+            businessNumber: selectedBranch?.businessNumber || settings.businessNumber || "123-45-67890",
+            account: selectedBranch?.account || ""
+        };
+    }, [branches, selectedBranchId, settings]);
+
+    // Construct full quotation data for preview/submit
+    const currentQuotationData = useMemo(() => {
+        if (!user) return null;
+
+        const selectedBranch = branches.find(b => b.id === selectedBranchId);
+        const branchName = selectedBranch?.name || user.franchise || '본사';
+
+        return {
+            type,
+            quotationNumber,
+            createdAt: initialData?.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            validUntil: validUntil ? validUntil.toISOString() : new Date().toISOString(),
+            customer: {
+                id: selectedCustomer?.id,
+                name: customerName,
+                contact: customerContact,
+                email: customerEmail,
+                address: customerAddress
+            },
+            items,
+            summary,
+            status: initialData?.status || 'draft',
+            notes,
+            terms,
+            branchId: selectedBranchId || (user.franchise === '본사' ? 'HQ' : (user.franchise || '')),
+            branchName: branchName,
+            provider,
+            createdBy: user.id
+        };
+    }, [
+        user, branches, selectedBranchId, quotationNumber, initialData, validUntil,
+        customerName, customerContact, customerEmail, customerAddress, selectedCustomer,
+        items, summary, notes, terms, provider
+    ]);
+
+    // Notify parent of data changes for real-time preview
+    useEffect(() => {
+        if (onDataChange && currentQuotationData) {
+            onDataChange(currentQuotationData);
+        }
+    }, [currentQuotationData, onDataChange]);
 
     const formatPhoneNumber = (value: string) => {
         const phoneNumber = value.replace(/[^\d]/g, '');
@@ -132,8 +231,8 @@ export function QuotationForm({ initialData, onSubmit, isSubmitting }: Quotation
         try {
             const searchTerm = query.toLowerCase().trim();
             const results = customers.filter(c =>
-                c.name.toLowerCase().includes(searchTerm) ||
-                c.contact.replace(/[^0-9]/g, '').includes(searchTerm) ||
+                (c.name || "").toLowerCase().includes(searchTerm) ||
+                (c.contact || "").replace(/[^0-9]/g, '').includes(searchTerm) ||
                 (c.companyName && c.companyName.toLowerCase().includes(searchTerm))
             );
             setCustomerSearchResults(results);
@@ -165,7 +264,7 @@ export function QuotationForm({ initialData, onSubmit, isSubmitting }: Quotation
         }
         const searchTerm = query.toLowerCase().trim();
         const results = products.filter(p =>
-            p.name.toLowerCase().includes(searchTerm)
+            (p.name || "").toLowerCase().includes(searchTerm)
         );
         setProductSearchResults(results);
     }, [products]);
@@ -214,46 +313,9 @@ export function QuotationForm({ initialData, onSubmit, isSubmitting }: Quotation
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-
-        if (!user) return;
-
-        const selectedBranch = branches.find(b => b.id === selectedBranchId);
-        const branchName = selectedBranch?.name || user.franchise || '본사';
-
-        // Provider info from selected branch or default to HQ info if not found (fallback)
-        const provider = {
-            name: selectedBranch?.name || "릴리맥 (LilyMag)",
-            representative: selectedBranch?.manager || "김선영",
-            address: selectedBranch?.address || "서울시 영등포구 국제금융로8길 25 주택건설회관 B1",
-            contact: selectedBranch?.phone || "02-782-4563",
-            email: "lilymagshop@naver.com",
-            businessNumber: selectedBranch?.businessNumber || "123-45-67890"
-        };
-
-        const quotationData: Omit<Quotation, 'id'> = {
-            quotationNumber,
-            createdAt: initialData?.createdAt || Timestamp.now(),
-            updatedAt: Timestamp.now(),
-            validUntil: validUntil ? Timestamp.fromDate(validUntil) : Timestamp.fromDate(new Date()),
-            customer: {
-                id: selectedCustomer?.id,
-                name: customerName,
-                contact: customerContact,
-                email: customerEmail,
-                address: customerAddress
-            },
-            items,
-            summary,
-            status: initialData?.status || 'draft',
-            notes,
-            terms,
-            branchId: selectedBranchId || (user.franchise === '본사' ? 'HQ' : (user.franchise || '')),
-            branchName: branchName,
-            provider,
-            createdBy: user.uid
-        };
-
-        await onSubmit(quotationData);
+        if (currentQuotationData) {
+            await onSubmit(currentQuotationData);
+        }
     };
 
     // Close dropdowns on outside click
@@ -278,12 +340,27 @@ export function QuotationForm({ initialData, onSubmit, isSubmitting }: Quotation
             <div className="grid gap-6 md:grid-cols-2">
                 <Card>
                     <CardHeader>
-                        <CardTitle>견적서 정보</CardTitle>
+                        <CardTitle>문서 정보</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        <div className="grid gap-2">
-                            <Label>견적서 번호</Label>
-                            <Input value={quotationNumber} onChange={(e) => setQuotationNumber(e.target.value)} required />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>문서 종류</Label>
+                                <Select value={type} onValueChange={(val: any) => setType(val)}>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="quotation">견적서</SelectItem>
+                                        <SelectItem value="receipt">간이영수증</SelectItem>
+                                        <SelectItem value="statement">거래명세서</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>문서 번호</Label>
+                                <Input value={quotationNumber} onChange={(e) => setQuotationNumber(e.target.value)} required />
+                            </div>
                         </div>
                         <div className="grid gap-2">
                             <Label>지점 (공급자)</Label>
@@ -368,6 +445,184 @@ export function QuotationForm({ initialData, onSubmit, isSubmitting }: Quotation
                                     )}
                                 </div>
                             )}
+                        </div>
+                        {/* Import Dialog */}
+                        <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+                            <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+                                <DialogHeader>
+                                    <DialogTitle>고객 구매 내역 불러오기</DialogTitle>
+                                    <DialogDescription>
+                                        기간을 선택하여 고객의 과거 주문 내역을 검색하고 견적서에 추가할 수 있습니다.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-4">
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <Button variant={"outline"} className={cn("w-[200px] justify-start text-left font-normal", !importStartDate && "text-muted-foreground")}>
+                                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                                    {importStartDate ? format(importStartDate, "yyyy-MM-dd") : <span>시작일</span>}
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-0">
+                                                <Calendar mode="single" selected={importStartDate} onSelect={(date) => date && setImportStartDate(date)} initialFocus />
+                                            </PopoverContent>
+                                        </Popover>
+                                        <span>~</span>
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <Button variant={"outline"} className={cn("w-[200px] justify-start text-left font-normal", !importEndDate && "text-muted-foreground")}>
+                                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                                    {importEndDate ? format(importEndDate, "yyyy-MM-dd") : <span>종료일</span>}
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-0">
+                                                <Calendar mode="single" selected={importEndDate} onSelect={(date) => date && setImportEndDate(date)} initialFocus />
+                                            </PopoverContent>
+                                        </Popover>
+                                        <Button onClick={async () => {
+                                            if (!selectedCustomer?.id) return;
+                                            setImportLoading(true);
+                                            try {
+                                                const orders = await fetchOrdersByCustomer(selectedCustomer.id, importStartDate, importEndDate);
+                                                setAvailableOrders(orders);
+                                            } finally {
+                                                setImportLoading(false);
+                                            }
+                                        }} disabled={importLoading}>
+                                            {importLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
+                                            조회
+                                        </Button>
+                                    </div>
+
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead className="w-[50px]">선택</TableHead>
+                                                <TableHead>주문일자</TableHead>
+                                                <TableHead>품목명</TableHead>
+                                                <TableHead className="text-right">금액</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {availableOrders.length === 0 ? (
+                                                <TableRow>
+                                                    <TableCell colSpan={4} className="text-center py-4 text-muted-foreground">
+                                                        조회된 구매 내역이 없습니다.
+                                                    </TableCell>
+                                                </TableRow>
+                                            ) : (
+                                                availableOrders.map((order) => (
+                                                    <TableRow key={order.id}>
+                                                        <TableCell>
+                                                            <Checkbox
+                                                                checked={selectedOrders.includes(order.id)}
+                                                                onCheckedChange={(checked) => {
+                                                                    if (checked) {
+                                                                        setSelectedOrders([...selectedOrders, order.id]);
+                                                                    } else {
+                                                                        setSelectedOrders(selectedOrders.filter(id => id !== order.id));
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell>{format(new Date(order.orderDate), 'yyyy-MM-dd')}</TableCell>
+                                                        <TableCell>
+                                                            {order.items.map(item => item.name).join(', ')}
+                                                        </TableCell>
+                                                        <TableCell className="text-right">
+                                                            {order.summary.total.toLocaleString()}원
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                                <DialogFooter>
+                                    <Button variant="outline" onClick={() => setIsImportDialogOpen(false)}>취소</Button>
+                                    <Button onClick={() => {
+                                        const newItems: QuotationItem[] = [];
+                                        availableOrders.filter(o => selectedOrders.includes(o.id)).forEach(order => {
+                                            order.items.forEach(item => {
+                                                newItems.push({
+                                                    id: crypto.randomUUID(), // New ID for quotation item
+                                                    name: item.name,
+                                                    quantity: item.quantity,
+                                                    price: item.price,
+                                                    unit: "EA",
+                                                    description: `${format(new Date(order.orderDate), 'yyyy-MM-dd')} 구매분`
+                                                });
+                                            });
+                                        });
+                                        setItems([...items, ...newItems]);
+                                        setIsImportDialogOpen(false);
+                                        setSelectedOrders([]);
+                                        setAvailableOrders([]);
+                                    }}>
+                                        선택 항목 가져오기
+                                    </Button>
+                                </DialogFooter>
+                            </DialogContent>
+                        </Dialog>
+
+                        <div className="flex items-center space-x-2 relative customer-search-container">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    placeholder="고객 검색 (이름, 연락처, 회사명)..."
+                                    value={customerName ? customerName : customerSearchQuery}
+                                    onChange={(e) => {
+                                        setCustomerSearchQuery(e.target.value);
+                                        if (e.target.value === '') {
+                                            setCustomerName(""); // Clear if cleared (optional, maybe keep name?)
+                                        } else {
+                                            if (selectedCustomer && e.target.value !== selectedCustomer.name) {
+                                                // If user types over selected name, unselect
+                                                setSelectedCustomer(null);
+                                                setCustomerName(e.target.value);
+                                            } else {
+                                                setCustomerName(e.target.value);
+                                            }
+                                        }
+                                        setIsCustomerSearchOpen(true);
+                                        debouncedCustomerSearch(e.target.value);
+                                    }}
+                                    onFocus={() => setIsCustomerSearchOpen(true)}
+                                    className="pl-8"
+                                />
+                                {selectedCustomer && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="absolute right-1 top-1 h-8"
+                                        onClick={() => setIsImportDialogOpen(true)}
+                                    >
+                                        구매 내역 불러오기
+                                    </Button>
+                                )}
+                                {isCustomerSearchOpen && (customerSearchResults.length > 0 || customerSearchLoading) && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+                                        {customerSearchLoading ? (
+                                            <div className="p-4 text-center text-sm text-muted-foreground">검색 중...</div>
+                                        ) : (
+                                            customerSearchResults.map((customer) => (
+                                                <div
+                                                    key={customer.id}
+                                                    className="p-2 cursor-pointer hover:bg-muted text-sm"
+                                                    onClick={() => handleCustomerSelect(customer)}
+                                                >
+                                                    <div className="font-medium">{customer.name}</div>
+                                                    <div className="text-xs text-muted-foreground">
+                                                        {customer.contact} {customer.companyName && `| ${customer.companyName}`}
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                         <div className="grid gap-2">
                             <Label>연락처</Label>

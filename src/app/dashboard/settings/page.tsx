@@ -254,6 +254,30 @@ export default function SettingsPage() {
                     onChange={(e) => setLocalSettings(prev => ({ ...prev, contactPhone: e.target.value }))}
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="representative">대표자명</Label>
+                  <Input
+                    id="representative"
+                    value={localSettings.representative || ""}
+                    onChange={(e) => setLocalSettings(prev => ({ ...prev, representative: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="businessNumber">사업자등록번호</Label>
+                  <Input
+                    id="businessNumber"
+                    value={localSettings.businessNumber || ""}
+                    onChange={(e) => setLocalSettings(prev => ({ ...prev, businessNumber: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="address">사업장 주소</Label>
+                  <Input
+                    id="address"
+                    value={localSettings.address || ""}
+                    onChange={(e) => setLocalSettings(prev => ({ ...prev, address: e.target.value }))}
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
