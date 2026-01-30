@@ -464,95 +464,86 @@ export const exportOrdersToExcel = (orders: any[], startDate?: string, endDate?:
       '배송지주소', '수령자명', '수령자연락처', '메모', '생성일'
     ];
 
-    // 데이터 변환
-    const data = filteredOrders.map(order => {
-      const orderDate = parseDate(order.orderDate) || new Date();
-      const formattedOrderDate = orderDate.toLocaleString('ko-KR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
+    // 데이터 변환을 위한 헬퍼 함수
+    const mapToExcelRows = (ordersToMap: any[]) => {
+      const rows: any[] = [];
+      ordersToMap.forEach(order => {
+        const orderDate = parseDate(order.orderDate) || new Date();
+        const formattedOrderDate = orderDate.toLocaleString('ko-KR', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
 
-      // 상품 정보 (첫 번째 상품만 표시, 나머지는 별도 행으로)
-      const firstItem = order.items?.[0];
-      const itemName = firstItem ? firstItem.name : '-';
-      const itemQuantity = firstItem ? firstItem.quantity : 0;
-      const itemPrice = firstItem ? firstItem.price : 0;
-      const itemTotal = firstItem ? (firstItem.price * firstItem.quantity) : 0;
+        const createdAtStr = order.createdAt
+          ? (typeof order.createdAt.toDate === 'function'
+            ? format(order.createdAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko })
+            : format(new Date(order.createdAt), 'yyyy-MM-dd HH:mm', { locale: ko }))
+          : '-';
 
-      return [
-        order.id,
-        formattedOrderDate,
-        order.branchName || '-',
-        order.orderer?.name || '-',
-        order.orderer?.contact || '-',
-        order.status || '-',
-        itemName,
-        itemQuantity,
-        (itemPrice || 0).toLocaleString(),
-        (itemTotal || 0).toLocaleString(),
-        (order.summary?.deliveryFee || 0).toLocaleString(),
-        (order.summary?.total || 0).toLocaleString(),
-        order.payment?.method || '-',
-        order.payment?.status || '-',
-        order.pickupInfo?.date || '-',
-        order.pickupInfo?.time || '-',
-        order.deliveryInfo?.date || '-',
-        order.deliveryInfo?.time || '-',
-        order.deliveryInfo?.address || '-',
-        order.deliveryInfo?.recipientName || '-',
-        order.deliveryInfo?.recipientContact || '-',
-        order.memo || '-',
-        order.createdAt ? format(order.createdAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '-'
-      ];
-    });
-
-    // 추가 상품이 있는 경우 별도 행으로 추가
-    const additionalRows: any[] = [];
-    filteredOrders.forEach(order => {
-      if (order.items && order.items.length > 1) {
-        for (let i = 1; i < order.items.length; i++) {
-          const item = order.items[i];
-          additionalRows.push([
+        if (!order.items || order.items.length === 0) {
+          rows.push([
             order.id,
-            '', // 주문일시는 첫 번째 행에만 표시
-            '', // 지점명
-            '', // 주문자명
-            '', // 주문자연락처
-            '', // 주문상태
-            item.name,
-            item.quantity,
-            (item.price || 0).toLocaleString(),
-            ((item.price || 0) * (item.quantity || 0)).toLocaleString(),
-            '', // 배송비
-            '', // 총금액
-            '', // 결제방법
-            '', // 결제상태
-            '', // 픽업예정일
-            '', // 픽업예정시간
-            '', // 배송예정일
-            '', // 배송예정시간
-            '', // 배송지주소
-            '', // 수령자명
-            '', // 수령자연락처
-            '', // 메모
-            ''  // 생성일
+            formattedOrderDate,
+            order.branchName || '-',
+            order.orderer?.name || '-',
+            order.orderer?.contact || '-',
+            order.status || '-',
+            '-', 0, '0', '0',
+            (order.summary?.deliveryFee || 0).toLocaleString(),
+            (order.summary?.total || 0).toLocaleString(),
+            order.payment?.method || '-',
+            order.payment?.status || '-',
+            order.pickupInfo?.date || '-',
+            order.pickupInfo?.time || '-',
+            order.deliveryInfo?.date || '-',
+            order.deliveryInfo?.time || '-',
+            order.deliveryInfo?.address || '-',
+            order.deliveryInfo?.recipientName || '-',
+            order.deliveryInfo?.recipientContact || '-',
+            order.memo || '-',
+            createdAtStr
           ]);
+        } else {
+          order.items.forEach((item: any) => {
+            rows.push([
+              order.id,
+              formattedOrderDate,
+              order.branchName || '-',
+              order.orderer?.name || '-',
+              order.orderer?.contact || '-',
+              order.status || '-',
+              item.name || '-',
+              item.quantity || 0,
+              (item.price || 0).toLocaleString(),
+              ((item.price || 0) * (item.quantity || 0)).toLocaleString(),
+              (order.summary?.deliveryFee || 0).toLocaleString(),
+              (order.summary?.total || 0).toLocaleString(),
+              order.payment?.method || '-',
+              order.payment?.status || '-',
+              order.pickupInfo?.date || '-',
+              order.pickupInfo?.time || '-',
+              order.deliveryInfo?.date || '-',
+              order.deliveryInfo?.time || '-',
+              order.deliveryInfo?.address || '-',
+              order.deliveryInfo?.recipientName || '-',
+              order.deliveryInfo?.recipientContact || '-',
+              order.memo || '-',
+              createdAtStr
+            ]);
+          });
         }
-      }
-    });
-
-    // 모든 데이터 합치기
-    const allData = [headers, ...data, ...additionalRows];
+      });
+      return rows;
+    };
 
     // 워크북 생성
     const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet(allData);
 
     // 열 너비 설정
-    worksheet['!cols'] = [
+    const colWidths = [
       { width: 15 }, // 주문번호
       { width: 20 }, // 주문일시
       { width: 12 }, // 지점명
@@ -578,14 +569,34 @@ export const exportOrdersToExcel = (orders: any[], startDate?: string, endDate?:
       { width: 20 }  // 생성일
     ];
 
-    // 시트 이름 설정
-    XLSX.utils.book_append_sheet(workbook, worksheet, '주문내역');
+    // 1. 전체 데이터 시트 추가
+    const totalRows = mapToExcelRows(filteredOrders);
+    const wsTotal = XLSX.utils.aoa_to_sheet([headers, ...totalRows]);
+    wsTotal['!cols'] = colWidths;
+    XLSX.utils.book_append_sheet(workbook, wsTotal, '전체');
+
+    // 2. 지점별 시트 정의 및 추가
+    const targetBranches = [
+      { full: '릴리맥여의도점', short: '여의도점' },
+      { full: '릴리맥광화문점', short: '광화문점' },
+      { full: '릴리맥NC이스트폴점', short: '이스트폴점' }
+    ];
+
+    targetBranches.forEach(branch => {
+      const branchOrders = filteredOrders.filter(o => o.branchName === branch.full);
+      if (branchOrders.length > 0) {
+        const branchRows = mapToExcelRows(branchOrders);
+        const wsBranch = XLSX.utils.aoa_to_sheet([headers, ...branchRows]);
+        wsBranch['!cols'] = colWidths;
+        XLSX.utils.book_append_sheet(workbook, wsBranch, branch.short);
+      }
+    });
 
     // 파일명 생성
     const today = format(new Date(), 'yyyy-MM-dd', { locale: ko });
     const fileName = startDate && endDate
-      ? `주문내역_${startDate}_${endDate}.xlsx`
-      : `주문내역_${today}.xlsx`;
+      ? `주문내역_통합_${startDate}_${endDate}.xlsx`
+      : `주문내역_통합_${today}.xlsx`;
 
     // 파일 다운로드
     const excelBuffer = XLSX.write(workbook, {
