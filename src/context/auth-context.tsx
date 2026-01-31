@@ -118,11 +118,41 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     let mounted = true;
 
-    // 1. 초기 세션 확인 (Timeout Protected)
-    // onAuthStateChange가 놓칠 수 있는 초기 상태를 확인하되, getSession이 멈추는 것을 방지하기 위해 2초 타임아웃 적용
+    // 1. LocalStorage 토큰 확인 (무한 로딩 방지의 핵심)
+    // Supabase가 세션을 복구하기 전에, 로컬 스토리지에 토큰이 있는지 먼저 확인합니다.
+    // 토큰이 아예 없다면 -> 기다릴 필요 없이 즉시 로딩 끝 (로그인 페이지로)
+    // 토큰이 있다면 -> Supabase가 처리할 때까지 기다림 (단, 10초 이상 걸리면 타임아웃)
+    const checkLocalToken = () => {
+      if (typeof window === 'undefined') return false;
+      // Supabase default key pattern: sb-<project-ref>-auth-token
+      // 또는 우리가 이전에 썼던 'supabase-auth-token'
+      // 모든 키를 뒤져서 'sb-'로 시작하거나 'supabase'가 들어간 키가 있는지 확인
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('sb-') || key.includes('supabase'))) {
+            return true;
+          }
+        }
+      } catch (e) {
+        console.warn("LocalStorage access failed:", e);
+      }
+      return false;
+    };
+
+    const hasToken = checkLocalToken();
+
+    if (!hasToken) {
+      console.log("[Auth] No local token found. Immediate sign-out state.");
+      setLoading(false);
+      // 토큰이 없으므로 initSession이나 리스너를 기다릴 필요가 없음
+      return;
+    }
+
+    // 2. 초기 세션 확인 (Timeout Protected)
     const initSession = async () => {
       try {
-        console.log("[Auth] Checking initial session...");
+        console.log("[Auth] Checking initial session (Token detected)...");
         const sessionPromise = supabase.auth.getSession();
         const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Session init timeout')), 2000)
@@ -131,20 +161,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const { data: { session }, error } = await Promise.race([sessionPromise, timeoutPromise]) as any;
 
         if (error) throw error;
-        if (mounted && session) { // 세션이 있을 때만 처리 (없으면 onAuthStateChange가 SIGNED_OUT 처리 or fallback)
+        if (mounted && session) {
           await handleSession(session);
         }
       } catch (error) {
-        console.warn("[Auth] Initial session check failed or timed out (using listener instead):", error);
-        // 여기서 로딩을 끄지 않습니다. onAuthStateChange가 곧 처리하거나, 아래 Safety Timer가 처리합니다.
+        console.warn("[Auth] Initial session check warning:", error);
       }
     };
 
     initSession();
 
-    // 2. Auth 상태 변경 감지
-    // Supabase의 onAuthStateChange는 구독 시 현재 세션 정보를 즉시 반환(INITIAL_SESSION)하므로
-    // 별도의 getSession() 호출 없이도 초기화가 가능합니다.
+    // 3. Auth 상태 변경 감지
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       console.log(`[Auth] Auth state changed: ${_event}`, session?.user?.email);
       if (mounted) {
@@ -152,13 +179,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     });
 
-    // [Safety] 만약 위 두 가지 방법이 모두 실패하여 로딩이 3초 이상 지속되면 강제 종료 (최후의 보루)
+    // [Safety] 토큰은 있는데 Supabase가 10초 동안 아무 반응이 없으면 그때서야 포기
+    // 3초는 너무 짧아서 네트워크 지연 시 로그아웃됨. 10초로 늘림.
     const safetyTimer = setTimeout(() => {
       if (mounted && loading) {
-        console.warn("[Auth] Safety timeout triggered. Releasing loading state.");
+        console.warn("[Auth] Safety timeout (10s) triggered. Force releasing loading.");
         setLoading(false);
       }
-    }, 3000);
+    }, 10000);
 
     return () => {
       mounted = false;

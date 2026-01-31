@@ -33,7 +33,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
         persistSession: true, // 세션 자동 저장 (localStorage)
         autoRefreshToken: true, // 토큰 자동 갱신
         detectSessionInUrl: true,
-        storageKey: 'supabase-auth-token', // 명시적인 키 이름 설정 (충돌 방지)
+        // storageKey: 'supabase-auth-token', // 기본값 사용 (sb-[project-id]-auth-token) to fix reload persistence
     },
     // 전역적인 에러 처리가 필요하다면 여기서 옵션 추가 가능
 });
