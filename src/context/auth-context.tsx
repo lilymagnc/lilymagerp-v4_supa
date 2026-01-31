@@ -113,16 +113,38 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     // 1. 초기 세션 확인
     const initSession = async () => {
+      // [Safety] 3초 타임아웃 설정: Supabase 응답이 없어도 3초 뒤엔 무조건 로딩 해제
+      const timeoutId = setTimeout(() => {
+        if (mounted && loading) {
+          console.warn("[Auth] Initialization timed out (3s). Force releasing loading state.");
+          setLoading(false);
+          // 타임아웃 시 user는 null 상태로 유지되어 로그인 페이지로 리다이렉트됨
+        }
+      }, 3000);
+
       try {
+        console.log("[Auth] Starting session check...");
         const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        if (mounted) await handleSession(session);
+
+        clearTimeout(timeoutId); // 정상 응답 오면 타임아웃 해제
+
+        if (error) {
+          console.error("[Auth] Session init error:", error);
+          throw error;
+        }
+
+        if (mounted) {
+          console.log("[Auth] Session check complete. User:", session?.user?.email || "None");
+          await handleSession(session);
+        }
       } catch (error) {
-        console.error("Auth init error:", error);
+        console.error("[Auth] Init failed:", error);
         if (mounted) {
           setUser(null);
           setLoading(false);
         }
+      } finally {
+        clearTimeout(timeoutId);
       }
     };
 
