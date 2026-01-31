@@ -49,7 +49,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
 
       if (error) {
-        console.error("Error fetching user role:", error);
+        // 조용히 넘어감 (기본 권한으로 앱 사용 가능)
+        console.log("User role fetch delayed, using default permissions.");
       }
 
       const roleData = data as any;
@@ -165,7 +166,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           await handleSession(session);
         }
       } catch (error) {
-        console.warn("[Auth] Initial session check warning:", error);
+        // [Silent Failover] 타임아웃/에러 발생 시 조용히 이벤트 리스너(onAuthStateChange)로 위임
+        // v3와 동일하게 사용자는 에러를 느끼지 못하고 자연스럽게 로그인됩니다.
+        console.log("[Auth] Switch to event listener mode (Session init delayed)", error instanceof Error ? error.message : "");
       }
     };
 
@@ -183,7 +186,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // 3초는 너무 짧아서 네트워크 지연 시 로그아웃됨. 10초로 늘림.
     const safetyTimer = setTimeout(() => {
       if (mounted && loading) {
-        console.warn("[Auth] Safety timeout (10s) triggered. Force releasing loading.");
+        // [Silent Recovery] 10초가 지나도 로딩 중이라면 조용히 로딩을 끝내고 화면을 보여줍니다.
         setLoading(false);
       }
     }, 10000);
