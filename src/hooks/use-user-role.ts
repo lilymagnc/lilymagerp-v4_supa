@@ -52,12 +52,15 @@ export function useUserRole() {
       if (data) {
         setUserRole(mapRowToUserRole(data));
       } else {
-        // Create default if not exists (matching original logic)
-        await createDefaultUserRole(user.email, user.role || '직원');
+        // [Safety] Do NOT create default role automatically in the fetch loop.
+        // This causes infinite recursion if creation fails or takes time.
+        // Instead, we just require manual creation or a separate flow.
+        console.warn("[UserRole] Role not found for user:", user.email);
+        toast({ title: '권한 정보 없음', description: '관리자에게 문의하세요.', variant: 'destructive' });
       }
     } catch (error) {
       console.error('Error fetching user role:', error);
-      toast({ variant: 'destructive', title: '역할 조회 실패', description: '오류가 발생했습니다.' });
+      // toast({ variant: 'destructive', title: '역할 조회 실패', description: '오류가 발생했습니다.' });
     } finally {
       setLoading(false);
     }
