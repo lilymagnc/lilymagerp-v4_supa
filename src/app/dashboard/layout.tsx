@@ -34,13 +34,25 @@ export default function DashboardLayout({
         router.push('/login');
     };
 
-    // roleLoading을 제거하여 역할 로딩 중에도 UI가 렌더링되도록 변경 (무한 루프 방지 및 반응성 향상)
-    if (loading || !user) {
+    // 3. 로딩 상태 처리
+    if (loading) {
         return (
             <div className="flex items-center justify-center min-h-screen">
                 <div className="text-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
                     <p>로딩 중...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // 4. 비로그인 상태 (Redirecting...)
+    if (!user) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+                    <p>로그인 페이지로 이동 중...</p>
                 </div>
             </div>
         );
