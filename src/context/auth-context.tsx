@@ -33,13 +33,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const fetchUserRole = useCallback(async (email: string, userId: string): Promise<UserProfile> => {
     try {
       // 1. user_roles 테이블에서 사용자 역할 확인
-      const { data, error } = await supabase
+      // [Safety] DB 쿼리가 5초 이상 걸리면 기본 권한으로 진행 (무한 로딩 방지)
+      const fetchPromise = supabase
         .from('user_roles')
         .select('*')
         .eq('email', email)
         .eq('is_active', true)
         .limit(1)
         .maybeSingle();
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Role fetch timeout')), 5000)
+      );
+
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
 
       if (error) {
         console.error("Error fetching user role:", error);
@@ -111,34 +118,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     let mounted = true;
 
-    // 1. 초기 세션 확인
-    const initSession = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        if (mounted) await handleSession(session);
-      } catch (error) {
-        console.error("Auth init error:", error);
-        if (mounted) {
-          setUser(null);
-          setLoading(false);
-        }
-      }
-    };
-
-    initSession();
-
     // 2. Auth 상태 변경 감지 (가장 중요)
+    // Supabase의 onAuthStateChange는 구독 시 현재 세션 정보를 즉시 반환(INITIAL_SESSION)하므로
+    // 별도의 getSession() 호출 없이도 초기화가 가능합니다.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      console.log(`[Auth] Auth state changed: ${_event}`, session?.user?.email);
       if (mounted) {
-        // 로딩 상태를 다시 true로 할 필요는 없음 (UX 껌벅임 방지)
-        // 세션이 변경되었을 때만 처리
         await handleSession(session);
       }
     });
 
+    // [Safety] 만약 onAuthStateChange가 어떤 이유로든 3초 내에 발동하지 않으면 로딩 종료
+    // (네트워크 이슈 등으로 이벤트가 누락되는 경우 대비)
+    const safetyTimer = setTimeout(() => {
+      if (mounted && loading) {
+        console.warn("[Auth] Event listener timeout. Force releasing loading state (Guest).");
+        setLoading(false);
+      }
+    }, 3000);
+
     return () => {
       mounted = false;
+      clearTimeout(safetyTimer);
       subscription.unsubscribe();
     };
   }, [handleSession]);
