@@ -411,12 +411,8 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    async function fetchDashboardData() {
+    const fetchDashboardData = async () => {
       if (!user || branches.length === 0) return;
-
-      // Allow loading if user exists, regardless of role/franchise initially.
-      // Logic inside will handle data filtering.
-      // if (user.role !== '본사 관리자' && !user.franchise) return;
 
       setLoading(true);
       try {
@@ -426,8 +422,7 @@ export default function DashboardPage() {
         const weekStartStr = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
         const todayStr = format(now, 'yyyy-MM-dd');
 
-        // 1. 최근 주문 10개
-        try {
+        const fetchRecentOrders = async () => {
           let queryBuilder = supabase
             .from('orders')
             .select('*')
@@ -440,50 +435,38 @@ export default function DashboardPage() {
               queryBuilder = queryBuilder.or(`branch_name.eq.${bName},transfer_info->>processBranchName.eq.${bName}`);
             }
           }
+          const { data, error } = await queryBuilder;
+          if (error) throw error;
 
-          const { data: recentOrdersData, error: recentError } = await queryBuilder;
+          return (data || []).map((row: any) => {
+            let productNames = '상품 정보 없음';
+            const items = row.items || [];
+            if (Array.isArray(items) && items.length > 0) {
+              productNames = items.map((item: any) => item.name || item.productName || '상품명 없음').join(', ');
+            }
+            return {
+              id: row.id,
+              orderer: row.orderer || { name: '정보 없음' },
+              orderDate: parseDate(row.order_date),
+              total: row.summary?.total || 0,
+              status: row.status,
+              branchName: row.branch_name,
+              productNames,
+              items: row.items,
+              summary: row.summary,
+              payment: row.payment,
+              deliveryInfo: row.delivery_info,
+              pickupInfo: row.pickup_info,
+              receiptType: row.receipt_type,
+              transferInfo: row.transfer_info
+            } as Order;
+          });
+        };
 
-          if (recentError) throw recentError;
-
-          if (recentOrdersData) {
-            const mappedOrders = recentOrdersData.map((row: any) => {
-              let productNames = '상품 정보 없음';
-              const items = row.items || [];
-              if (Array.isArray(items) && items.length > 0) {
-                productNames = items.map((item: any) => item.name || item.productName || '상품명 없음').join(', ');
-              }
-              return {
-                id: row.id,
-                orderer: row.orderer || { name: '정보 없음' },
-                orderDate: parseDate(row.order_date),
-                total: row.summary?.total || 0,
-                status: row.status,
-                branchName: row.branch_name,
-                productNames,
-                items: row.items,
-                summary: row.summary,
-                payment: row.payment,
-                deliveryInfo: row.delivery_info,
-                pickupInfo: row.pickup_info,
-                receiptType: row.receipt_type,
-                transferInfo: row.transfer_info
-              } as Order;
-            });
-            setRecentOrders(mappedOrders);
-          }
-        } catch (err) {
-          console.error("Recent orders fetch failed:", err);
-        }
-
-        // 2. 미처리 주문
-        let pendingOrders = 0;
-        let pendingPaymentCount = 0;
-        let pendingPaymentAmount = 0;
-
-        try {
+        const fetchPendingStats = async () => {
           let queryBuilder = supabase
             .from('orders')
-            .select('*')
+            .select('id, status, payment, summary, branch_name, transfer_info')
             .in('status', ['pending', 'processing', '대기', '준비중', '처리중']);
 
           if (!isAdmin || branchFilter) {
@@ -493,38 +476,78 @@ export default function DashboardPage() {
             }
           }
 
-          const { data: activeOrders, error: activeError } = await queryBuilder;
+          const { data, error } = await queryBuilder;
+          if (error) throw error;
 
-          if (activeError) throw activeError;
+          let pOrders = 0;
+          let pPaymentCount = 0;
+          let pPaymentAmount = 0;
 
-          if (activeOrders) {
-            activeOrders.forEach((order: any) => {
-              pendingOrders++;
+          if (data) {
+            data.forEach((order: any) => {
+              pOrders++;
               if (order.payment?.status === 'pending') {
-                pendingPaymentCount++;
-                pendingPaymentAmount += (order.summary?.total || 0);
+                pPaymentCount++;
+                pPaymentAmount += (order.summary?.total || 0);
               }
             });
           }
+          return { pOrders, pPaymentCount, pPaymentAmount };
+        };
 
-        } catch (err) {
-          console.error("Active orders fetch failed:", err);
-        }
-
-        // 3. 통계 데이터
-        try {
+        const fetchStats = async () => {
           const earliestDate = [dailyStartDate, weeklyStartDate, monthlyStartDate, yearStartStr].sort()[0];
-          const statsData = await fetchDailyStats(earliestDate, todayStr);
+          return await fetchDailyStats(earliestDate, todayStr);
+        };
 
-          if (statsData.length > 0) {
-            console.log('Dashboard statsData sample (last 3 entries):', statsData.slice(-3));
-            const targetDay = statsData.find((d: any) => d.date === '2026-01-23');
-            if (targetDay) {
-              console.log('Found stats for 2026-01-23:', targetDay);
-              const bKey = (branchFilter || userBranch || '').replace(/\./g, '_').replace(/ /g, '_');
-              console.log(`Branch mapping for '${branchFilter || userBranch}': key=${bKey}, data=`, targetDay.branches?.[bKey]);
+        const fetchCustomerCount = async () => {
+          let countQuery = supabase
+            .from('customers')
+            .select('*', { count: 'exact', head: true })
+            .eq('is_deleted', false);
+
+          if (!isAdmin || branchFilter) {
+            const bName = branchFilter || userBranch;
+            if (bName) {
+              countQuery = countQuery.eq('branch', bName);
             }
           }
+          const { count, error } = await countQuery;
+          if (error) throw error;
+          return count || 0;
+        };
+
+        // 병렬 실행
+        const results = await Promise.allSettled([
+          fetchRecentOrders(),
+          fetchPendingStats(),
+          fetchStats(),
+          fetchCustomerCount()
+        ]);
+
+        // 1. 최근 주문 결과 처리
+        if (results[0].status === 'fulfilled') {
+          setRecentOrders(results[0].value);
+        } else {
+          console.error("Recent orders fetch failed:", results[0].reason);
+        }
+
+        // 2. 미처리 주문 결과 처리
+        if (results[1].status === 'fulfilled') {
+          const { pOrders, pPaymentCount, pPaymentAmount } = results[1].value;
+          setStats(prev => ({
+            ...prev,
+            pendingOrders: pOrders,
+            pendingPaymentCount: pPaymentCount,
+            pendingPaymentAmount: pPaymentAmount
+          }));
+        } else {
+          console.error("Active orders fetch failed:", results[1].reason);
+        }
+
+        // 3. 통계 데이터 처리
+        if (results[2].status === 'fulfilled') {
+          const statsData = results[2].value;
 
           if (statsData.length === 0) {
             setStatsEmpty(true);
@@ -559,9 +582,7 @@ export default function DashboardPage() {
               ...prev,
               totalRevenue,
               weeklyOrders,
-              pendingOrders,
-              pendingPaymentCount,
-              pendingPaymentAmount
+              // pending 값들은 위에서 처리됨
             }));
 
             // 기간 내의 모든 날짜 생성 (데이터가 없는 날도 표시하기 위함)
@@ -582,9 +603,10 @@ export default function DashboardPage() {
               if (day.branches) {
                 Object.entries(day.branches).forEach(([bKey, bStat]: [string, any]) => {
                   const amount = bStat.settledAmount || 0;
-                  const branch = branches.find(b => sanitizeBranchKey(b.name) === bKey);
-                  const name = branch ? branch.name : bKey.replace(/_/g, '.');
-                  result[name] = amount;
+                  const nameWithDots = bKey.replace(/_/g, '.');
+                  result[nameWithDots] = amount;
+                  const nameWithSpaces = bKey.replace(/_/g, ' ');
+                  result[nameWithSpaces] = amount;
                   result[bKey] = amount;
                 });
               }
@@ -592,11 +614,9 @@ export default function DashboardPage() {
               if (!isAdmin || branchFilter) {
                 const bName = branchFilter || userBranch;
                 if (bName) {
-                  const bKey = sanitizeBranchKey(bName);
+                  const bKey = bName.replace(/\./g, '_').replace(/ /g, '_');
                   const bStat = day.branches?.[bKey] || { settledAmount: 0 };
                   result.sales = bStat.settledAmount || 0;
-                  // isAdmin 모드에서 특정 지점 선택 시에도 브랜치명 속성을 넣어줘야 차트에 표시됨
-                  result[bName] = (result[bName] || 0) + result.sales;
                 }
               }
 
@@ -611,39 +631,22 @@ export default function DashboardPage() {
             const monthlyData = calculateMonthlyStats(statsData, monthlyStartDate, monthlyEndDate, isAdmin && (!branchFilter || branchFilter === '전체'), branchFilter || userBranch, branches);
             setMonthlySales(monthlyData as any);
           }
-        } catch (err) {
-          console.error("Stats fetching failed:", err);
+        } else {
+          console.error("Stats fetching failed:", results[2].reason);
         }
 
-        // 4. 고객 수
-        try {
-          let countQuery = supabase
-            .from('customers')
-            .select('*', { count: 'exact', head: true })
-            .eq('is_deleted', false);
-
-          if (!isAdmin || branchFilter) {
-            const bName = branchFilter || userBranch;
-            if (bName) {
-              countQuery = countQuery.eq('branch', bName);
-            }
-          }
-
-          const { count, error: countError } = await countQuery;
-
-          if (countError) throw countError;
-          setStats(prev => ({ ...prev, newCustomers: count || 0 }));
-
-        } catch (err) {
-          console.error("Customer fetch failed:", err);
+        // 4. 고객 수 처리
+        if (results[3].status === 'fulfilled') {
+          setStats(prev => ({ ...prev, newCustomers: results[3].value }));
+        } else {
+          console.error("Customer fetch failed:", results[3].reason);
         }
-
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
       } finally {
         setLoading(false);
       }
-    }
+    };
 
     fetchDashboardData();
   }, [user, branches, currentFilteredBranch, dailyStartDate, dailyEndDate, weeklyStartDate, weeklyEndDate, monthlyStartDate, monthlyEndDate]);

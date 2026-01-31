@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/use-auth';
 import { useBranches } from '@/hooks/use-branches';
@@ -54,9 +54,9 @@ export function useRealtimeNotifications() {
         .order('created_at', { ascending: false });
 
       if (user.franchise) {
-        query = query.or(`user_id.eq.${user.uid},branch_id.eq.${user.franchise}`);
+        query = query.or(`user_id.eq.${user.id},branch_id.eq.${user.franchise}`);
       } else {
-        query = query.eq('user_id', user.uid);
+        query = query.eq('user_id', user.id);
       }
 
       const { data, error } = await query;
@@ -70,21 +70,34 @@ export function useRealtimeNotifications() {
     }
   }, [user, mapRowToNotification]);
 
+  // Debounce ref
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     if (!user) return;
     fetchNotifications();
 
-    const channel = supabase.channel(`user_notifications_${user.uid}`)
+    const channel = supabase.channel(`user_notifications_${user.id}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'notifications'
       }, () => {
-        fetchNotifications();
+        // Debounce: Clear previous timer if exists
+        if (debounceTimer.current) {
+          clearTimeout(debounceTimer.current);
+        }
+
+        // Set new timer
+        debounceTimer.current = setTimeout(() => {
+          console.log('[Realtime] Fetching notifications (Debounced)');
+          fetchNotifications();
+        }, 1000);
       })
       .subscribe();
 
     return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
       supabase.removeChannel(channel);
     };
   }, [user, fetchNotifications]);

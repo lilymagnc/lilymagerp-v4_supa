@@ -200,7 +200,11 @@ export function useOrders() {
     extraData: row.extra_data
   });
 
-  const fetchOrders = useCallback(async (days: number = 60) => {
+  const fetchOrders = useCallback(async (days: number = 7) => {
+    // Abort previous request if exists
+    const controller = new AbortController();
+    const signal = controller.signal;
+
     try {
       setLoading(true);
       const startDate = subDays(startOfDay(new Date()), days).toISOString();
@@ -212,12 +216,15 @@ export function useOrders() {
       let hasMore = true;
 
       while (hasMore) {
+        if (signal.aborted) throw new Error('Aborted');
+
         const { data, error } = await supabase
           .from('orders')
           .select('*')
           .or(`order_date.gte.${startDate},payment->>completedAt.gte.${startDate},transfer_info->>acceptedAt.gte.${startDate}`)
           .order('order_date', { ascending: false })
-          .range(page * pageSize, (page + 1) * pageSize - 1);
+          .range(page * pageSize, (page + 1) * pageSize - 1)
+          .abortSignal(signal);
 
         if (error) throw error;
         if (data && data.length > 0) {
@@ -232,11 +239,19 @@ export function useOrders() {
         if (allData.length >= 5000) break;
       }
 
-      setOrders(allData.map(mapRowToOrder));
-    } catch (error) {
-      console.error('주문 데이터 로딩 오류:', error);
+      if (!signal.aborted) {
+        setOrders(allData.map(mapRowToOrder));
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError' || error.message === 'Aborted') {
+        console.log('Fetch aborted');
+      } else {
+        console.error('주문 데이터 로딩 오류:', error);
+      }
     } finally {
-      setLoading(false);
+      if (!signal.aborted) {
+        setLoading(false);
+      }
     }
   }, []);
 

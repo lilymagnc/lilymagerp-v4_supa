@@ -8,7 +8,7 @@ let adminDb: admin.firestore.Firestore | null = null;
 if (typeof window === 'undefined') {
     try {
         if (!admin.apps.length) {
-            const serviceAccountPath = require('path').resolve(process.cwd(), 'firebase-service-account.json');
+            const serviceAccountPath = require('path').resolve(process.cwd(), 'service-account.json');
             const fs = require('fs');
 
             if (fs.existsSync(serviceAccountPath)) {

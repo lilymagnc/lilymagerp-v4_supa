@@ -245,7 +245,7 @@ export default function RebuildStats() {
                 });
                 console.log("Sync details:", data.result);
             } else {
-                throw new Error(data.error || 'Unknown error');
+                throw new Error(data.message || data.error || 'Unknown error');
             }
         } catch (error: any) {
             console.error("Firebase sync error:", error);

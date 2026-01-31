@@ -8,7 +8,7 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
     -- 1. 기존 데이터 초기화 (완전 재계산을 위해)
-    DELETE FROM daily_stats;
+    DELETE FROM daily_stats WHERE true;
 
     -- 2. 통계 재계산 및 삽입
     -- '주문일 기준' 데이터와 '결제일 기준' 데이터를 각각 집계한 후 합칩니다.
