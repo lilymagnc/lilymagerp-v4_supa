@@ -118,7 +118,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     let mounted = true;
 
-    // 2. Auth 상태 변경 감지 (가장 중요)
+    // 1. 초기 세션 확인 (Timeout Protected)
+    // onAuthStateChange가 놓칠 수 있는 초기 상태를 확인하되, getSession이 멈추는 것을 방지하기 위해 2초 타임아웃 적용
+    const initSession = async () => {
+      try {
+        console.log("[Auth] Checking initial session...");
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Session init timeout')), 2000)
+        );
+
+        const { data: { session }, error } = await Promise.race([sessionPromise, timeoutPromise]) as any;
+
+        if (error) throw error;
+        if (mounted && session) { // 세션이 있을 때만 처리 (없으면 onAuthStateChange가 SIGNED_OUT 처리 or fallback)
+          await handleSession(session);
+        }
+      } catch (error) {
+        console.warn("[Auth] Initial session check failed or timed out (using listener instead):", error);
+        // 여기서 로딩을 끄지 않습니다. onAuthStateChange가 곧 처리하거나, 아래 Safety Timer가 처리합니다.
+      }
+    };
+
+    initSession();
+
+    // 2. Auth 상태 변경 감지
     // Supabase의 onAuthStateChange는 구독 시 현재 세션 정보를 즉시 반환(INITIAL_SESSION)하므로
     // 별도의 getSession() 호출 없이도 초기화가 가능합니다.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -128,11 +152,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     });
 
-    // [Safety] 만약 onAuthStateChange가 어떤 이유로든 3초 내에 발동하지 않으면 로딩 종료
-    // (네트워크 이슈 등으로 이벤트가 누락되는 경우 대비)
+    // [Safety] 만약 위 두 가지 방법이 모두 실패하여 로딩이 3초 이상 지속되면 강제 종료 (최후의 보루)
     const safetyTimer = setTimeout(() => {
       if (mounted && loading) {
-        console.warn("[Auth] Event listener timeout. Force releasing loading state (Guest).");
+        console.warn("[Auth] Safety timeout triggered. Releasing loading state.");
         setLoading(false);
       }
     }, 3000);
