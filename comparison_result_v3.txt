@@ -1,0 +1,31 @@
+Comparing January 2026 Orders (KST aware)...
+Firebase January Orders: 1268
+Supabase January Orders: 1268
+
+--- Status Breakdown ---
+Firebase: { completed: 1253, processing: 11, canceled: 4 }
+Supabase: { completed: 1249, processing: 15, canceled: 4 }
+
+Firebase Total Revenue (All): 85,076,800
+Supabase Total Revenue (All): 85,076,800
+
+Firebase Revenue (Excl. Canceled): 85,076,800
+Supabase Revenue (Excl. Canceled): 85,076,800
+Difference (Active): 0
+Missing in Supabase: 1
+Missing in Firebase: 1
+
+Orders in Firebase but NOT in Supabase:
+- ID: fnmBWOlHe6j04kyXG0RP, OrderNum: undefined, Name: 이다경, Date: 2026-01-31T14:39:34.507Z
+
+Orders in Supabase but NOT in Firebase:
+- ID: RHTYLMWDGhbvNHA4MSNJ, OrderNum: null, Name: 이다경, Date: 2026-01-30T08:41:26.608+00:00
+
+--- Status Mismatches (Common IDs) ---
+- ID: i5O6xgmzniJxfiUnWQ72, FB Status: completed, SB Status: processing, Name: 박상현
+- ID: Eeqful2NH4wHaHbyg0jx, FB Status: completed, SB Status: processing, Name: 이지선
+- ID: 1N2lF83WLSkqqKEQbOcu, FB Status: completed, SB Status: processing, Name: 한승주
+- ID: xhKXa2hzDNaexHgVYTtk, FB Status: completed, SB Status: processing, Name: 조성정
+Total status mismatches: 4
+Firebase OrderNumber Duplicates: 0
+Supabase OrderNumber Duplicates: 0

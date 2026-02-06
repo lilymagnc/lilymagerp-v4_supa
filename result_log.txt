@@ -1,0 +1,7 @@
+[dotenv@17.2.3] injecting env (4) from .env.local -- tip: ⚙️  override existing env vars with { override: true }
+📊 Generating Duplicate Orders Excel for Review (Jan 2026)...
+- Total orders fetched: 1268
+- Identified 303 records in 117 duplicate groups.
+
+✅ Excel file created: January_Duplicates_Review_2026.xlsx
+이 파일을 열어 그룹ID가 같은 항목들을 비교하신 후, 중복이라고 확신되는 행의 관리ID를 알려주시면 정리해드리겠습니다.

@@ -1,0 +1,75 @@
+[dotenv@17.2.3] injecting env (4) from .env.local -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+🔍 Detailed Duplicate Analysis for January 2026...
+Total Duplicate Groups: 117
+Total Documents involved in Duplicates: 303
+
+--- Top 20 Suspicious Duplicate Groups ---
+1. [2026-01-01|NoName|60000|릴리맥NC이스트폴점|1|꽃다발(Basic)F] (3 docs)
+   - ID: 0YjwlVxaV4k1O6j5dXgw, Num: undefined, Status: completed, Time: 2026-01-01T04:47:17.970Z
+   - ID: 7VTbEsNBjtIxEZL5g45I, Num: undefined, Status: completed, Time: 2026-01-01T05:12:25.606Z
+   - ID: zqM7diwuaCYPJqV2F2QA, Num: undefined, Status: completed, Time: 2026-01-01T08:21:23.178Z
+2. [2026-01-01|NoName|40000|릴리맥NC이스트폴점|1|꽃다발(S)D] (2 docs)
+   - ID: oCKCCB7oDAq1LUbma303, Num: undefined, Status: completed, Time: 2026-01-01T11:51:05.972Z
+   - ID: AVpisF4qv3mrnfSs2kRG, Num: undefined, Status: completed, Time: 2026-01-01T12:02:11.576Z
+3. [2026-01-02|오일영|100000|릴리맥여의도점|1|꽃바구니(Basic)A0] (2 docs)
+   - ID: 2sCHPvK4vECkNKcbDwWd, Num: undefined, Status: completed, Time: 2026-01-02T00:07:32.022Z
+   - ID: YCtMOtLt1zYRMNNuaO6c, Num: undefined, Status: completed, Time: 2026-01-02T01:40:42.255Z
+4. [2026-01-02|서채민|195000|릴리맥광화문점|1|금전수] (2 docs)
+   - ID: hOu2lb8nho1bZauak07z, Num: undefined, Status: completed, Time: 2026-01-02T00:30:06.590Z
+   - ID: l6DxIuyUNZCuRWxlNLRL, Num: undefined, Status: completed, Time: 2026-01-02T00:33:10.882Z
+5. [2026-01-02|NoName|15000|릴리맥NC이스트폴점|1|한송이] (2 docs)
+   - ID: WjcfYszZiWvUDYmyUco8, Num: undefined, Status: completed, Time: 2026-01-02T01:17:06.866Z
+   - ID: 4OaVpNeppGr98JN1ZsR5, Num: undefined, Status: completed, Time: 2026-01-02T06:42:12.177Z
+6. [2026-01-02|이희철|100000|릴리맥광화문점|1|보자기난] (3 docs)
+   - ID: GuZMQPlL90aQY1Xaylyi, Num: undefined, Status: completed, Time: 2026-01-02T03:12:24.236Z
+   - ID: hP3vpt3Gvj1TRAFttr8f, Num: undefined, Status: completed, Time: 2026-01-02T03:14:17.990Z
+   - ID: mcsG3oGWsketTPc9K1cc, Num: undefined, Status: completed, Time: 2026-01-02T05:10:32.261Z
+7. [2026-01-02|김민지 차장|100000|릴리맥광화문점|1|보자기난] (2 docs)
+   - ID: Ry2CUGhk5hrzw2Xkqlp5, Num: undefined, Status: completed, Time: 2026-01-02T04:37:25.432Z
+   - ID: R01m7MBBHWPM0omvrr4x, Num: undefined, Status: completed, Time: 2026-01-02T04:39:02.569Z
+8. [2026-01-02|안석철부사장실|160000|릴리맥여의도점|1|스투키/ 금전수/드라코 AE] (2 docs)
+   - ID: wWyMWl4YIE0xNCa7jUe8, Num: undefined, Status: completed, Time: 2026-01-02T10:17:55.020Z
+   - ID: dkS65XmTUACcbC1J9wZR, Num: undefined, Status: completed, Time: 2026-01-02T10:18:53.792Z
+9. [2026-01-02|유환|100000|릴리맥여의도점|1|A0분화-화시아타/금전수/스투키] (4 docs)
+   - ID: CBevbyyQelyiuSObRV85, Num: undefined, Status: completed, Time: 2026-01-02T11:04:10.199Z
+   - ID: tvtBD3383SYokxVM2mMC, Num: undefined, Status: completed, Time: 2026-01-02T11:05:45.988Z
+   - ID: CJrTFKtthQNj8P92guD2, Num: undefined, Status: completed, Time: 2026-01-02T11:11:00.123Z
+   - ID: PVbuRl2xygvkHigxFU5m, Num: undefined, Status: completed, Time: 2026-01-02T11:12:30.035Z
+10. [2026-01-02|NoName|50000|릴리맥여의도점|1|분화 E] (2 docs)
+   - ID: J91ujFbpBavSHAKKGarL, Num: undefined, Status: completed, Time: 2026-01-02T12:00:46.527Z
+   - ID: vJ9pDlRYKsB1kgvbwzJR, Num: undefined, Status: completed, Time: 2026-01-02T12:09:09.103Z
+11. [2026-01-02|NoName|40000|릴리맥여의도점|1|꽃다발(S)D] (2 docs)
+   - ID: 3y6yHoMOjcfoCfsh76n9, Num: undefined, Status: completed, Time: 2026-01-02T12:02:24.367Z
+   - ID: w11oRd4iq5FqGTxP4h2s, Num: undefined, Status: completed, Time: 2026-01-02T12:06:14.021Z
+12. [2026-01-02|NoName|60000|릴리맥여의도점|1|꽃다발(Basic)F] (2 docs)
+   - ID: YR5L3pY9eYaz7IDNc4TY, Num: undefined, Status: completed, Time: 2026-01-02T12:08:54.398Z
+   - ID: BHlY0KzXj1hCyFCuTQtn, Num: undefined, Status: completed, Time: 2026-01-02T12:12:30.036Z
+13. [2026-01-03|NoName|20000|릴리맥NC이스트폴점|1|꽃다발 MiniB] (5 docs)
+   - ID: vpn0X3Ld6Wrc1Trkg64S, Num: undefined, Status: completed, Time: 2026-01-03T03:36:54.388Z
+   - ID: xCg3ujeQfkUUSOe1HE2S, Num: undefined, Status: completed, Time: 2026-01-03T03:37:00.598Z
+   - ID: 9dTxt5HLXzKGYNp9BddU, Num: undefined, Status: completed, Time: 2026-01-03T04:13:51.857Z
+   - ID: NTONEPP4aKLFGLPu1E8R, Num: undefined, Status: completed, Time: 2026-01-03T07:59:51.035Z
+   - ID: fltJt7umDYB0MLXccGuQ, Num: undefined, Status: completed, Time: 2026-01-03T10:26:43.820Z
+14. [2026-01-03|오일영|100000|릴리맥여의도점|1|꽃바구니(Basic)A0] (2 docs)
+   - ID: QAmSDXRZBXKQhYWVoiRV, Num: undefined, Status: completed, Time: 2026-01-03T04:20:04.180Z
+   - ID: oDlz9WegUA3QhGYTRZCm, Num: undefined, Status: completed, Time: 2026-01-03T04:22:37.552Z
+15. [2026-01-03|NoName|60000|릴리맥NC이스트폴점|1|꽃다발(Basic)F] (3 docs)
+   - ID: DxLFZ5dwXH625XytlBCA, Num: undefined, Status: completed, Time: 2026-01-03T07:59:56.855Z
+   - ID: 221XxAZWIyqLClZ3mBuk, Num: undefined, Status: completed, Time: 2026-01-03T08:00:02.607Z
+   - ID: pLHoIJNCmZGJxkPsLcLF, Num: undefined, Status: completed, Time: 2026-01-03T10:19:00.353Z
+16. [2026-01-04|NoName|20000|릴리맥NC이스트폴점|1|꽃다발 MiniB] (3 docs)
+   - ID: 9pgeNgEI6r7tXYHmYrtZ, Num: undefined, Status: completed, Time: 2026-01-04T02:45:45.332Z
+   - ID: nUVAgKbARtfSiazaQHpW, Num: undefined, Status: completed, Time: 2026-01-04T06:35:57.440Z
+   - ID: CsGCtrv1x3KVCsPWcehY, Num: undefined, Status: completed, Time: 2026-01-04T11:32:02.473Z
+17. [2026-01-04|NoName|30000|릴리맥NC이스트폴점|1|프리저보드] (2 docs)
+   - ID: AuwtA189S7zoNOygJr1M, Num: undefined, Status: completed, Time: 2026-01-04T07:36:20.226Z
+   - ID: N7U5x8bq8x5rEsVIwtPC, Num: undefined, Status: completed, Time: 2026-01-04T10:39:05.236Z
+18. [2026-01-04|NoName|15000|릴리맥NC이스트폴점|1|한송이] (2 docs)
+   - ID: 0ZkNt915j6uA0EImhWvL, Num: undefined, Status: completed, Time: 2026-01-04T10:39:22.584Z
+   - ID: FVPNNFGKVKNQmkjxaebp, Num: undefined, Status: completed, Time: 2026-01-04T11:32:32.579Z
+19. [2026-01-05|임은혜팀장|70000|릴리맥여의도점|1|G 분화-스투키,파키라] (2 docs)
+   - ID: LnR7OgpTPl4DII9cb4aU, Num: undefined, Status: completed, Time: 2026-01-05T01:19:10.445Z
+   - ID: tp4SobntdAQ9BUg8SMk7, Num: undefined, Status: completed, Time: 2026-01-05T01:21:20.532Z
+20. [2026-01-05|신한자산운용|110000|릴리맥여의도점|1|A0분화-화시아타/금전수/스투키] (2 docs)
+   - ID: Sfg0sFGKuoRSaMn2wsjY, Num: undefined, Status: completed, Time: 2026-01-05T01:38:31.987Z
+   - ID: T75s7sOb6DkOmJNzqdUk, Num: undefined, Status: completed, Time: 2026-01-05T01:56:44.389Z

@@ -1,0 +1,46 @@
+Deep Validating January 2026 Data...
+Firebase Count: 1268
+Supabase Count: 1268
+Diff: 0
+FB Total Revenue: 85,076,800
+SB Total Revenue: 85,076,800
+
+--- Checking for Duplicates in Firebase ---
+Group [2026-01-01|60000||릴리맥NC이스트폴점]: 3 matches
+  - ID: 0YjwlVxaV4k1O6j5dXgw, Status: completed, OrderNum: undefined, Items: 1
+  - ID: 7VTbEsNBjtIxEZL5g45I, Status: completed, OrderNum: undefined, Items: 1
+  - ID: zqM7diwuaCYPJqV2F2QA, Status: completed, OrderNum: undefined, Items: 1
+Group [2026-01-01|30000||릴리맥NC이스트폴점]: 2 matches
+  - ID: e0bgMxFzDyRMHk06vplV, Status: completed, OrderNum: undefined, Items: 1
+  - ID: ncMJBJ1JvPIWCrzmxbmJ, Status: completed, OrderNum: undefined, Items: 1
+Group [2026-01-01|40000||릴리맥NC이스트폴점]: 3 matches
+  - ID: juhCJSbV9EA2wLLbiNOM, Status: completed, OrderNum: undefined, Items: 1
+  - ID: oCKCCB7oDAq1LUbma303, Status: completed, OrderNum: undefined, Items: 1
+  - ID: AVpisF4qv3mrnfSs2kRG, Status: completed, OrderNum: undefined, Items: 1
+Group [2026-01-02|100000|오일영|릴리맥여의도점]: 2 matches
+  - ID: 2sCHPvK4vECkNKcbDwWd, Status: completed, OrderNum: undefined, Items: 1
+  - ID: YCtMOtLt1zYRMNNuaO6c, Status: completed, OrderNum: undefined, Items: 1
+Group [2026-01-02|195000|서채민|릴리맥광화문점]: 2 matches
+  - ID: hOu2lb8nho1bZauak07z, Status: completed, OrderNum: undefined, Items: 1
+  - ID: l6DxIuyUNZCuRWxlNLRL, Status: completed, OrderNum: undefined, Items: 1
+Group [2026-01-02|50000||릴리맥여의도점]: 4 matches
+  - ID: MgN1CIlGASPV2xsHSCjr, Status: completed, OrderNum: undefined, Items: 1
+  - ID: sKt444GKwoU8Zrg023I7, Status: completed, OrderNum: undefined, Items: 1
+  - ID: J91ujFbpBavSHAKKGarL, Status: completed, OrderNum: undefined, Items: 1
+  - ID: vJ9pDlRYKsB1kgvbwzJR, Status: completed, OrderNum: undefined, Items: 1
+Group [2026-01-02|15000||릴리맥NC이스트폴점]: 2 matches
+  - ID: WjcfYszZiWvUDYmyUco8, Status: completed, OrderNum: undefined, Items: 1
+  - ID: 4OaVpNeppGr98JN1ZsR5, Status: completed, OrderNum: undefined, Items: 1
+Group [2026-01-02|100000|이희철|릴리맥광화문점]: 3 matches
+  - ID: GuZMQPlL90aQY1Xaylyi, Status: completed, OrderNum: undefined, Items: 1
+  - ID: hP3vpt3Gvj1TRAFttr8f, Status: completed, OrderNum: undefined, Items: 1
+  - ID: mcsG3oGWsketTPc9K1cc, Status: completed, OrderNum: undefined, Items: 1
+Group [2026-01-02|100000|김민지 차장|릴리맥광화문점]: 2 matches
+  - ID: Ry2CUGhk5hrzw2Xkqlp5, Status: completed, OrderNum: undefined, Items: 1
+  - ID: R01m7MBBHWPM0omvrr4x, Status: completed, OrderNum: undefined, Items: 1
+Group [2026-01-02|20000||릴리맥NC이스트폴점]: 2 matches
+  - ID: ksRZ7o6KO9BWNhTTYcWM, Status: completed, OrderNum: undefined, Items: 1
+  - ID: LoJcHaZ9m7vgVVfCKTFf, Status: completed, OrderNum: undefined, Items: 1
+Total potential duplicate groups in FB: 156
+FB Active: 1264, FB Canceled: 4
+SB Active: 1264, SB Canceled: 4

@@ -1,0 +1,16 @@
+Comparing January 2026 Orders (KST aware)...
+Firebase January Orders: 1268
+Supabase January Orders: 1268
+Firebase Total Revenue: 85,076,800
+Supabase Total Revenue: 85,076,800
+Difference: 0
+Missing in Supabase: 1
+Missing in Firebase: 1
+
+Orders in Firebase but NOT in Supabase:
+- ID: fnmBWOlHe6j04kyXG0RP, OrderNum: undefined, Name: 이다경, Date: 2026-01-31T14:39:34.507Z
+
+Orders in Supabase but NOT in Firebase:
+- ID: RHTYLMWDGhbvNHA4MSNJ, OrderNum: null, Name: 이다경, Date: 2026-01-30T08:41:26.608+00:00
+Firebase OrderNumber Duplicates: 0
+Supabase OrderNumber Duplicates: 0

@@ -111,8 +111,8 @@ export function MessagePrintDialog({ isOpen, onOpenChange, onSubmit, order }: Me
   }, [messageFont, messageFontSize, senderFont, senderFontSize]);
   // 메시지 내용에서 보내는 사람 분리
   const messageParts = (order.message?.content || "").split('\n---\n');
-  const defaultMessageContent = messageParts.length > 1 ? messageParts[0] : (order.message?.content || "");
-  const defaultSenderName = messageParts.length > 1 ? messageParts[1] : "";
+  const defaultMessageContent = messageParts.length > 1 && !order.message?.sender ? messageParts[0] : (order.message?.content || "");
+  const defaultSenderName = order.message?.sender || (messageParts.length > 1 ? messageParts[1] : "");
   const [messageContent, setMessageContent] = useState(getInitialValue('messageContent', defaultMessageContent));
   const [senderName, setSenderName] = useState(getInitialValue('senderName', defaultSenderName));
   // isEditing state removed as we rely on split view

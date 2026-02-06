@@ -267,6 +267,56 @@ export default function OrdersPage() {
     }
   };
 
+  // 특정 월 데이터 로드 핸들러 (0: 이번달, 1: 지난달, 2: 지지난달)
+  const handleLoadMonth = async (monthOffset: number) => {
+    try {
+      const today = new Date();
+      const start = new Date(today.getFullYear(), today.getMonth() - monthOffset, 1);
+
+      let end: Date;
+      if (monthOffset === 0) {
+        // 이번 달은 오늘 끝까지
+        end = new Date();
+      } else {
+        // 이전 달들은 해당 월의 마지막 날까지
+        end = new Date(today.getFullYear(), today.getMonth() - monthOffset + 1, 0);
+      }
+
+      await fetchOrdersByRange(start, end);
+      setIsFullDataLoaded(true);
+      // 필터 초기화
+      setStartDate(undefined);
+      setEndDate(undefined);
+      setSelectedBranch("all");
+      setSelectedOrderStatus("all");
+      setSelectedPaymentStatus("all");
+      setSearchTerm("");
+      setCurrentPage(1);
+
+      const monthLabel = monthOffset === 0 ? "이번 달" :
+        monthOffset === 1 ? "지난달" : "지지난달";
+
+      toast({
+        title: "데이터 로드 완료",
+        description: `${monthLabel}의 주문 데이터를 불러왔습니다.`
+      });
+    } catch (error) {
+      console.error('Month load error:', error);
+      toast({
+        variant: "destructive",
+        title: "로드 실패",
+        description: "데이터를 불러오는 중 오류가 발생했습니다."
+      });
+    }
+  };
+
+  // 초기 로딩: 이번 달 데이터 로드
+  useEffect(() => {
+    handleLoadMonth(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+
   // 일괄 삭제 관련 함수들
   const handleSelectOrder = (orderId: string) => {
     const newSelectedIds = new Set(selectedOrderIds);
@@ -1129,6 +1179,16 @@ export default function OrdersPage() {
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               <DropdownMenuLabel>기간 선택</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleLoadMonth(0)}>
+                이번 달 (오늘까지)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleLoadMonth(1)}>
+                지난달 ({new Date(new Date().setMonth(new Date().getMonth() - 1)).getMonth() + 1}월)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleLoadMonth(2)}>
+                지지난달 ({new Date(new Date().setMonth(new Date().getMonth() - 2)).getMonth() + 1}월)
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => handleLoadPeriodData(3)}>
                 최근 3개월

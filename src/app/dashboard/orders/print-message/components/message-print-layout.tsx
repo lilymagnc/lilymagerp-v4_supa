@@ -71,10 +71,10 @@ export function MessagePrintLayout({
 
   // 편집된 메시지 내용 또는 원본 메시지 사용
   let finalMessageContent = messageContent || order.message?.content || "";
-  let finalSenderName = senderName || "";
+  let finalSenderName = senderName || order.message?.sender || "";
 
-  // 원본 메시지에서 보내는 사람 분리 (--- 구분자 사용)
-  if (!messageContent && order.message?.content) {
+  // 원본 메시지에서 보내는 사람 분리 (--- 구분자 사용) - 하위 호환성
+  if (!messageContent && !senderName && order.message?.content && !order.message?.sender) {
     const messageParts = order.message.content.split('\n---\n');
     if (messageParts.length > 1) {
       finalMessageContent = messageParts[0];

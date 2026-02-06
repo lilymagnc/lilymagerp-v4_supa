@@ -75,7 +75,7 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
     orderer: {
       name: '',
       contact: '',
-      companyName: '',
+      company: '',
       email: ''
     },
     receiptType: 'store_pickup' as 'store_pickup' | 'pickup_reservation' | 'delivery_reservation',
@@ -121,7 +121,7 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
         orderer: {
           name: order.orderer.name || '',
           contact: order.orderer.contact || '',
-          companyName: order.orderer.company || '',
+          company: order.orderer.company || '',
           email: order.orderer.email || ''
         },
         receiptType: order.receiptType || 'store_pickup',
@@ -139,7 +139,7 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
         })),
         message: {
           type: order.message?.type || 'none',
-          sender: '',
+          sender: order.message?.sender || '',
           content: order.message?.content || ''
         },
         outsourceInfo: {
@@ -450,7 +450,7 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
           ...order.orderer,
           name: formData.orderer.name,
           contact: formData.orderer.contact,
-          company: formData.orderer.companyName, // Fixed: align with interface
+          company: formData.orderer.company,
           email: formData.orderer.email
         },
         receiptType: formData.receiptType,
@@ -461,7 +461,8 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
         })),
         message: formData.message.type !== 'none' ? {
           type: formData.message.type as any,
-          content: formData.message.content
+          content: formData.message.content,
+          sender: formData.message.sender
         } : null,
         outsourceInfo: formData.outsourceInfo.isOutsourced ? {
           isOutsourced: true,

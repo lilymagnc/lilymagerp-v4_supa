@@ -86,8 +86,9 @@ export interface OrderData {
   deliveryCostReason?: string;
   deliveryProfit?: number;
   message: {
-    type: "card" | "ribbon";
+    type: "card" | "ribbon" | "none";
     content: string;
+    sender?: string;
   };
   request: string;
   source?: 'excel_upload' | 'manual';
@@ -185,10 +186,12 @@ export function useOrders() {
       if (msg.type === 'ribbon' && !msg.content) {
         if (msg.ribbon_left || msg.ribbon_right) {
           // Standard: Right=Content(Congratz), Left=Sender
-          msg.content = `${msg.ribbon_right || ''}\n---\n${msg.ribbon_left || ''}`;
+          msg.content = msg.ribbon_right || '';
+          msg.sender = msg.ribbon_left || '';
         } else if (msg.start || msg.end) {
           // Assuming Start=Sender, End=Content
-          msg.content = `${msg.end || ''}\n---\n${msg.start || ''}`;
+          msg.content = msg.end || '';
+          msg.sender = msg.start || '';
         }
       }
       return msg;
@@ -650,9 +653,11 @@ export function useOrders() {
       if (data.deliveryCostReason) updatePayload.delivery_cost_reason = data.deliveryCostReason;
       if (data.deliveryProfit !== undefined) updatePayload.delivery_profit = data.deliveryProfit;
 
-      // 'message' column doesn't exist, store in 'extra_data'
       if (data.message) {
-        // Fetch current extra_data first if needed, but we have oldOrder
+        updatePayload.message = data.message;
+
+        // Also keep in extra_data for safety/migration period if needed, 
+        // but primarily update the column.
         const currentExtraData = oldOrder.extra_data || {};
         updatePayload.extra_data = {
           ...currentExtraData,
