@@ -776,12 +776,25 @@ export default function OrdersPage() {
       return orderDateOnly.getTime() !== todayStartForRevenue.getTime();
     });
 
-    // 금액 계산
-    const todayOrderedAmountForRevenue = todayOrderedOrdersForRevenue.reduce((sum, order) => sum + (order.summary?.total || 0), 0);
-    const todayCompletedAmountForRevenue = todayCompletedOrdersForRevenue.reduce((sum, order) => sum + (order.summary?.total || 0), 0);
-    const todayPaymentCompletedAmountForRevenue = todayPaymentCompletedOrdersForRevenue.reduce((sum, order) => sum + (order.summary?.total || 0), 0);
-    const todayPendingAmountForRevenue = todayOrderedButPendingOrdersForRevenue.reduce((sum, order) => sum + (order.summary?.total || 0), 0);
-    const yesterdayOrderedTodayCompletedAmountForRevenue = yesterdayOrderedTodayCompletedOrdersForRevenue.reduce((sum, order) => sum + (order.summary?.total || 0), 0);
+    // 금액 계산 (수주받은 주문은 금액 제외)
+    const excludeTransferred = (order: Order) => {
+      return order.transferInfo?.isTransferred && order.transferInfo?.processBranchName && userBranch && order.transferInfo.processBranchName === userBranch;
+    };
+
+    const todayOrderedAmountForRevenue = todayOrderedOrdersForRevenue.reduce((sum, order) =>
+      excludeTransferred(order) ? sum : sum + (order.summary?.total || 0), 0);
+
+    const todayCompletedAmountForRevenue = todayCompletedOrdersForRevenue.reduce((sum, order) =>
+      excludeTransferred(order) ? sum : sum + (order.summary?.total || 0), 0);
+
+    const todayPaymentCompletedAmountForRevenue = todayPaymentCompletedOrdersForRevenue.reduce((sum, order) =>
+      excludeTransferred(order) ? sum : sum + (order.summary?.total || 0), 0);
+
+    const todayPendingAmountForRevenue = todayOrderedButPendingOrdersForRevenue.reduce((sum, order) =>
+      excludeTransferred(order) ? sum : sum + (order.summary?.total || 0), 0);
+
+    const yesterdayOrderedTodayCompletedAmountForRevenue = yesterdayOrderedTodayCompletedOrdersForRevenue.reduce((sum, order) =>
+      excludeTransferred(order) ? sum : sum + (order.summary?.total || 0), 0);
     const totalOrders = filteredOrders.length;
 
     // 총 매출 계산 (수주받은 주문은 금액 제외, 건수만 포함)
@@ -959,12 +972,8 @@ export default function OrdersPage() {
     }, 0);
 
     // 오늘 주문의 완결/미결 분리 (이관받은 주문은 금액만 0원으로 처리)
-    const todayCompletedOrders = todayOrders.filter(order =>
-      (order.payment?.status === 'paid' || order.payment?.status === 'completed')
-    );
-    const todayPendingOrders = todayOrders.filter(order =>
-      order.payment?.status === 'pending'
-    );
+    const todayCompletedOrders = todayOrders.filter(order => isSettled(order));
+    const todayPendingOrders = todayOrders.filter(order => isPendingPayment(order));
     const todayCompletedAmount = todayCompletedOrders.reduce((sum, order) => {
       // 이관받은 주문은 금액에서 제외
       if (order.transferInfo?.isTransferred && order.transferInfo?.processBranchName && userBranch && order.transferInfo.processBranchName === userBranch) {

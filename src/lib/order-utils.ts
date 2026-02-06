@@ -19,15 +19,8 @@ export function isSettled(order: any): boolean {
         pStatus === '입금완료' ||
         pStatus === '완료' ||
         pStatus === '처리완료' ||
-        pStatus === '배송완료' ||
-        pStatus === '픽업완료' ||
         pStatus === '카드결제' ||
         pStatus === '현금결제' ||
-        oStatus === 'completed' ||
-        oStatus === '주문완료' ||
-        oStatus === '완료' ||
-        oStatus === '배송완료' ||
-        oStatus === '픽업완료' ||
         opStatus === 'paid'
     );
 }

@@ -467,7 +467,7 @@ export default function DashboardPage() {
           let queryBuilder = supabase
             .from('orders')
             .select('id, status, payment, summary, branch_name, transfer_info')
-            .in('status', ['pending', 'processing', '대기', '준비중', '처리중']);
+            .not('status', 'eq', 'canceled');
 
           if (!isAdmin || branchFilter) {
             const bName = branchFilter || userBranch;
@@ -485,8 +485,14 @@ export default function DashboardPage() {
 
           if (data) {
             data.forEach((order: any) => {
-              pOrders++;
-              if (order.payment?.status === 'pending') {
+              // 주문 상태가 'processing' 계열일 때만 미처리 주문(pOrders)으로 카운트
+              if (['pending', 'processing', '대기', '준비중', '처리중'].includes(order.status)) {
+                pOrders++;
+              }
+
+              // 결제 상태가 'pending'이면 미결제 정보로 카운트 (주문 완료 상태라도 미결제면 포함)
+              const paymentStatus = order.payment?.status || '';
+              if (['pending', '미결', '대기'].includes(paymentStatus)) {
                 pPaymentCount++;
                 pPaymentAmount += (order.summary?.total || 0);
               }
@@ -527,14 +533,14 @@ export default function DashboardPage() {
 
         // 1. 최근 주문 결과 처리
         if (results[0].status === 'fulfilled') {
-          setRecentOrders(results[0].value);
+          setRecentOrders((results[0] as PromiseFulfilledResult<Order[]>).value);
         } else {
           console.error("Recent orders fetch failed:", results[0].reason);
         }
 
         // 2. 미처리 주문 결과 처리
         if (results[1].status === 'fulfilled') {
-          const { pOrders, pPaymentCount, pPaymentAmount } = results[1].value;
+          const { pOrders, pPaymentCount, pPaymentAmount } = (results[1] as PromiseFulfilledResult<any>).value;
           setStats(prev => ({
             ...prev,
             pendingOrders: pOrders,
@@ -547,7 +553,7 @@ export default function DashboardPage() {
 
         // 3. 통계 데이터 처리
         if (results[2].status === 'fulfilled') {
-          const statsData = results[2].value;
+          const statsData = (results[2] as PromiseFulfilledResult<any[]>).value;
 
           if (statsData.length === 0) {
             setStatsEmpty(true);
@@ -637,7 +643,7 @@ export default function DashboardPage() {
 
         // 4. 고객 수 처리
         if (results[3].status === 'fulfilled') {
-          setStats(prev => ({ ...prev, newCustomers: results[3].value }));
+          setStats(prev => ({ ...prev, newCustomers: (results[3] as PromiseFulfilledResult<number>).value }));
         } else {
           console.error("Customer fetch failed:", results[3].reason);
         }
