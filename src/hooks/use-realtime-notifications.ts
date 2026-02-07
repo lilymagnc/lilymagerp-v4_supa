@@ -53,8 +53,8 @@ export function useRealtimeNotifications() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (user.franchise) {
-        query = query.or(`user_id.eq.${user.id},branch_id.eq.${user.franchise}`);
+      if (user.branchId) {
+        query = query.or(`user_id.eq.${user.id},branch_id.eq.${user.branchId}`);
       } else {
         query = query.eq('user_id', user.id);
       }

@@ -23,10 +23,13 @@ import { isHoliday, holidayColors } from "@/lib/holidays";
 export default function CalendarPage() {
   const { user } = useAuth();
   const { branches } = useBranches();
-  const { orders } = useOrders();
+  const { orders, fetchCalendarOrders } = useOrders(false);
   const { customers } = useCustomers();
   const { requests: materialRequests } = useMaterialRequests();
   const { events, loading, createEvent, updateEvent, deleteEvent } = useCalendar();
+
+  // Fetch calendar orders when date changes
+
 
   // 사용자 권한에 따른 지점 필터링
   // 사용자 권한에 따른 지점 필터링 - 이메일 기반 강제 판정 포함
@@ -45,6 +48,14 @@ export default function CalendarPage() {
 
   // 상태 관리
   const [currentDate, setCurrentDate] = useState(new Date());
+
+  // Fetch calendar orders when date changes
+  useEffect(() => {
+    if (fetchCalendarOrders) {
+      fetchCalendarOrders(currentDate);
+    }
+  }, [currentDate, fetchCalendarOrders]);
+
   const [selectedBranch, setSelectedBranch] = useState<string>('전체');
   const [selectedEventType, setSelectedEventType] = useState<string>('전체');
   const [isEventDialogOpen, setIsEventDialogOpen] = useState(false);
@@ -462,7 +473,7 @@ export default function CalendarPage() {
           onSave={handleSaveEvent}
           onDelete={handleDeleteEvent}
           currentUser={{
-            uid: user?.uid,
+            uid: user?.id,
             role: user?.role,
             franchise: user?.franchise
           }}
@@ -704,7 +715,7 @@ export default function CalendarPage() {
         onSave={handleSaveEvent}
         onDelete={handleDeleteEvent}
         currentUser={{
-          uid: user?.uid,
+          uid: user?.id,
           role: user?.role,
           franchise: user?.franchise
         }}
@@ -730,7 +741,7 @@ export default function CalendarPage() {
         event={selectedEvent}
         onEdit={handleNoticeEdit}
         currentUser={{
-          uid: user?.uid,
+          uid: user?.id,
           role: user?.role,
           franchise: user?.franchise
         }}

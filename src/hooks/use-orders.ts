@@ -150,12 +150,12 @@ export interface Order extends Omit<OrderData, 'orderDate'> {
 
 export type PaymentStatus = "paid" | "pending" | "completed" | "split_payment";
 
-export function useOrders() {
+
+export function useOrders(initialFetch = true) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const { user } = useAuth();
-
   const mapRowToOrder = (row: any): Order => ({
     id: row.id,
     branchId: row.branch_id,
@@ -182,14 +182,11 @@ export function useOrders() {
     deliveryProfit: row.delivery_profit ?? row.extra_data?.deliveryProfit ?? row.extra_data?.delivery_profit,
     message: (() => {
       const msg = (row.message && Object.keys(row.message).length > 0) ? row.message : (row.extra_data?.message || {});
-      // Normalize legacy ribbon formats if content is missing
       if (msg.type === 'ribbon' && !msg.content) {
         if (msg.ribbon_left || msg.ribbon_right) {
-          // Standard: Right=Content(Congratz), Left=Sender
           msg.content = msg.ribbon_right || '';
           msg.sender = msg.ribbon_left || '';
         } else if (msg.start || msg.end) {
-          // Assuming Start=Sender, End=Content
           msg.content = msg.end || '';
           msg.sender = msg.start || '';
         }
@@ -202,6 +199,80 @@ export function useOrders() {
     outsourceInfo: row.outsource_info || row.extra_data?.outsource_info,
     extraData: row.extra_data
   });
+
+  const fetchCalendarOrders = useCallback(async (baseDate: Date) => {
+    try {
+      setLoading(true);
+      const startFilterDate = subDays(startOfDay(baseDate), 35).toISOString().split('T')[0];
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .or(`pickup_info->>date.gte.${startFilterDate},delivery_info->>date.gte.${startFilterDate},order_date.gte.${startFilterDate}`)
+        .order('order_date', { ascending: false })
+        .limit(2000);
+
+      if (error) throw error;
+      const ordersData = (data || []).map(mapRowToOrder);
+      setOrders(ordersData);
+      return ordersData;
+    } catch (error) {
+      console.error('캘린더 주문 로딩 오류:', error);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchOrdersBySchedule = useCallback(async (startDate: Date, endDate: Date) => {
+    try {
+      setLoading(true);
+      const startStr = startOfDay(startDate).toISOString().split('T')[0];
+      const endStr = endOfDay(endDate).toISOString().split('T')[0];
+
+      // Fetch pickup orders in range
+      const { data: pickupData, error: pickupError } = await supabase
+        .from('orders')
+        .select('*')
+        .gte('pickup_info->>date', startStr)
+        .lte('pickup_info->>date', endStr);
+
+      if (pickupError) throw pickupError;
+
+      // Fetch delivery orders in range
+      const { data: deliveryData, error: deliveryError } = await supabase
+        .from('orders')
+        .select('*')
+        .gte('delivery_info->>date', startStr)
+        .lte('delivery_info->>date', endStr);
+
+      if (deliveryError) throw deliveryError;
+
+      // Merge and deduplicate
+      const allOrders = [...(pickupData || []), ...(deliveryData || [])];
+      const uniqueOrdersMap = new Map();
+      allOrders.forEach(o => uniqueOrdersMap.set(o.id, o));
+      const uniqueOrders = Array.from(uniqueOrdersMap.values());
+
+      const ordersData = uniqueOrders.map(mapRowToOrder);
+
+      // Sort by date (pickup or delivery)
+      ordersData.sort((a, b) => {
+        const dateA = a.pickupInfo?.date || a.deliveryInfo?.date || '';
+        const dateB = b.pickupInfo?.date || b.deliveryInfo?.date || '';
+        if (dateA !== dateB) return dateB.localeCompare(dateA);
+        return (b.pickupInfo?.time || b.deliveryInfo?.time || '').localeCompare(a.pickupInfo?.time || a.deliveryInfo?.time || '');
+      });
+
+      setOrders(ordersData);
+      return ordersData;
+    } catch (error) {
+      console.error('Schedule orders fetch error:', error);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
 
   const fetchOrders = useCallback(async (days: number = 7) => {
     // Abort previous request if exists
@@ -407,8 +478,10 @@ export function useOrders() {
   }, []);
 
   useEffect(() => {
-    fetchOrders();
-  }, [fetchOrders]);
+    if (initialFetch) {
+      fetchOrders();
+    }
+  }, [fetchOrders, initialFetch]);
 
   const addOrder = async (orderData: OrderData): Promise<string | null> => {
     setLoading(true);
@@ -685,6 +758,17 @@ export function useOrders() {
 
       if (data.actualDeliveryCost !== undefined || data.actualDeliveryCostCash !== undefined || data.deliveryInfo !== undefined) {
 
+        // Determine which branch pays for the expense
+        let expenseBranchId = oldOrder.branch_id;
+        let expenseBranchName = oldOrder.branch_name;
+
+        // If transferred and accepted/completed, the processing branch pays
+        const tInfo = oldOrder.transfer_info || oldOrder.extra_data?.transfer_info;
+        if (tInfo?.isTransferred && tInfo.processBranchId && ['accepted', 'completed'].includes(tInfo.status)) {
+          expenseBranchId = tInfo.processBranchId;
+          expenseBranchName = tInfo.processBranchName;
+        }
+
         // 1. 기존 지출 내역 모두 조회 (relatedOrderId 이용)
         const { data: existingExpenses } = await supabase
           .from('simple_expenses')
@@ -705,8 +789,8 @@ export function useOrders() {
             sub_category: 'DELIVERY',
             description: `실제 배송료 - ${recipientName}`,
             supplier: supplierName,
-            branch_id: oldOrder.branch_id,
-            branch_name: oldOrder.branch_name,
+            branch_id: expenseBranchId,
+            branch_name: expenseBranchName,
             updated_at: new Date().toISOString(),
             extra_data: {
               ...(standardExpense?.extra_data as object || {}),
@@ -743,8 +827,8 @@ export function useOrders() {
             sub_category: 'DELIVERY',
             description: `추가현금배송비 - ${recipientName}`,
             supplier: supplierName,
-            branch_id: oldOrder.branch_id,
-            branch_name: oldOrder.branch_name,
+            branch_id: expenseBranchId,
+            branch_name: expenseBranchName,
             updated_at: new Date().toISOString(),
             extra_data: {
               ...(cashExpense?.extra_data as object || {}),
@@ -923,7 +1007,9 @@ export function useOrders() {
     deleteOrder,
     completeDelivery,
     fetchOrdersForSettlement,
-    fetchOrdersByCustomer
+    fetchOrdersByCustomer,
+    fetchCalendarOrders,
+    fetchOrdersBySchedule
   };
 }
 

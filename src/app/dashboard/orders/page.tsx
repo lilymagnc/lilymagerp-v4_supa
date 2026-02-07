@@ -13,7 +13,7 @@ import { useOrderTransfers } from "@/hooks/use-order-transfers";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/use-auth";
 import { Skeleton } from "@/components/ui/skeleton";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -41,6 +41,9 @@ import { isSettled, isCanceled, isPendingPayment } from "@/lib/order-utils";
 
 export default function OrdersPage() {
   const { orders, loading, fetchOrders, fetchOrdersByRange, fetchAllOrders, updateOrderStatus, updatePaymentStatus, cancelOrder, deleteOrder } = useOrders();
+  // Separate hook for fetching future schedule without affecting main table
+  // Alias fetchCalendarOrders to fetchScheduleOrders to clarify purpose
+  const { orders: scheduleOrders, fetchCalendarOrders: fetchScheduleOrders } = useOrders(false);
   const [isFullDataLoaded, setIsFullDataLoaded] = useState(false);
   const { branches, loading: branchesLoading } = useBranches();
   const { createTransfer, getTransferPermissions } = useOrderTransfers();
@@ -310,9 +313,16 @@ export default function OrdersPage() {
     }
   };
 
-  // 초기 로딩: 이번 달 데이터 로드
+  // 초기 로딩: 이번 달 데이터 로드 및 캘린더 일정(향후 예약) 데이터 로드
   useEffect(() => {
     handleLoadMonth(0);
+
+    // Fetch future schedule orders - start date = today
+    // fetchCalendarOrders uses (baseDate - 35 days). 
+    // We want start date to be today, so baseDate = today + 35 days.
+    if (fetchScheduleOrders) {
+      fetchScheduleOrders(addDays(new Date(), 35));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1129,8 +1139,15 @@ export default function OrdersPage() {
     const today = new Date();
     const todayStr = format(today, "yyyy-MM-dd");
 
+    // Merge orders from main table and separate schedule fetch
+    // Use Map to deduplicate by ID
+    const mergedOrdersMap = new Map();
+    orders.forEach(o => mergedOrdersMap.set(o.id, o));
+    (scheduleOrders || []).forEach(o => mergedOrdersMap.set(o.id, o));
+    const allOrders = Array.from(mergedOrdersMap.values());
+
     const getScheduleOrders = (type: 'today' | 'future') => {
-      return orders.filter(order => {
+      return allOrders.filter(order => {
         // 권한 필터링 (자신의 지점 주문만 + 이관받은 주문 포함)
         if (!isAdmin && userBranch) {
           const isOwnBranch = order.branchName === userBranch;
@@ -1168,7 +1185,7 @@ export default function OrdersPage() {
       today: getScheduleOrders('today'),
       future: getScheduleOrders('future')
     };
-  }, [orders, isAdmin, userBranch, selectedBranch]);
+  }, [orders, scheduleOrders, isAdmin, userBranch, selectedBranch]);
   return (
     <>
       <PageHeader

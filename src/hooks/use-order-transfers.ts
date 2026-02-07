@@ -138,7 +138,7 @@ export function useOrderTransfers() {
         process_branch_name: processBranch.name,
         transfer_date: new Date().toISOString(),
         transfer_reason: transferForm.transferReason,
-        transfer_by: user?.uid || '',
+        transfer_by: user?.id || '',
         transfer_by_user: user?.email || '',
         status: 'pending',
         amount_split: transferForm.amountSplit,
@@ -191,25 +191,46 @@ export function useOrderTransfers() {
       if (!transfer) throw new Error('이관 정보를 찾을 수 없습니다.');
 
       const updatePayload: any = { status: statusUpdate.status, updated_at: new Date().toISOString() };
-      if (statusUpdate.status === 'accepted') { updatePayload.accepted_at = new Date().toISOString(); updatePayload.accepted_by = user?.uid; }
-      else if (statusUpdate.status === 'rejected') { updatePayload.rejected_at = new Date().toISOString(); updatePayload.rejected_by = user?.uid; }
-      else if (statusUpdate.status === 'completed') { updatePayload.completed_at = new Date().toISOString(); updatePayload.completed_by = user?.uid; }
-      else if (statusUpdate.status === 'cancelled') { updatePayload.cancelled_at = new Date().toISOString(); updatePayload.cancelled_by = user?.uid; }
+      if (statusUpdate.status === 'accepted') { updatePayload.accepted_at = new Date().toISOString(); updatePayload.accepted_by = user?.id; }
+      else if (statusUpdate.status === 'rejected') { updatePayload.rejected_at = new Date().toISOString(); updatePayload.rejected_by = user?.id; }
+      else if (statusUpdate.status === 'completed') { updatePayload.completed_at = new Date().toISOString(); updatePayload.completed_by = user?.id; }
+      else if (statusUpdate.status === 'cancelled') { updatePayload.cancelled_at = new Date().toISOString(); updatePayload.cancelled_by = user?.id; }
 
       if (statusUpdate.notes) updatePayload.notes = statusUpdate.notes;
 
       const { error: uError } = await supabase.from('order_transfers').update(updatePayload).eq('id', transferId);
       if (uError) throw uError;
 
-      if (statusUpdate.status === 'rejected') {
-        await supabase.from('orders').update({ 'transfer_info->>status': 'rejected' }).eq('id', transfer.original_order_id);
-      } else if (statusUpdate.status === 'completed') {
-        await supabase.from('orders').update({ status: 'completed', 'transfer_info->>status': 'completed' }).eq('id', transfer.original_order_id);
-        await createOrderTransferCompleteNotification(transfer.process_branch_name, transfer.order_branch_name, "이관 완료됨", transferId);
-      } else if (statusUpdate.status === 'accepted') {
-        const { data: order } = await supabase.from('orders').select('*').eq('id', transfer.original_order_id).single();
-        if (order) {
-          await supabase.from('orders').update({ 'transfer_info->>status': 'accepted' }).eq('id', order.id);
+      // Find original order to update transfer_info
+      const { data: order } = await supabase.from('orders').select('*').eq('id', transfer.original_order_id).single();
+
+      if (order) {
+        let newTransferInfo = order.transfer_info ? { ...order.transfer_info } : {};
+
+        // Common updates
+        newTransferInfo.status = statusUpdate.status;
+
+        if (statusUpdate.status === 'accepted') {
+          newTransferInfo.acceptedAt = new Date().toISOString();
+        } else if (statusUpdate.status === 'rejected') {
+          newTransferInfo.rejectedAt = new Date().toISOString();
+        } else if (statusUpdate.status === 'completed') {
+          newTransferInfo.completedAt = new Date().toISOString();
+        }
+
+        // Prepare order update payload
+        const orderUpdatePayload: any = { transfer_info: newTransferInfo };
+
+        if (statusUpdate.status === 'completed') {
+          orderUpdatePayload.status = 'completed';
+        }
+
+        await supabase.from('orders').update(orderUpdatePayload).eq('id', order.id);
+
+        // Specific actions based on status
+        if (statusUpdate.status === 'completed') {
+          await createOrderTransferCompleteNotification(transfer.process_branch_name, transfer.order_branch_name, "이관 완료됨", transferId);
+        } else if (statusUpdate.status === 'accepted') {
           const total = transfer.original_order_amount;
           const orderBranchShare = Math.round(total * ((transfer.amount_split?.orderBranch || 100) / 100));
           const processBranchShare = total - orderBranchShare;
@@ -252,7 +273,7 @@ export function useOrderTransfers() {
       await supabase.from('order_transfers').update({
         status: 'cancelled',
         cancelled_at: new Date().toISOString(),
-        cancelled_by: user?.uid,
+        cancelled_by: user?.id,
         cancel_reason: cancelReason,
         updated_at: new Date().toISOString()
       }).eq('id', transferId);

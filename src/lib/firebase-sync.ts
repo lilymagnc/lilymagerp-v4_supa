@@ -75,7 +75,7 @@ export async function syncFirebaseToSupabase(
         { firebase: 'materials', supabase: 'materials', label: '자재' },
         { firebase: 'simpleExpenses', supabase: 'simple_expenses', label: '간편지출' },
         { firebase: 'userRoles', supabase: 'user_roles', label: '권한' },
-        { firebase: 'orderTransfers', supabase: 'order_transfers', label: '주문이관' },
+        { firebase: 'order_transfers', supabase: 'order_transfers', label: '주문이관' },
         { firebase: 'materialRequests', supabase: 'material_requests', label: '자재요청' },
         { firebase: 'dailyStats', supabase: 'daily_stats', label: '일별통계' },
         { firebase: 'hr_documents', supabase: 'hr_documents', label: '인사서류' },

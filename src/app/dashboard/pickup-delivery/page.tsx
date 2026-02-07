@@ -50,7 +50,7 @@ const toLocalDate = (dateVal: any): Date => {
 };
 
 export default function PickupDeliveryPage() {
-  const { orders, loading, updateOrderStatus, updateOrder, completeDelivery } = useOrders();
+  const { orders, loading, updateOrderStatus, updateOrder, completeDelivery, fetchOrdersBySchedule, fetchOrdersByRange } = useOrders(false);
   const { branches, loading: branchesLoading, updateBranch } = useBranches();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -68,6 +68,24 @@ export default function PickupDeliveryPage() {
   const [startDate, setStartDate] = useState<Date | undefined>(startOfDay(new Date()));
   const [endDate, setEndDate] = useState<Date | undefined>(endOfDay(new Date()));
   const [currentCalendarDate, setCurrentCalendarDate] = useState<Date>(new Date());
+
+  // Fetch orders when filters change
+  useEffect(() => {
+    if (viewMode === 'list') {
+      if (startDate && endDate) {
+        if (dateFilterType === 'pickup' || dateFilterType === 'delivery') {
+          if (fetchOrdersBySchedule) fetchOrdersBySchedule(startDate, endDate);
+        } else if (dateFilterType === 'order') {
+          if (fetchOrdersByRange) fetchOrdersByRange(startDate, endDate);
+        }
+      }
+    } else if (viewMode === 'calendar') {
+      // In calendar mode, fetch data for the whole month of the current view
+      const start = startOfMonth(currentCalendarDate);
+      const end = endOfMonth(currentCalendarDate);
+      if (fetchOrdersBySchedule) fetchOrdersBySchedule(start, end);
+    }
+  }, [viewMode, startDate, endDate, dateFilterType, currentCalendarDate, fetchOrdersBySchedule, fetchOrdersByRange]);
 
   // UI States
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
