@@ -44,8 +44,14 @@ export function parseDate(date: any): Date | null {
     }
 
     // Firebase Timestamp with seconds property
-    if (typeof date === 'object' && date !== null && 'seconds' in date) {
-        return new Date(date.seconds * 1000);
+    if (typeof date === 'object' && date !== null) {
+        if ('seconds' in date) {
+            return new Date(date.seconds * 1000);
+        }
+        // Handle raw Firestore object format {_seconds, _nanoseconds}
+        if ('_seconds' in date) {
+            return new Date(date._seconds * 1000);
+        }
     }
 
     // Unix timestamp (number)
