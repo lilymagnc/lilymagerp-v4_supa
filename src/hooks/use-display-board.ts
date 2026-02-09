@@ -9,6 +9,7 @@ import { DisplayBoardItem } from '@/types/order-transfer';
 export function useDisplayBoard() {
   const [displayItems, setDisplayItems] = useState<DisplayBoardItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const { user } = useAuth();
@@ -35,7 +36,11 @@ export function useDisplayBoard() {
   const fetchDisplayItems = useCallback(async () => {
     if (!user?.franchise) return;
     try {
-      setLoading(true);
+      if (displayItems.length === 0) {
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
       setError(null);
 
       const userBranch = branches.find(b => b.name === user.franchise);
@@ -45,7 +50,7 @@ export function useDisplayBoard() {
         .select('*')
         .eq('branch_id', userBranch.id)
         .eq('is_active', true)
-        .order('priority', { ascending: false }) // Assuming priority needs custom ordering else text sort
+        .order('priority', { ascending: false })
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -55,6 +60,7 @@ export function useDisplayBoard() {
       setError('전광판 목록을 불러오는 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   }, [user?.franchise, branches, mapRowToItem]);
 
@@ -216,6 +222,6 @@ export function useDisplayBoard() {
   }, [cleanupExpiredDisplayItems]);
 
   return {
-    displayItems, loading, error, createDisplayItem, createOrderTransferDisplay, createNewOrderDisplay, createDeliveryCompleteDisplay, createPickupReadyDisplay, deactivateDisplayItem, removeDisplayItem, removeAllDisplayItems, cleanupExpiredDisplayItems
+    displayItems, loading, error, createDisplayItem, createOrderTransferDisplay, createNewOrderDisplay, createDeliveryCompleteDisplay, createPickupReadyDisplay, deactivateDisplayItem, removeDisplayItem, removeAllDisplayItems, cleanupExpiredDisplayItems, isRefreshing
   };
 }

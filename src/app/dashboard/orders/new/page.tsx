@@ -9,8 +9,7 @@ import { useProducts, Product } from "@/hooks/use-products";
 import { useCustomers, Customer } from "@/hooks/use-customers";
 import { useAuth } from "@/hooks/use-auth";
 import { useDiscountSettings } from "@/hooks/use-discount-settings";
-import { Timestamp, serverTimestamp, collection, query, where, orderBy, limit, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { debounce } from "lodash";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -31,7 +30,7 @@ interface OrderItem extends Product {
 }
 type OrderType = "store" | "phone" | "naver" | "kakao" | "etc";
 type ReceiptType = "store_pickup" | "pickup_reservation" | "delivery_reservation";
-type MessageType = "card" | "ribbon";
+type MessageType = "card" | "ribbon" | "none";
 type PaymentMethod = "card" | "cash" | "transfer" | "mainpay" | "shopping_mall" | "epay" | "kakao" | "apple";
 type PaymentStatus = "pending" | "paid" | "completed" | "split_payment";
 
@@ -137,29 +136,29 @@ export default function NewOrderPage() {
       }
 
       try {
-        const ordersRef = collection(db, 'orders');
-        // Query orders by this customer with ribbon message
-        // Using Orderer Name instead of contact might be less precise but contact is safer if available
-        // Assuming selectedCustomer.contact matches orderer.contact
         if (!selectedCustomer.contact) return;
 
-        const q = query(
-          ordersRef,
-          where('orderer.contact', '==', selectedCustomer.contact),
-          where('message.type', '==', 'ribbon'),
-          orderBy('orderDate', 'desc'),
-          limit(10)
-        );
+        // Supabase query to get recent ribbon messages for this customer
+        const { data: ordersData, error } = await supabase
+          .from('orders')
+          .select('message, extra_data, orderer')
+          .eq('orderer->>contact', selectedCustomer.contact)
+          .or('message->>type.eq.ribbon,extra_data->message->>type.eq.ribbon')
+          .order('order_date', { ascending: false })
+          .limit(20);
 
-        const snapshot = await getDocs(q);
+        if (error) throw error;
+
         const messages: { sender: string; content: string }[] = [];
         const seen = new Set<string>();
 
-        snapshot.forEach(doc => {
-          const data = doc.data();
-          if (data.message?.content) {
-            const sender = data.message.sender || data.orderer.name || '';
-            const content = data.message.content;
+        ordersData?.forEach(row => {
+          // Standard pattern to handle both legacy extra_data and new message column
+          const msg = (row.message && Object.keys(row.message).length > 0) ? row.message : (row.extra_data?.message || {});
+
+          if (msg.type === 'ribbon' && msg.content) {
+            const sender = msg.sender || row.orderer?.name || '';
+            const content = msg.content;
             const key = `${sender}|${content}`;
 
             if (!seen.has(key)) {
@@ -169,7 +168,8 @@ export default function NewOrderPage() {
           }
         });
 
-        setRecentRibbonMessages(messages.slice(0, 5)); // Top 5 unique
+        const slicedMessages = messages.slice(0, 10);
+        setRecentRibbonMessages(slicedMessages);
       } catch (error) {
         console.error("Error fetching ribbon history:", error);
       }
@@ -399,8 +399,8 @@ export default function NewOrderPage() {
         if (foundOrder.payment.isSplitPayment) {
           setIsSplitPaymentEnabled(true);
           setFirstPaymentAmount(foundOrder.payment.firstPaymentAmount || 0);
-          setFirstPaymentMethod(foundOrder.payment.firstPaymentMethod || "card");
-          setSecondPaymentMethod(foundOrder.payment.secondPaymentMethod || "card");
+          setFirstPaymentMethod((foundOrder.payment.firstPaymentMethod as PaymentMethod) || "card");
+          setSecondPaymentMethod((foundOrder.payment.secondPaymentMethod as PaymentMethod) || "card");
         }
       }
     }
@@ -544,32 +544,24 @@ export default function NewOrderPage() {
     try {
       if (!contact && (!company || !company.trim())) return;
 
-      const ordersRef = collection(db, 'orders');
-      let q;
+      let query = supabase
+        .from('orders')
+        .select('payment')
+        .order('order_date', { ascending: false })
+        .limit(1);
 
       if (company && company.trim()) {
-        q = query(
-          ordersRef,
-          where('orderer.company', '==', company.trim()),
-          orderBy('orderDate', 'desc'),
-          limit(1)
-        );
+        query = query.eq('orderer->>company', company.trim());
       } else {
-        q = query(
-          ordersRef,
-          where('orderer.contact', '==', contact),
-          orderBy('orderDate', 'desc'),
-          limit(1)
-        );
+        query = query.eq('orderer->>contact', contact);
       }
 
-      const snapshot = await getDocs(q);
-      if (!snapshot.empty) {
-        const lastOrder = snapshot.docs[0].data() as any;
-        if (lastOrder.payment) {
-          if (lastOrder.payment.method) setPaymentMethod(lastOrder.payment.method as PaymentMethod);
-          if (lastOrder.payment.status) setPaymentStatus(lastOrder.payment.status as PaymentStatus);
-        }
+      const { data, error } = await query.maybeSingle();
+      if (error) throw error;
+
+      if (data && data.payment) {
+        if (data.payment.method) setPaymentMethod(data.payment.method as PaymentMethod);
+        if (data.payment.status) setPaymentStatus(data.payment.status as PaymentStatus);
       }
     } catch (error) {
       console.error("Error applying last order preferences:", error);
@@ -726,10 +718,10 @@ export default function NewOrderPage() {
       payment: {
         method: isSplitPaymentEnabled ? undefined : paymentMethod,
         status: isSplitPaymentEnabled ? "split_payment" : paymentStatus,
-        completedAt: (!isSplitPaymentEnabled && (paymentStatus === 'paid' || paymentStatus === 'completed')) ? serverTimestamp() as any : undefined,
+        completedAt: (!isSplitPaymentEnabled && (paymentStatus === 'paid' || paymentStatus === 'completed')) ? new Date().toISOString() : undefined,
         isSplitPayment: isSplitPaymentEnabled,
         firstPaymentAmount: isSplitPaymentEnabled ? firstPaymentAmount : undefined,
-        firstPaymentDate: isSplitPaymentEnabled ? serverTimestamp() as any : undefined,
+        firstPaymentDate: isSplitPaymentEnabled ? new Date().toISOString() : undefined,
         firstPaymentMethod: isSplitPaymentEnabled ? firstPaymentMethod : undefined,
         secondPaymentAmount: isSplitPaymentEnabled ? (orderSummary.total - firstPaymentAmount) : undefined,
         secondPaymentDate: undefined,

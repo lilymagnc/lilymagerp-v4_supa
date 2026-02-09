@@ -153,7 +153,8 @@ export type PaymentStatus = "paid" | "pending" | "completed" | "split_payment";
 
 export function useOrders(initialFetch = true) {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialFetch);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const mapRowToOrder = (row: any): Order => ({
@@ -280,10 +281,16 @@ export function useOrders(initialFetch = true) {
     const signal = controller.signal;
 
     try {
-      setLoading(true);
+      // Only show full-page loading skeleton if we have no orders or it's the very first fetch
+      if (orders.length === 0) {
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
+
       const startDate = subDays(startOfDay(new Date()), days).toISOString();
 
-      // Implement pagination to get more than 1000 orders if necessary
+      // ... existing pagination logic ...
       let allData: any[] = [];
       let page = 0;
       const pageSize = 1000;
@@ -309,12 +316,12 @@ export function useOrders(initialFetch = true) {
           hasMore = false;
         }
 
-        // Safety limit for general fetch
         if (allData.length >= 5000) break;
       }
 
       if (!signal.aborted) {
-        setOrders(allData.map(mapRowToOrder));
+        const mappedOrders = allData.map(mapRowToOrder);
+        setOrders(mappedOrders);
       }
     } catch (error: any) {
       if (error.name === 'AbortError' || error.message === 'Aborted') {
@@ -325,13 +332,18 @@ export function useOrders(initialFetch = true) {
     } finally {
       if (!signal.aborted) {
         setLoading(false);
+        setIsRefreshing(false);
       }
     }
   }, []);
 
   const fetchOrdersByRange = useCallback(async (start: Date, end: Date) => {
     try {
-      setLoading(true);
+      if (orders.length === 0) {
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
       const rangeStart = startOfDay(start).toISOString();
       const rangeEnd = endOfDay(end).toISOString();
 
@@ -390,12 +402,18 @@ export function useOrders(initialFetch = true) {
       return [];
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
-  }, []);
+  }, [orders.length]);
 
   const fetchAllOrders = useCallback(async () => {
     try {
-      setLoading(true);
+      if (orders.length === 0) {
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
+      console.log("[Full Load] Fetching all orders...");
       const { data, error } = await supabase
         .from('orders')
         .select('*')
@@ -411,8 +429,9 @@ export function useOrders(initialFetch = true) {
       return [];
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
-  }, []);
+  }, [orders.length]);
 
   const fetchOrdersByCustomer = useCallback(async (customerId: string, startDate?: Date, endDate?: Date) => {
     try {
@@ -481,6 +500,30 @@ export function useOrders(initialFetch = true) {
     if (initialFetch) {
       fetchOrders();
     }
+
+    // --- [Real-time Subscription] Act like Firebase ---
+    // Listen for changes on the 'orders' table
+    const channel = supabase
+      .channel('orders-realtime-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        (payload) => {
+          console.log('[Real-time] Order Change Received:', payload.eventType, payload.new?.id || payload.old?.id);
+
+          // Re-fetch orders when any change happens to stay fully synced
+          // This ensures complex filters and statistics are always correct.
+          // Since we fixed the 'loading' state, users won't see a flicker.
+          fetchOrders();
+        }
+      )
+      .subscribe((status) => {
+        console.log(`[Real-time] Subscription status: ${status}`);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [fetchOrders, initialFetch]);
 
   const addOrder = async (orderData: OrderData): Promise<string | null> => {
@@ -1009,7 +1052,8 @@ export function useOrders(initialFetch = true) {
     fetchOrdersForSettlement,
     fetchOrdersByCustomer,
     fetchCalendarOrders,
-    fetchOrdersBySchedule
+    fetchOrdersBySchedule,
+    isRefreshing
   };
 }
 

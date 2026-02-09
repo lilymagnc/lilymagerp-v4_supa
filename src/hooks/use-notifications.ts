@@ -30,6 +30,7 @@ export function useNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
 
   const mapRowToNotification = (row: any): Notification => ({
@@ -57,7 +58,11 @@ export function useNotifications() {
 
   const fetchNotifications = useCallback(async (userId?: string, limitCount = 50) => {
     try {
-      setLoading(true);
+      if (notifications.length === 0) {
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
       let query = supabase.from('notifications')
         .select('*')
         .eq('is_archived', false)
@@ -79,6 +84,7 @@ export function useNotifications() {
       toast({ variant: 'destructive', title: '알림 조회 실패', description: '오류가 발생했습니다.' });
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   }, [toast]);
 
@@ -262,11 +268,18 @@ export function useNotifications() {
 
   useEffect(() => {
     fetchNotifications();
+
+    // Activate real-time subscription
+    const unsubscribe = subscribeToNotifications();
+
     const cleanupInterval = setInterval(cleanupExpiredNotifications, 60 * 60 * 1000);
-    return () => clearInterval(cleanupInterval);
-  }, [fetchNotifications, cleanupExpiredNotifications]);
+    return () => {
+      unsubscribe();
+      clearInterval(cleanupInterval);
+    };
+  }, [fetchNotifications, subscribeToNotifications, cleanupExpiredNotifications]);
 
   return {
-    notifications, unreadCount, loading, fetchNotifications, subscribeToNotifications, createNotification, createBudgetAlert, createExpenseApprovalAlert, createPurchaseRequestAlert, markAsRead, markAllAsRead, archiveNotification, cleanupExpiredNotifications, getNotificationStats
+    notifications, unreadCount, loading, isRefreshing, fetchNotifications, subscribeToNotifications, createNotification, createBudgetAlert, createExpenseApprovalAlert, createPurchaseRequestAlert, markAsRead, markAllAsRead, archiveNotification, cleanupExpiredNotifications, getNotificationStats
   };
 }

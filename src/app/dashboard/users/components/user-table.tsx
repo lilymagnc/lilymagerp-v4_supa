@@ -151,7 +151,7 @@ export function UserTable({ users, onDeleteUser, onPasswordReset, onToggleStatus
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">{user.email}</TableCell>
                   <TableCell>
-                    <Badge 
+                    <Badge
                       variant={user.role === '본사 관리자' ? 'default' : user.role === '가맹점 관리자' ? 'secondary' : 'outline'}
                     >
                       {user.role}
@@ -199,7 +199,7 @@ export function UserTable({ users, onDeleteUser, onPasswordReset, onToggleStatus
                           )}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem 
+                        <DropdownMenuItem
                           onClick={() => handleDeleteClick(user)}
                           className="text-destructive focus:text-destructive"
                         >
@@ -231,7 +231,7 @@ export function UserTable({ users, onDeleteUser, onPasswordReset, onToggleStatus
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>취소</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={handleDeleteConfirm}
               className="bg-destructive hover:bg-destructive/90"
             >
@@ -242,14 +242,16 @@ export function UserTable({ users, onDeleteUser, onPasswordReset, onToggleStatus
       </AlertDialog>
 
       {/* 사용자 폼 */}
-      {isFormOpen && (
-        <UserForm 
-          isOpen={isFormOpen} 
-          onOpenChange={handleCloseForm} 
-          user={selectedUser} 
-          onUserUpdated={handleUserUpdated} 
-        />
-      )}
+      {
+        isFormOpen && (
+          <UserForm
+            isOpen={isFormOpen}
+            onOpenChange={handleCloseForm}
+            user={selectedUser}
+            onUserUpdated={handleUserUpdated}
+          />
+        )
+      }
     </>
   );
 }

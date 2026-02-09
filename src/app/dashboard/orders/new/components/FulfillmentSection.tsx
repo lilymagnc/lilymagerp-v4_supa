@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 // Type definitions should be imported or redefined if they are local
 type ReceiptType = "store_pickup" | "pickup_reservation" | "delivery_reservation";
-type MessageType = "card" | "ribbon";
+type MessageType = "card" | "ribbon" | "none";
 
 interface FulfillmentSectionProps {
     receiptType: ReceiptType;
@@ -317,8 +317,8 @@ export function FulfillmentSection({
                                 try {
                                     const msg = JSON.parse(val);
                                     if (msg.content) {
-                                        // Only load content, ignore sender as requested
-                                        setMessageContent(msg.content);
+                                        // 메시지와 보내는 분을 합쳐서 세팅 (기존 입력 방식 준수)
+                                        setMessageContent(`${msg.content}${msg.sender ? ' / ' + msg.sender : ''}`);
                                     }
                                 } catch (e) { }
                             }}>
@@ -355,14 +355,48 @@ export function FulfillmentSection({
                                 className="min-h-[100px]"
                             />
                         ) : (
-                            <>
+                            <div className="space-y-2">
+                                {/* 인기 리본 문구 퀵 버튼 */}
+                                <div className="flex flex-wrap gap-1.5 mb-2">
+                                    {[
+                                        { ko: "축발전", zh: "祝發展" },
+                                        { ko: "축개업", zh: "祝開業" },
+                                        { ko: "축승진", zh: "祝昇進" },
+                                        { ko: "축영전", zh: "祝榮轉" },
+                                        { ko: "근조", zh: "謹弔" },
+                                        { ko: "축결혼", zh: "祝結婚" },
+                                    ].map((msg) => (
+                                        <Button
+                                            key={msg.ko}
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 px-2 text-[11px] bg-primary/5 hover:bg-primary/10 border-primary/20 text-primary-foreground font-medium"
+                                            onClick={() => {
+                                                const content = `${msg.ko} / ${msg.zh}`;
+                                                setMessageContent(content);
+                                            }}
+                                        >
+                                            {msg.ko} / {msg.zh}
+                                        </Button>
+                                    ))}
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 px-2 text-[11px] bg-orange-50 hover:bg-orange-100 border-orange-200 text-orange-700 font-medium"
+                                        onClick={() => setMessageContent("삼가 故人의 冥福을 빕니다")}
+                                    >
+                                        삼가 故人의 冥福을 빕니다
+                                    </Button>
+                                </div>
                                 <Input
                                     value={messageContent}
                                     onChange={(e) => setMessageContent(e.target.value)}
                                     placeholder="메시지 / 보내는분 (예: 축결혼 / 홍길동) - 보내는분 미입력시 주문자명 사용"
                                 />
                                 <p className="text-xs text-muted-foreground">* 메시지와 보내는 분을 '/' 로 구분해서 입력하세요.</p>
-                            </>
+                            </div>
                         )}
                     </div>
 

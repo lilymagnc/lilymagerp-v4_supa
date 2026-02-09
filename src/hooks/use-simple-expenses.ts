@@ -18,6 +18,7 @@ import { MaterialRequest } from '@/types/material-request';
 export function useSimpleExpenses() {
   const [expenses, setExpenses] = useState<SimpleExpense[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [supplierSuggestions, setSupplierSuggestions] = useState<SupplierSuggestion[]>([]);
   const { user } = useAuth();
   const { toast } = useToast();
@@ -56,7 +57,15 @@ export function useSimpleExpenses() {
     offset?: number;
   }) => {
     if (!user) return;
-    if (!filters?.offset) setLoading(true);
+
+    // Smart loading: only show full skeleton on first load or when changing filters significantly
+    if (!filters?.offset) {
+      if (expenses.length === 0) {
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
+    }
 
     try {
       let query = supabase.from('simple_expenses').select('*');
@@ -65,7 +74,7 @@ export function useSimpleExpenses() {
       if (filters?.dateFrom) query = query.gte('expense_date', filters.dateFrom.toISOString());
       if (filters?.dateTo) query = query.lte('expense_date', filters.dateTo.toISOString());
 
-      const limit = filters?.limit || 3000;
+      const limit = filters?.limit || 10000;
       const offset = filters?.offset || 0;
 
       const { data, error } = await query
@@ -85,9 +94,10 @@ export function useSimpleExpenses() {
     } catch (error) {
       console.error(error);
       toast({ variant: "destructive", title: "오류", description: "지출 목록 로드 실패" });
-      return { expenses: [], hasMore: false };
+      return { expenses: [] as SimpleExpense[], hasMore: false };
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   }, [user, toast]);
 
@@ -412,11 +422,26 @@ export function useSimpleExpenses() {
   }, [toast]);
 
   useEffect(() => {
-    if (user) { fetchExpenses(); fetchSupplierSuggestions(); }
+    if (user) {
+      fetchExpenses();
+      fetchSupplierSuggestions();
+    }
+
+    // Real-time synchronization
+    const channel = supabase
+      .channel('simple-expenses-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'simple_expenses' }, () => {
+        fetchExpenses();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user, fetchExpenses, fetchSupplierSuggestions]);
 
   return {
-    expenses, loading, supplierSuggestions,
+    expenses, loading, supplierSuggestions, isRefreshing,
     fetchExpenses, addExpense, updateExpense, deleteExpense,
     updateExpenseByOrderId, deleteExpenseByOrderId,
     fetchSupplierSuggestions, fetchFixedCostTemplate, saveFixedCostTemplate, addFixedCosts, calculateStats, addMaterialRequestExpense

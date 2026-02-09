@@ -66,9 +66,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .limit(1)
         .maybeSingle();
 
-      // 5초 타임아웃 (배경에서 도는거라 에러나도 상관없음)
+      // 10초 타임아웃 (Supabase 인스턴스 기동 지연 고려)
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Role fetch timeout')), 5000)
+        setTimeout(() => reject(new Error('Role fetch timeout')), 10000)
       );
 
       // 경주 시작

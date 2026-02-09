@@ -34,6 +34,7 @@ export interface Customer extends CustomerFormValues {
 export function useCustomers() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
 
   const mapRowToCustomer = (row: any): Customer => ({
@@ -66,14 +67,42 @@ export function useCustomers() {
 
   const fetchCustomers = useCallback(async () => {
     try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('is_deleted', false);
+      if (customers.length === 0) {
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
 
-      if (error) throw error;
-      setCustomers((data || []).map(mapRowToCustomer));
+      let allCustomers: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('is_deleted', false)
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allCustomers = [...allCustomers, ...data];
+          if (data.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          hasMore = false;
+        }
+
+        // Safety break
+        if (allCustomers.length >= 10000) break;
+      }
+
+      setCustomers(allCustomers.map(mapRowToCustomer));
     } catch (error: any) {
       console.error("Error fetching customers: ", error);
       console.error("Error details:", JSON.stringify(error, null, 2));
@@ -84,6 +113,7 @@ export function useCustomers() {
       });
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   }, [toast]);
 
@@ -414,7 +444,8 @@ export function useCustomers() {
     findCustomerByContact,
     getCustomerPoints,
     deductCustomerPoints,
-    addCustomerPoints
+    addCustomerPoints,
+    isRefreshing
   };
 }
 

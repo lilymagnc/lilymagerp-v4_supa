@@ -72,7 +72,7 @@ export default function UsersPage() {
       const usersData: SystemUser[] = rolesData.map((roleUser: any) => {
         const emp = employeeMap.get(roleUser.email);
         return {
-          id: roleUser.user_id || roleUser.email, // Use uuid if available, else email
+          id: roleUser.id, // Use Row ID (Primary Key) for absolute uniqueness
           email: roleUser.email,
           role: roleCodeToLabel[roleUser.role] || roleUser.role,
           franchise: roleUser.branch_name || '',
@@ -83,18 +83,23 @@ export default function UsersPage() {
         };
       });
 
-      // 중복 이메일 체크 및 경고
-      const emailCounts = usersData.reduce((acc, user) => {
-        acc[user.email] = (acc[user.email] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
+      // 중복 데이터 필터링 (ID 기준 - 테이블 키 충돌 방지)
+      const uniqueUsersMap = new Map();
+      usersData.forEach(user => {
+        // ID가 유효한 경우에만 맵에 추가 (먼저 나타난 유효한 데이터 우선)
+        if (user.id && !uniqueUsersMap.has(user.id)) {
+          uniqueUsersMap.set(user.id, user);
+        }
+      });
 
-      const duplicates = Object.entries(emailCounts).filter(([email, count]) => count > 1);
-      if (duplicates.length > 0) {
-        console.warn("중복 이메일 발견:", duplicates);
+      const uniqueUsers = Array.from(uniqueUsersMap.values());
+      const duplicatesCount = usersData.length - uniqueUsers.length;
+
+      if (duplicatesCount > 0) {
+        console.warn(`${duplicatesCount}개의 중복 사용자 데이터가 발견되어 필터링되었습니다.`);
       }
 
-      setUsers(usersData);
+      setUsers(uniqueUsers);
     } catch (error) {
       console.error("사용자 데이터 로드 오류:", error);
       toast({

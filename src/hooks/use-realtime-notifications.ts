@@ -98,7 +98,17 @@ export function useRealtimeNotifications() {
 
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
-      supabase.removeChannel(channel);
+
+      // 채널 클린업: 
+      // 즉시 제거 시 '연결 전 종료(WebSocket is closed before the connection is established)' 경고가 
+      // 발생할 수 있으므로, 아주 짧은 지연(0ms)을 주어 현재 이벤트 루프를 넘깁니다.
+      if (channel) {
+        setTimeout(() => {
+          try {
+            supabase.removeChannel(channel).catch(() => { });
+          } catch (e) { }
+        }, 0);
+      }
     };
   }, [user, fetchNotifications]);
 
