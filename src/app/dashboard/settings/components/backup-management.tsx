@@ -144,7 +144,6 @@ export default function BackupManagement() {
   const runSmartCleanup = async (records: BackupRecord[]) => {
     // 자동 정리 로직은 수동 정리 버튼에서 대체되었으므로, 여기서는 14일 지난 '오래된' 파일만 조용히 정리 (옵션)
     // 하지만 사용자가 '수동 정리'를 원했으므로 자동 정리는 비활성화하거나 로그만 남김
-    console.log("Auto cleanup check skipped in favor of manual cleanup.");
   };
 
   const loadBackups = async () => {

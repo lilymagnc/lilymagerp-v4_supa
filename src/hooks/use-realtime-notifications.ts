@@ -90,7 +90,6 @@ export function useRealtimeNotifications() {
 
         // Set new timer
         debounceTimer.current = setTimeout(() => {
-          console.log('[Realtime] Fetching notifications (Debounced)');
           fetchNotifications();
         }, 1000);
       })

@@ -191,11 +191,6 @@ export default function DashboardPage() {
   // 권한 판정 로그 추가 (디버깅용)
   useEffect(() => {
     if (user) {
-      console.log('현재 로그인 사용자 정보:', {
-        role: user.role,
-        franchise: user.franchise,
-        email: user.email
-      });
     }
   }, [user]);
 
@@ -218,7 +213,6 @@ export default function DashboardPage() {
     if (isAdmin) {
       // 본사 관리자면 '본사' 타입을 제외한 모든 지점
       const filtered = branches.filter(b => b.type !== '본사');
-      console.log('본사 관리자용 지점 목록:', filtered.map(b => b.name));
       return filtered;
     } else {
       const filtered = branches.filter(branch => branch.name === userBranch);

@@ -65,11 +65,6 @@ export default function DailySettlementPage() {
     // 비용 및 정산 데이터 불러오기 (최적화됨 + 자동계산)
     useEffect(() => {
         const loadData = async () => {
-            console.log('🔍 Settlement Load Check:', {
-                currentBranchId,
-                currentTargetBranch,
-                reportDate,
-            });
 
             if (currentTargetBranch === 'all') {
                 await fetchOrdersForSettlement(reportDate);
@@ -84,7 +79,6 @@ export default function DailySettlementPage() {
                 return;
             }
 
-            console.log('✅ Loading settlement data & history...');
 
             const dateFrom = new Date(reportDate + 'T00:00:00');
             const dateTo = new Date(reportDate + 'T23:59:59');
@@ -108,11 +102,9 @@ export default function DailySettlementPage() {
 
             // 2. 어제 정산 기록이 없는 경우 -> 과거 기록부터 갭(Gap) 계산하여 자동 복원
             if (!prevSettlementResult) {
-                console.log('⚠️ No previous settlement found. Attempting recursive calculation...');
                 const lastRecord = await findLastSettlementBefore(currentBranchId, prevDate);
 
                 if (lastRecord) {
-                    console.log(`Found last saved record at ${lastRecord.date}. Calculating gap...`);
                     const gapStart = addDays(parseDate(lastRecord.date) || new Date(), 1);
                     const gapEnd = new Date(prevDate);
 
@@ -215,7 +207,6 @@ export default function DailySettlementPage() {
                         }
 
                         if (virtualPrevRecord) {
-                            console.log('✅ Virtual Previous Settlement Record Created:', virtualPrevRecord);
                             setPrevSettlementRecord(virtualPrevRecord);
                         } else {
                             setPrevSettlementRecord(null);
@@ -226,7 +217,6 @@ export default function DailySettlementPage() {
                         setPrevSettlementRecord(null);
                     }
                 } else {
-                    console.log('No historical record found. Starting fresh.');
                     setPrevSettlementRecord(null);
                 }
             } else {

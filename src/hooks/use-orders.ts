@@ -324,9 +324,7 @@ export function useOrders(initialFetch = true) {
         setOrders(mappedOrders);
       }
     } catch (error: any) {
-      if (error.name === 'AbortError' || error.message === 'Aborted') {
-        console.log('Fetch aborted');
-      } else {
+      if (error.name !== 'AbortError' && error.message !== 'Aborted') {
         console.error('주문 데이터 로딩 오류:', error);
       }
     } finally {
@@ -347,7 +345,6 @@ export function useOrders(initialFetch = true) {
       const rangeStart = startOfDay(start).toISOString();
       const rangeEnd = endOfDay(end).toISOString();
 
-      console.log(`[Period Load] Fetching from ${rangeStart} to ${rangeEnd}`);
 
       let allOrders: any[] = [];
       let page = 0;
@@ -370,7 +367,6 @@ export function useOrders(initialFetch = true) {
 
         if (data && data.length > 0) {
           allOrders = [...allOrders, ...data];
-          console.log(`[Period Load] Chunk ${page + 1}: Fetched ${data.length} rows`);
 
           if (data.length < pageSize) {
             hasMore = false; // End of data
@@ -388,10 +384,6 @@ export function useOrders(initialFetch = true) {
         }
       }
 
-      console.log(`[Period Load] Total fetched: ${allOrders.length} rows`);
-      if (allOrders.length > 0) {
-        console.log(`[Period Load] Oldest date: ${allOrders[allOrders.length - 1].order_date}`);
-      }
 
       const ordersData = (allOrders || []).map(mapRowToOrder);
       setOrders(ordersData);
@@ -413,7 +405,6 @@ export function useOrders(initialFetch = true) {
       } else {
         setIsRefreshing(true);
       }
-      console.log("[Full Load] Fetching all orders...");
       const { data, error } = await supabase
         .from('orders')
         .select('*')
@@ -468,7 +459,6 @@ export function useOrders(initialFetch = true) {
         ? `${subDays(new Date(startDateStr), 1).toISOString().split('T')[0]}T00:00:00`
         : `${subDays(new Date(targetDateStr), 1).toISOString().split('T')[0]}T00:00:00`;
 
-      console.log(`[Settlement Load] Fetching from ${effectiveStart} to ${end}`);
 
       const { data, error } = await supabase
         .from('orders')
@@ -509,7 +499,6 @@ export function useOrders(initialFetch = true) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
         (payload) => {
-          console.log('[Real-time] Order Change Received:', payload.eventType, payload.new?.id || payload.old?.id);
 
           // Re-fetch orders when any change happens to stay fully synced
           // This ensures complex filters and statistics are always correct.
@@ -518,7 +507,6 @@ export function useOrders(initialFetch = true) {
         }
       )
       .subscribe((status) => {
-        console.log(`[Real-time] Subscription status: ${status}`);
       });
 
     return () => {

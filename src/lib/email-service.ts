@@ -2,12 +2,12 @@ import { SystemSettings } from '@/hooks/use-settings';
 
 // HTML 콘텐츠인지 감지하는 함수
 function isHtml(content: string): boolean {
-  return content.includes('<!DOCTYPE html') || 
-         content.includes('<html') || 
-         content.includes('<body') ||
-         content.includes('<div') ||
-         content.includes('<p') ||
-         content.includes('<table');
+  return content.includes('<!DOCTYPE html') ||
+    content.includes('<html') ||
+    content.includes('<body') ||
+    content.includes('<div') ||
+    content.includes('<p') ||
+    content.includes('<table');
 }
 
 // 이메일 템플릿에서 변수를 실제 값으로 치환하는 함수
@@ -144,11 +144,6 @@ export async function sendBirthdayEmail(
 async function sendEmail(to: string, subject: string, content: string, isHtmlContent: boolean = false): Promise<void> {
   // 개발환경에서는 콘솔에 이메일 내용 출력
   if (process.env.NODE_ENV === 'development') {
-    console.log('📧 이메일 발송 (개발모드)');
-    console.log('받는 사람:', to);
-    console.log('제목:', subject);
-    console.log('내용 타입:', isHtmlContent ? 'HTML' : '텍스트');
-    console.log('내용:', content);
     return;
   }
 
@@ -157,14 +152,14 @@ async function sendEmail(to: string, subject: string, content: string, isHtmlCon
     const response = await fetch('/api/send-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        to, 
-        subject, 
+      body: JSON.stringify({
+        to,
+        subject,
         content,
-        isHtml: isHtmlContent 
+        isHtml: isHtmlContent
       })
     });
-    
+
     if (!response.ok) {
       throw new Error('이메일 발송 실패');
     }

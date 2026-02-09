@@ -12,7 +12,6 @@ if (typeof window === 'undefined') {
             const fs = require('fs');
 
             if (fs.existsSync(serviceAccountPath)) {
-                console.log('[Firebase Sync] Using service account file for Admin SDK');
                 admin.initializeApp({
                     credential: admin.credential.cert(serviceAccountPath),
                     projectId: 'lilymagerp-fs1'
@@ -89,7 +88,6 @@ export async function syncFirebaseToSupabase(
 
     for (const cfg of collectionsToSync) {
         try {
-            console.log(`Starting sync for ${cfg.firebase}...`);
             let snapshot;
             if (adminDb) {
                 // Admin SDK uses its own collection method

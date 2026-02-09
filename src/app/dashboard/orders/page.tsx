@@ -132,7 +132,6 @@ export default function OrdersPage() {
         return;
       }
 
-      console.log(`[Automation] 자동 완료 대상 주문 ${overdueOrders.length}건 발견`);
 
       let processedCount = 0;
       for (const order of overdueOrders) {
@@ -687,19 +686,6 @@ export default function OrdersPage() {
       filtered = filtered.filter(order => order.receiptType === selectedReceiptType);
     }
 
-    console.log(`[Filter Debug] Total: ${orders.length}, Filtered: ${filtered.length}`);
-    if (orders.length > filtered.length) {
-      console.log(`[Filter Debug] Dropped ${orders.length - filtered.length} orders`);
-      console.log('User filter context:', { userBranch, isAdmin, selectedBranch, searchTerm, selectedOrderStatus, selectedPaymentStatus, startDate, endDate, selectedReceiptType });
-
-      const dropped = orders.find(o => !filtered.includes(o));
-      if (dropped) {
-        console.log('Sample Dropped Order:', dropped.id);
-        console.log(' - Branch:', dropped.branchName, 'vs User:', userBranch);
-        console.log(' - Status:', dropped.status);
-        console.log(' - Date:', dropped.orderDate);
-      }
-    }
 
     return filtered;
   }, [orders, searchTerm, selectedBranch, selectedOrderStatus, selectedPaymentStatus, startDate, endDate, isAdmin, userBranch, showTransferredOnly, selectedReceiptType]);

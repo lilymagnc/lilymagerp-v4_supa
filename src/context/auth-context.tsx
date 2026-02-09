@@ -163,7 +163,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (cachedJson) {
             const cachedUser = JSON.parse(cachedJson);
             if (cachedUser && cachedUser.email) {
-              console.log("[Auth] Restored session from cache (0ms).");
               setUser(cachedUser);
               setLoading(false); // 로딩 즉시 해제!
             }
@@ -190,7 +189,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       // 2. Auth 변경 리스너
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        console.log(`[Auth] State change: ${event}`);
         if (event === 'SIGNED_OUT') {
           setUser(null);
           clearUserFromStorage();

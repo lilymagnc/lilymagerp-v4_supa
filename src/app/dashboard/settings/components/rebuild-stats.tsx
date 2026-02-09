@@ -25,11 +25,9 @@ export default function RebuildStats() {
 
         try {
             // [1차 시도] 서버 사이드 계산 (SQL RPC) - 가장 빠르고 정확함
-            console.log("Attempting server-side rebuild (RPC)...");
             const { error: rpcError } = await supabase.rpc('rebuild_daily_stats');
 
             if (!rpcError) {
-                console.log("Server-side rebuild complete.");
                 setProgress({ current: 100, total: 100, status: 'completed' });
                 toast({
                     title: "통계 재계산 완료",
