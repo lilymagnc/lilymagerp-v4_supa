@@ -71,57 +71,70 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setTimeout(() => reject(new Error('Role fetch timeout')), 10000)
       );
 
-      // 경주 시작
-      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+      // 3. Robust Retry Logic for Supabase
+      // If DB fails, do NOT fallback to "Unknown". Retry once, then fail safely.
+      let roleData = null;
+      try {
+        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+        if (error) throw error;
+        roleData = data;
+      } catch (e) {
+        console.warn("[Auth] First attempt failed, retrying...", e);
+        // Retry once after 1s
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const { data, error } = await supabase.from('user_roles').select('*').eq('email', email).maybeSingle();
+        if (!error) roleData = data;
+      }
 
-      if (error) throw error;
-
-      const roleData = data as any;
+      // 4. Role Assignment
       let role: '본사 관리자' | '가맹점 관리자' | '직원' = '직원';
+      let franchise = '미정';
+      let branchId = undefined;
+      let branchName = undefined;
 
-      if (roleData) {
+      // Master Admin Bypass (The Ultimate Truth)
+      if (email.toLowerCase() === 'lilymag0301@gmail.com') {
+        role = '본사 관리자';
+        franchise = '본사';
+      } else if (roleData) {
+        // Normal User Processing
         switch (roleData.role) {
           case 'hq_manager':
           case 'admin':
             role = '본사 관리자';
+            franchise = '본사';
             break;
           case 'branch_manager':
             role = '가맹점 관리자';
+            franchise = roleData.branch_name;
             break;
           case 'branch_user':
           default:
             role = '직원';
+            franchise = roleData.branch_name;
         }
-      }
-
-      // 하드코딩된 슈퍼 관리자
-      if (email.toLowerCase() === 'lilymag0301@gmail.com') {
-        role = '본사 관리자';
+        branchId = roleData.branch_id;
+        branchName = roleData.branch_name;
+      } else {
+        // DB Failed AND not Master Admin -> Throw to keep loading state
+        throw new Error("User role not found and not a master admin.");
       }
 
       const newUser: UserProfile = {
         id: userId,
         email: email,
         role,
-        franchise: roleData?.branch_name || (role === '본사 관리자' ? '본사' : ''),
-        branchId: roleData?.branch_id,
-        branchName: roleData?.branch_name
+        franchise,
+        branchId,
+        branchName
       };
 
       return newUser;
 
     } catch (error) {
-      console.warn("[Auth] Background role fetch failed/timed out. Falling back to email check.", error);
-
-      // 에러 발생 시에는 이메일 기반 권한 판정이 최우선으로 된다.
-      const role = email.toLowerCase() === 'lilymag0301@gmail.com' ? '본사 관리자' : '직원';
-
-      return {
-        id: userId,
-        email: email,
-        role: role as any,
-        franchise: role === '본사 관리자' ? '본사' : '미정'
-      };
+      console.error("[Auth] Fatal role fetch error:", error);
+      // Do NOT return a dummy user. Let the app stay in loading or handle error explicitly.
+      throw error;
     }
   }, []);
 

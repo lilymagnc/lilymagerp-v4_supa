@@ -146,6 +146,7 @@ export interface Order extends Omit<OrderData, 'orderDate'> {
   updatedAt?: any;
   completedAt?: any;
   completedBy?: string;
+  productNames?: string;
 }
 
 export type PaymentStatus = "paid" | "pending" | "completed" | "split_payment";
@@ -169,6 +170,9 @@ export function useOrders(initialFetch = true) {
   // Ref to track user role/branch to avoid unnecessary re-renders in callbacks
   const userRef = useRef(user);
   useEffect(() => { userRef.current = user; }, [user]);
+
+  // Ref for debouncing realtime updates
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const mapRowToOrder = (row: any): Order => ({
     id: row.id,
@@ -315,11 +319,8 @@ export function useOrders(initialFetch = true) {
       lastFetchParamsRef.current = { type: 'default', days };
 
       // Only show full-page loading skeleton if we have no orders or it's the very first fetch
-      if (orders.length === 0) {
-        setLoading(true);
-      } else {
-        setIsRefreshing(true);
-      }
+      if (orders.length === 0) setLoading(true);
+      else setIsRefreshing(true);
 
       const startDate = subDays(startOfDay(new Date()), days).toISOString();
 
@@ -386,11 +387,9 @@ export function useOrders(initialFetch = true) {
     try {
       lastFetchParamsRef.current = { type: 'range', start, end };
 
-      if (orders.length === 0) {
-        setLoading(true);
-      } else {
-        setIsRefreshing(true);
-      }
+      if (orders.length === 0) setLoading(true);
+      else setIsRefreshing(true);
+
       const rangeStart = startOfDay(start).toISOString();
       const rangeEnd = endOfDay(end).toISOString();
 
@@ -586,9 +585,15 @@ export function useOrders(initialFetch = true) {
       }
     };
 
-    let debounceTimer: NodeJS.Timeout | null = null;
-
     // --- [Real-time Subscription] Act like Firebase (Atomic Updates) ---
+    // --- [Real-time Subscription] Act like Firebase (Atomic Updates) ---
+    const handleRealtimeUpdate = () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        // Silent Refresh: Don't set global loading, just fetch
+        triggerRefresh();
+      }, 500);
+    };
     const channel = supabase
       .channel('orders-realtime-changes')
       .on(
@@ -625,16 +630,16 @@ export function useOrders(initialFetch = true) {
           }
 
           // 서버와의 최종 동기화를 위해 백그라운드에서 지연 갱신 (선택 사항)
-          if (debounceTimer) clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(() => {
-            // triggerRefresh(); // 주석 처리: 실시간 원자 업데이트만으로도 충분하도록 설계
+          if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = setTimeout(() => {
+            triggerRefresh();
           }, 2000);
         }
       )
       .subscribe();
 
     return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
 
       // 채널 클린업: 
       // 연결이 완료되기 전 해제가 발생할 경우의 경고 로그를 방지하기 위해 지연 처리

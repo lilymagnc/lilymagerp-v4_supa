@@ -175,13 +175,14 @@ function calculateMonthlyStats(
 export default function DashboardPage() {
   const router = useRouter();
   const { branches } = useBranches();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { events: calendarEvents } = useCalendar();
-  const { orders } = useOrders();
+  const { orders, loading: ordersLoading, isRefreshing } = useOrders();
 
   // --- Auth & Role Logic (Early Exit/Memo) ---
+  // --- Auth & Role Logic (Early Exit/Memo) ---
   const isAdmin = useMemo(() => {
-    // 1순위: 이메일 기반 즉시 판정 (가장 강력함)
+    // 1순위: 이메일 기반 즉시 판정 (가장 강력함 - AuthContext와 동일 로직)
     const userEmail = user?.email?.toLowerCase().trim();
     if (userEmail === 'lilymag0301@gmail.com') return true;
 
@@ -365,9 +366,13 @@ export default function DashboardPage() {
 
   // --- Data Fetching Logic (Unified Supabase Engine) ---
   const fetchDashboardData = useCallback(async () => {
-    if (!user || (branches.length === 0 && !isAdmin)) return;
+    // Auth나 Branch 정보가 아직 없으면 대기 (단, Admin은 로딩 패스)
+    if (authLoading) return;
+    if (!user && !isAdmin) return;
 
-    setLoading(true);
+    // Silent Refresh: 이미 데이터가 있으면 로딩바 안 띄움
+    if (!ordersLoading && !isRefreshing) setLoading(true);
+
     try {
       const branchFilter = currentFilteredBranch;
       const now = new Date();
@@ -475,15 +480,22 @@ export default function DashboardPage() {
       ]);
 
       // Handle Results
-      if (results[0].status === 'fulfilled') setRecentOrders(results[0].value);
-      if (results[1].status === 'fulfilled') {
-        const { pOrders, pPaymentCount, pPaymentAmount } = results[1].value;
-        setStats(prev => ({ ...prev, pendingOrders: pOrders, pendingPaymentCount: pPaymentCount, pendingPaymentAmount: pPaymentAmount }));
+      // Handle Results
+      if (results[0].status === 'fulfilled') {
+        const val = (results[0] as PromiseFulfilledResult<any>).value;
+        setRecentOrders(val);
       }
-      if (results[3].status === 'fulfilled') setStats(prev => ({ ...prev, newCustomers: results[3].value }));
+      if (results[1].status === 'fulfilled') {
+        const val = (results[1] as PromiseFulfilledResult<any>).value;
+        setStats(prev => ({ ...prev, pendingOrders: val.pOrders, pendingPaymentCount: val.pPaymentCount, pendingPaymentAmount: val.pPaymentAmount }));
+      }
+      if (results[3].status === 'fulfilled') {
+        const val = (results[3] as PromiseFulfilledResult<any>).value;
+        setStats(prev => ({ ...prev, newCustomers: val }));
+      }
 
       if (results[2].status === 'fulfilled') {
-        const statsData = results[2].value;
+        const statsData = (results[2] as PromiseFulfilledResult<any>).value;
         if (statsData.length === 0) {
           setStatsEmpty(true);
         } else {
@@ -593,10 +605,10 @@ export default function DashboardPage() {
     return userBranch ? `${userBranch} 대시보드` : '나의 대시보드';
   };
 
-  if (loading) {
+  if (authLoading || (loading && !isRefreshing && orders.length === 0)) {
     return (
       <div className="space-y-4 max-h-screen overflow-y-auto">
-        <PageHeader title={getDashboardTitle()} description="데이터를 불러오는 중입니다..." />
+        <PageHeader title={getDashboardTitle()} description={isRefreshing ? "데이터 최신화 중..." : "데이터를 불러오는 중입니다..."} />
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           {[1, 2, 3, 4].map(i => (
             <Card key={i} className="animate-pulse h-32 bg-gray-50"></Card>
