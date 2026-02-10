@@ -116,8 +116,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         branchId = roleData.branch_id;
         branchName = roleData.branch_name;
       } else {
-        // DB Failed AND not Master Admin -> Throw to keep loading state
-        throw new Error("User role not found and not a master admin.");
+        // roleData가 없으면 null 반환 (handleSession에서 캐시 유지)
+        return null;
       }
 
       const newUser: UserProfile = {
@@ -132,8 +132,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return newUser;
 
     } catch (error) {
-      console.error("[Auth] Fatal role fetch error:", error);
-      // Do NOT throw error to prevent unhandled promise rejection. Return null instead.
+      // 네트워크 오류 등 - null 반환하여 handleSession이 캐시 유지하도록
       return null;
     }
   }, []);
@@ -155,7 +154,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const freshUser = await fetchUserRole(session.user.email, session.user.id);
 
       if (!freshUser) {
-        throw new Error("Failed to fetch fresh user role");
+        // 백그라운드 갱신 실패 → 기존 캐시 유지 (throw 하지 않음)
+        setLoading(false);
+        return;
       }
 
       // 조회된 정보가 "직원/미정" (에러상태) 인데, 기존에 이미 "관리자" 정보가 짱짱하게 있다면 굳이 덮어쓰지 않음 (안전장치)
@@ -170,12 +171,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       saveUserToStorage(freshUser);
     } catch (error) {
-      // Background fetch failed - using cached data if available
-      // If we have no user at all (first load, no cache), THEN we might need to show error
-      // But if we loaded from cache, we just stay there.
+      // 백그라운드 갱신 실패 - 캐시 데이터 유지
       setUser(prev => {
-        if (!prev) throw error; // No cache, no DB -> Real Error
-        return prev; // Keep cache
+        if (!prev) {
+          // 최초 로그인인데 역할을 못 찾음 → 진짜 에러
+          console.error('[Auth] 사용자 역할을 찾을 수 없습니다. user_roles 테이블을 확인하세요.');
+          return null;
+        }
+        return prev; // 캐시 유지 (정상)
       });
     } finally {
       setLoading(false);
