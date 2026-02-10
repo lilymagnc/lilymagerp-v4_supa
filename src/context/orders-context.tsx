@@ -493,6 +493,13 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
             if (error) throw error;
 
             if (isCanceled({ status: newStatus }) && !isCanceled(order)) {
+                // 포인트 환불 (사용한 포인트가 있다면)
+                const pointsUsed = order.summary?.pointsUsed || 0;
+                const customerId = order.orderer?.id;
+                if (pointsUsed > 0 && customerId) {
+                    await refundCustomerPoints(customerId, pointsUsed);
+                }
+
                 await updateDailyStats(new Date(order.order_date), order.branch_name, {
                     revenueDelta: -(order.summary?.total || 0),
                     orderCountDelta: -1,
@@ -602,6 +609,13 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
             if (error) throw error;
 
             if (!isCanceled(order)) {
+                // 포인트 환불 (사용한 포인트가 있다면)
+                const pointsUsed = order.summary?.pointsUsed || 0;
+                const customerId = order.orderer?.id;
+                if (pointsUsed > 0 && customerId) {
+                    await refundCustomerPoints(customerId, pointsUsed);
+                }
+
                 await updateDailyStats(new Date(order.order_date), order.branch_name, {
                     revenueDelta: -(order.summary?.total || 0),
                     orderCountDelta: -1,
@@ -689,34 +703,87 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     );
 }
 
-// ===== Helper functions (same as use-orders.ts) =====
+// ===== Helper functions (Aligned with use-orders.ts for Universal Point Usage) =====
 async function registerCustomerFromOrder(orderData: OrderData) {
     try {
-        const { data: existing } = await supabase.from('customers').select('id')
-            .eq('contact', orderData.orderer.contact).single();
-        if (existing) return;
+        // 전 지점 통합 조회를 위해 연락처로 기존 고객 확인
+        const { data: customer } = await supabase
+            .from('customers')
+            .select('*')
+            .eq('contact', orderData.orderer.contact)
+            .eq('is_deleted', false)
+            .maybeSingle();
 
-        await supabase.from('customers').insert([{
-            id: crypto.randomUUID(),
+        const pointsEarned = Math.floor(orderData.summary.total * 0.02);
+        const pointsUsed = orderData.summary.pointsUsed || 0;
+
+        const customerPayload = {
             name: orderData.orderer.name,
             contact: orderData.orderer.contact,
-            company: orderData.orderer.company || '',
             email: orderData.orderer.email || '',
-            branch: orderData.branchName,
-            total_orders: 1,
-            total_amount: orderData.summary.total,
+            company_name: orderData.orderer.company || '',
+            type: orderData.orderer.company ? 'company' : 'personal',
+            branch: orderData.branchName, // 마지막 주문 지점
+            grade: '신규',
+            total_spent: orderData.summary.total,
+            order_count: 1,
+            points: pointsEarned - pointsUsed,
+            last_order_date: new Date().toISOString(),
             is_deleted: false,
-            created_at: new Date().toISOString(),
+            primary_branch: orderData.branchName,
             updated_at: new Date().toISOString()
-        }]);
-    } catch (e) { /* silent */ }
+        };
+
+        if (customer) {
+            // 기존 고객이 있다면 지점에 상관없이 누적 정보 갱신 (전 지점 포인트 통합)
+            await supabase.from('customers').update({
+                name: customerPayload.name,
+                email: customerPayload.email,
+                company_name: customerPayload.company_name,
+                type: customerPayload.type,
+                total_spent: (customer.total_spent || 0) + orderData.summary.total,
+                order_count: (customer.order_count || 0) + 1,
+                points: (customer.points || 0) + pointsEarned - pointsUsed,
+                last_order_date: customerPayload.last_order_date,
+                updated_at: customerPayload.updated_at
+            }).eq('id', customer.id);
+        } else {
+            // 신규 고객 등록
+            await supabase.from('customers').insert([{
+                ...customerPayload,
+                id: crypto.randomUUID(),
+                created_at: new Date().toISOString()
+            }]);
+        }
+    } catch (e) {
+        console.error('[OrdersContext] Customer registration error:', e);
+    }
 }
 
 async function deductCustomerPoints(customerId: string, points: number) {
     try {
         const { data } = await supabase.from('customers').select('points').eq('id', customerId).single();
         if (data) {
-            await supabase.from('customers').update({ points: Math.max(0, (data.points || 0) - points) }).eq('id', customerId);
+            await supabase.from('customers').update({
+                points: Math.max(0, (data.points || 0) - points),
+                updated_at: new Date().toISOString()
+            }).eq('id', customerId);
         }
-    } catch (e) { /* silent */ }
+    } catch (e) {
+        console.error('[OrdersContext] Point deduction error:', e);
+    }
+}
+
+async function refundCustomerPoints(customerId: string, points: number) {
+    try {
+        const { data } = await supabase.from('customers').select('points').eq('id', customerId).single();
+        if (data) {
+            await supabase.from('customers').update({
+                points: (data.points || 0) + points,
+                updated_at: new Date().toISOString()
+            }).eq('id', customerId);
+        }
+    } catch (e) {
+        console.error('[OrdersContext] Point refund error:', e);
+    }
 }

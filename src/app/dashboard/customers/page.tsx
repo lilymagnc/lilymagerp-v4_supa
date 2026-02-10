@@ -41,26 +41,28 @@ export default function CustomersPage() {
     const customerGrades = useMemo(() => [...new Set(customers.map(c => c.grade || "신규"))], [customers]);
     const filteredCustomers = useMemo(() => {
         let filtered = customers;
-        // 권한에 따른 지점 필터링 (통합 관리 시스템)
-        if (!isHeadOfficeAdmin && userBranch) {
-            // 일반 사용자는 자신의 지점에 등록된 고객만 보기
-            filtered = filtered.filter(customer => 
-                customer.branch === userBranch || 
-                (customer.branches && customer.branches[userBranch])
+
+        // 검색어 필터링 (검색어가 있으면 지점 필터 무시하고 전체 검색 가능하게 함)
+        if (searchTerm) {
+            filtered = filtered.filter(customer =>
+                String(customer.name ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                String(customer.contact ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                String(customer.companyName ?? '').toLowerCase().includes(searchTerm.toLowerCase())
             );
-        } else if (selectedBranch && selectedBranch !== "all") {
-            // 본사 관리자는 선택한 지점에 등록된 고객만 보기
-            filtered = filtered.filter(customer => 
-                customer.branch === selectedBranch || 
-                (customer.branches && customer.branches[selectedBranch])
-            );
+        } else {
+            // 검색어가 없을 때만 권한에 따른 지점 필터링 적용 (기본 뷰)
+            if (!isHeadOfficeAdmin && userBranch) {
+                filtered = filtered.filter(customer =>
+                    customer.branch === userBranch ||
+                    (customer.branches && customer.branches[userBranch])
+                );
+            } else if (selectedBranch && selectedBranch !== "all") {
+                filtered = filtered.filter(customer =>
+                    customer.branch === selectedBranch ||
+                    (customer.branches && customer.branches[selectedBranch])
+                );
+            }
         }
-        // 검색어 필터링 (전 지점 검색)
-        filtered = filtered.filter(customer => 
-            String(customer.name ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            String(customer.contact ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            String(customer.companyName ?? '').toLowerCase().includes(searchTerm.toLowerCase())
-        );
         // 타입 및 등급 필터링
         if (selectedType !== "all") {
             filtered = filtered.filter(customer => customer.type === selectedType);
@@ -104,18 +106,18 @@ export default function CustomersPage() {
         await deleteCustomer(id);
     };
     const handleImport = async (data: any[]) => {
-      // 엑셀 업로드 시 올바른 지점 정보 결정
-      let importBranch: string | undefined;
-      
-      if (isHeadOfficeAdmin) {
-        // 본사 관리자는 선택된 지점 사용 (all이 아닌 경우)
-        importBranch = selectedBranch !== "all" ? selectedBranch : undefined;
-      } else {
-        // 가맹점 관리자/직원은 자신의 지점 사용
-        importBranch = userBranch;
-      }
-      
-      await bulkAddCustomers(data, importBranch);
+        // 엑셀 업로드 시 올바른 지점 정보 결정
+        let importBranch: string | undefined;
+
+        if (isHeadOfficeAdmin) {
+            // 본사 관리자는 선택된 지점 사용 (all이 아닌 경우)
+            importBranch = selectedBranch !== "all" ? selectedBranch : undefined;
+        } else {
+            // 가맹점 관리자/직원은 자신의 지점 사용
+            importBranch = userBranch;
+        }
+
+        await bulkAddCustomers(data, importBranch);
     };
     const handleExport = () => {
         if (filteredCustomers.length === 0) {
@@ -175,13 +177,13 @@ export default function CustomersPage() {
                     </Button>
                 </div>
             </PageHeader>
-            
+
             {/* 고객 통계 카드 */}
-            <CustomerStatsCards 
+            <CustomerStatsCards
                 customers={filteredCustomers}
                 selectedBranch={selectedBranch}
             />
-            
+
             <Card className="mb-4">
                 <CardContent className="pt-6">
                     <div className="flex flex-col sm:flex-row items-center gap-2">
@@ -205,7 +207,7 @@ export default function CustomersPage() {
                                 ))}
                             </SelectContent>
                         </Select>
-                         <Select value={selectedType} onValueChange={setSelectedType}>
+                        <Select value={selectedType} onValueChange={setSelectedType}>
                             <SelectTrigger className="w-full sm:w-[120px]">
                                 <SelectValue placeholder="고객 유형" />
                             </SelectTrigger>
@@ -215,7 +217,7 @@ export default function CustomersPage() {
                                 <SelectItem value="company">기업</SelectItem>
                             </SelectContent>
                         </Select>
-                         <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+                        <Select value={selectedGrade} onValueChange={setSelectedGrade}>
                             <SelectTrigger className="w-full sm:w-[120px]">
                                 <SelectValue placeholder="고객 등급" />
                             </SelectTrigger>
@@ -230,7 +232,7 @@ export default function CustomersPage() {
                 </CardContent>
             </Card>
             {loading ? (
-                 <Card>
+                <Card>
                     <CardContent className="pt-6">
                         <div className="space-y-2">
                             {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
@@ -238,7 +240,7 @@ export default function CustomersPage() {
                     </CardContent>
                 </Card>
             ) : (
-                <CustomerTable 
+                <CustomerTable
                     customers={filteredCustomers}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
