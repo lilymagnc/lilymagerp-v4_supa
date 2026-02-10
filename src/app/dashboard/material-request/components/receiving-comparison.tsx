@@ -4,10 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
-  Package, 
-  CheckCircle, 
-  AlertTriangle, 
+import {
+  Package,
+  CheckCircle,
+  AlertTriangle,
   XCircle,
   TrendingUp,
   TrendingDown,
@@ -21,6 +21,7 @@ import {
   Database
 } from 'lucide-react';
 import { useInventorySync } from '@/hooks/use-inventory-sync';
+import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import type { MaterialRequest } from '@/types/material-request';
 interface ReceivingComparisonProps {
@@ -54,6 +55,7 @@ interface ComparisonItem {
   };
 }
 export function ReceivingComparison({ request, onInventorySync }: ReceivingComparisonProps) {
+  const { user } = useAuth();
   const [showDetails, setShowDetails] = useState(false);
   const [selectedTab, setSelectedTab] = useState<'summary' | 'items' | 'issues'>('summary');
   const [isProcessingSync, setIsProcessingSync] = useState(false);
@@ -109,21 +111,21 @@ export function ReceivingComparison({ request, onInventorySync }: ReceivingCompa
     requestedItems: comparisonData.length,
     purchasedItems: comparisonData.filter(item => item.actual).length,
     receivedItems: comparisonData.filter(item => item.received).length,
-    issueItems: comparisonData.filter(item => 
-      item.discrepancies.quantityDiff !== 0 || 
-      item.discrepancies.conditionIssue || 
+    issueItems: comparisonData.filter(item =>
+      item.discrepancies.quantityDiff !== 0 ||
+      item.discrepancies.conditionIssue ||
       item.discrepancies.hasSubstitution
     ).length,
-    totalRequestedCost: comparisonData.reduce((sum, item) => 
+    totalRequestedCost: comparisonData.reduce((sum, item) =>
       sum + (item.requested.quantity * item.requested.estimatedPrice), 0
     ),
-    totalActualCost: comparisonData.reduce((sum, item) => 
+    totalActualCost: comparisonData.reduce((sum, item) =>
       sum + (item.actual ? item.actual.quantity * item.actual.actualPrice : 0), 0
     )
   };
   const costDifference = totalStats.totalActualCost - totalStats.totalRequestedCost;
-  const costDifferencePercent = totalStats.totalRequestedCost > 0 
-    ? (costDifference / totalStats.totalRequestedCost) * 100 
+  const costDifferencePercent = totalStats.totalRequestedCost > 0
+    ? (costDifference / totalStats.totalRequestedCost) * 100
     : 0;
   const getStatusIcon = (item: ComparisonItem) => {
     if (!item.actual) return <XCircle className="h-4 w-4 text-red-500" />;
@@ -164,8 +166,8 @@ export function ReceivingComparison({ request, onInventorySync }: ReceivingCompa
         request.actualPurchase.items,
         request.branchId,
         request.branchName,
-        'current-user-id', // 실제로는 현재 사용자 ID를 가져와야 함
-        'current-user-name' // 실제로는 현재 사용자 이름을 가져와야 함
+        user?.id || 'unknown',
+        user?.email?.split('@')[0] || '사용자'
       );
       if (result.success) {
         toast({
@@ -194,9 +196,9 @@ export function ReceivingComparison({ request, onInventorySync }: ReceivingCompa
   };
   // 재고 연동 가능 여부 확인
   const canSyncInventory = () => {
-    return request.actualPurchase?.items && 
-           request.actualPurchase.items.length > 0 &&
-           request.status === 'delivered';
+    return request.actualPurchase?.items &&
+      request.actualPurchase.items.length > 0 &&
+      request.status === 'delivered';
   };
   return (
     <div className="space-y-4">
@@ -247,10 +249,9 @@ export function ReceivingComparison({ request, onInventorySync }: ReceivingCompa
               </div>
               <div>
                 <p className="text-muted-foreground">차이</p>
-                <p className={`font-medium text-lg flex items-center gap-1 ${
-                  costDifference > 0 ? 'text-red-600' : 
+                <p className={`font-medium text-lg flex items-center gap-1 ${costDifference > 0 ? 'text-red-600' :
                   costDifference < 0 ? 'text-green-600' : 'text-gray-600'
-                }`}>
+                  }`}>
                   {costDifference > 0 ? (
                     <TrendingUp className="h-4 w-4" />
                   ) : costDifference < 0 ? (
@@ -271,7 +272,7 @@ export function ReceivingComparison({ request, onInventorySync }: ReceivingCompa
             <Alert className="border-orange-200 bg-orange-50">
               <AlertTriangle className="h-4 w-4 text-orange-600" />
               <AlertDescription className="text-orange-800">
-                <strong>{totalStats.issueItems}개 품목</strong>에서 요청 내역과 차이가 발견되었습니다. 
+                <strong>{totalStats.issueItems}개 품목</strong>에서 요청 내역과 차이가 발견되었습니다.
                 상세 내역을 확인해 주세요.
               </AlertDescription>
             </Alert>
@@ -362,7 +363,7 @@ export function ReceivingComparison({ request, onInventorySync }: ReceivingCompa
                         <p>수량: {item.received.quantity}개</p>
                         <p>상태: {
                           item.received.condition === 'good' ? '양호' :
-                          item.received.condition === 'damaged' ? '손상' : '누락'
+                            item.received.condition === 'damaged' ? '손상' : '누락'
                         }</p>
                         {item.received.notes && (
                           <p className="text-xs text-muted-foreground">
@@ -382,20 +383,18 @@ export function ReceivingComparison({ request, onInventorySync }: ReceivingCompa
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <p className="text-muted-foreground">수량 차이</p>
-                        <p className={`font-medium ${
-                          item.discrepancies.quantityDiff > 0 ? 'text-orange-600' :
+                        <p className={`font-medium ${item.discrepancies.quantityDiff > 0 ? 'text-orange-600' :
                           item.discrepancies.quantityDiff < 0 ? 'text-red-600' : 'text-green-600'
-                        }`}>
+                          }`}>
                           {item.discrepancies.quantityDiff > 0 ? '+' : ''}
                           {item.discrepancies.quantityDiff}개
                         </p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">가격 차이</p>
-                        <p className={`font-medium ${
-                          item.discrepancies.priceDiff > 0 ? 'text-red-600' :
+                        <p className={`font-medium ${item.discrepancies.priceDiff > 0 ? 'text-red-600' :
                           item.discrepancies.priceDiff < 0 ? 'text-green-600' : 'text-gray-600'
-                        }`}>
+                          }`}>
                           {item.discrepancies.priceDiff > 0 ? '+' : ''}
                           {formatCurrency(item.discrepancies.priceDiff)}
                         </p>
@@ -430,9 +429,9 @@ export function ReceivingComparison({ request, onInventorySync }: ReceivingCompa
           <CardContent>
             <div className="space-y-3">
               {comparisonData
-                .filter(item => 
-                  item.discrepancies.quantityDiff !== 0 || 
-                  item.discrepancies.conditionIssue || 
+                .filter(item =>
+                  item.discrepancies.quantityDiff !== 0 ||
+                  item.discrepancies.conditionIssue ||
                   item.discrepancies.hasSubstitution
                 )
                 .map((item) => (

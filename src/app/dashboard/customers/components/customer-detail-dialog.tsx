@@ -18,9 +18,8 @@ import { useOrders } from "@/hooks/use-orders"
 import { useState, useEffect } from "react"
 import { PointEditDialog } from "./point-edit-dialog"
 import { PointHistoryDialog } from "./point-history-dialog"
-import { Eye, Package, Calendar, DollarSign, Download, Coins, History } from "lucide-react"
-import { doc, getDoc } from "firebase/firestore"
-import { db } from "@/lib/firebase"
+import { Eye, Package, Calendar, DollarSign, Download, Coins, History, Loader2 } from "lucide-react"
+import { supabase } from "@/lib/supabase"
 // 안전한 날짜 포맷팅 함수
 const formatSafeDate = (dateValue: any) => {
   try {
@@ -48,38 +47,63 @@ interface CustomerDetailDialogProps {
   onCustomerUpdate?: (updatedCustomer: Customer) => void
 }
 export function CustomerDetailDialog({ isOpen, onOpenChange, customer, onCustomerUpdate }: CustomerDetailDialogProps) {
-  const { orders } = useOrders();
-  const { updateCustomerPoints } = useCustomers();
+  const { fetchOrdersByCustomer } = useOrders();
+  const { updateCustomerPoints, findCustomerByContact } = useCustomers();
   const [customerOrders, setCustomerOrders] = useState<any[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [showOrderDetail, setShowOrderDetail] = useState(false);
   const [showPointEdit, setShowPointEdit] = useState(false);
   const [showPointHistory, setShowPointHistory] = useState(false);
   const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(customer);
 
-  // 고객 정보 실시간 업데이트
+  // 고객 정보 실시간 업데이트 (Supabase 사용)
   const fetchCustomerData = async (customerId: string) => {
     try {
-      const customerDoc = await getDoc(doc(db, 'customers', customerId));
-      if (customerDoc.exists()) {
-        const data = customerDoc.data();
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('id', customerId)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
         const updatedCustomer = {
-          id: customerDoc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt,
-          lastOrderDate: data.lastOrderDate?.toDate ? data.lastOrderDate.toDate().toISOString() : data.lastOrderDate,
+          id: data.id,
+          name: data.name,
+          contact: data.contact,
+          companyName: data.company_name,
+          address: data.address,
+          email: data.email,
+          grade: data.grade,
+          memo: data.memo,
+          points: data.points,
+          totalSpent: data.total_spent,
+          orderCount: data.order_count,
+          createdAt: data.created_at,
+          lastOrderDate: data.last_order_date,
+          birthday: data.birthday,
+          weddingAnniversary: data.wedding_anniversary,
+          foundingAnniversary: data.founding_anniversary,
+          firstVisitDate: data.first_visit_date,
+          otherAnniversary: data.other_anniversary,
+          otherAnniversaryName: data.other_anniversary_name,
+          specialNotes: data.special_notes,
+          monthlyPaymentDay: data.monthly_payment_day,
+          branches: data.branches,
+          primaryBranch: data.primary_branch,
+          branch: data.branch,
+          type: data.type || 'personal'
         } as Customer;
+
         setCurrentCustomer(updatedCustomer);
-        // 부모 컴포넌트에 업데이트된 고객 정보 전달
         if (onCustomerUpdate) {
           onCustomerUpdate(updatedCustomer);
         }
       }
     } catch (error) {
-      // 개발 환경에서만 콘솔에 출력
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Error fetching customer data:', error);
-      }
+      console.error('Error fetching customer data:', error);
     }
   };
 
@@ -186,27 +210,74 @@ export function CustomerDetailDialog({ isOpen, onOpenChange, customer, onCustome
       XLSX.writeFile(wb, `${fileName}.xlsx`);
     });
   };
+  // 다이얼로그가 열리거나 고객이 바뀔 때 주문 내역 조회
   useEffect(() => {
-    if (currentCustomer && orders.length > 0) {
-      // 이름과 연락처가 모두 일치하는 주문만 필터링 (가장 정확한 매칭)
-      const filteredOrders = orders.filter(order => {
-        const nameMatch = order.orderer?.name === currentCustomer.name;
-        const contactMatch = order.orderer?.contact === currentCustomer.contact;
-        // 연락처 형식 정규화 (하이픈 제거) - 안전한 문자열 처리
-        const normalizedOrderContact = typeof order.orderer?.contact === 'string' ? order.orderer.contact.replace(/[-]/g, '') : '';
-        const normalizedCustomerContact = typeof currentCustomer.contact === 'string' ? currentCustomer.contact.replace(/[-]/g, '') : '';
-        const normalizedContactMatch = normalizedOrderContact === normalizedCustomerContact;
-        // 이름과 연락처가 모두 일치하는 경우만 매칭
-        const exactNameContactMatch = nameMatch && (contactMatch || normalizedContactMatch);
-        // 고객 ID가 있는 경우 ID 매칭도 허용
-        const idMatch = order.orderer?.id === currentCustomer.id;
-        return exactNameContactMatch || idMatch;
-      });
-      setCustomerOrders(filteredOrders);
-    } else {
-      setCustomerOrders([]);
-    }
-  }, [currentCustomer, orders]);
+    const fetchOrders = async () => {
+      if (isOpen && currentCustomer) {
+        setLoadingOrders(true);
+        try {
+          // fetchOrdersByCustomer는 내부적으로 name/contact 매칭보다는 customerId(orderer->>id) 매칭에 최적화되어 있을 수 있음
+          // 하지만 하위 호환성을 위해 이름/연락처로도 조회할 수 있는 로직이 필요할 수 있음
+          const results = await fetchOrdersByCustomer(currentCustomer.id);
+
+          // 만약 ID로 검색했는데 결과가 없다면 (과거 이관 데이터 등), 이름과 연락처로 다시 한번 시도
+          if (results.length === 0) {
+            const { data: nameContactResults, error } = await supabase
+              .from('orders')
+              .select('*')
+              .or(`orderer->>name.eq.${currentCustomer.name},orderer->>contact.eq.${currentCustomer.contact}`)
+              .order('order_date', { ascending: false });
+
+            if (!error && nameContactResults) {
+              // 수동 필터링 (정확한 매칭을 위해)
+              const matched = nameContactResults.filter(order => {
+                const nameMatch = order.orderer?.name === currentCustomer.name;
+                const contactMatch = order.orderer?.contact === currentCustomer.contact;
+                const normalizedOrderContact = typeof order.orderer?.contact === 'string' ? order.orderer.contact.replace(/[-]/g, '') : '';
+                const normalizedCustomerContact = typeof currentCustomer.contact === 'string' ? currentCustomer.contact.replace(/[-]/g, '') : '';
+                return nameMatch && (contactMatch || normalizedOrderContact === normalizedCustomerContact);
+              });
+
+              // 훅에서 제공하는 mapRowToOrder가 여기에 선언되어 있지 않으므로 수동 매핑하거나 
+              // 훅의 로직을 활용해야 함. 여기서는 이미 가져온 데이터를 훅의 orders와 동일한 포맷으로 변환해야 함.
+              // useOrders의 결과값과 형식을 맞추기 위해 results를 사용
+              setCustomerOrders(matched.map(row => ({
+                id: row.id,
+                orderNumber: row.order_number,
+                status: row.status,
+                receiptType: row.receipt_type,
+                branchId: row.branch_id,
+                branchName: row.branch_name,
+                orderDate: row.order_date,
+                orderer: row.orderer,
+                deliveryInfo: row.delivery_info,
+                pickupInfo: row.pickup_info,
+                summary: row.summary,
+                payment: row.payment,
+                items: row.items,
+                memo: row.memo,
+                transferInfo: row.transfer_info,
+                extraData: row.extra_data,
+                createdAt: row.created_at,
+                updatedAt: row.updated_at,
+                completedAt: row.completed_at,
+                completedBy: row.completed_by
+              })));
+            }
+          } else {
+            setCustomerOrders(results);
+          }
+        } catch (error) {
+          console.error('Error fetching customer orders:', error);
+          setCustomerOrders([]);
+        } finally {
+          setLoadingOrders(false);
+        }
+      }
+    };
+
+    fetchOrders();
+  }, [isOpen, currentCustomer?.id, fetchOrdersByCustomer]);
   if (!currentCustomer) return null
   return (
     <>
@@ -376,7 +447,12 @@ export function CustomerDetailDialog({ isOpen, onOpenChange, customer, onCustome
                   )}
                 </div>
               </div>
-              {customerOrders.length === 0 ? (
+              {loadingOrders ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+                  <p className="text-muted-foreground">구매 내역을 불러오는 중...</p>
+                </div>
+              ) : customerOrders.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Package className="h-12 w-12 mx-auto mb-4 text-gray-300" />
                   <p>구매 내역이 없습니다.</p>

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -14,10 +14,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { 
-  CheckCircle, 
-  XCircle, 
-  Eye, 
+import {
+  CheckCircle,
+  XCircle,
+  Eye,
   Clock,
   AlertTriangle,
   User,
@@ -28,15 +28,17 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { useExpenses } from '@/hooks/use-expenses';
+import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
-import { 
+import {
   EXPENSE_CATEGORY_LABELS,
-  EXPENSE_STATUS_LABELS 
+  EXPENSE_STATUS_LABELS
 } from '@/types/expense';
-import type { 
+import type {
   ExpenseRequest
 } from '@/types/expense';
 export function ExpenseApproval() {
+  const { user } = useAuth();
   const [selectedExpense, setSelectedExpense] = useState<ExpenseRequest | null>(null);
   const [approvalComment, setApprovalComment] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -51,9 +53,9 @@ export function ExpenseApproval() {
     try {
       await processApproval({
         requestId: expense.id,
-        approverId: 'current-user-id', // 실제로는 현재 사용자 ID
-        approverName: '현재 사용자', // 실제로는 현재 사용자 이름
-        approverRole: '팀장', // 실제로는 현재 사용자 역할
+        approverId: user?.id || 'unknown',
+        approverName: user?.email?.split('@')[0] || '사용자',
+        approverRole: (user as any)?.role || '관리자',
         action,
         comment: approvalComment
       });
@@ -377,12 +379,12 @@ export function ExpenseApproval() {
                   <h4 className="font-medium mb-2">신청 정보</h4>
                   <div className="space-y-1 text-sm">
                     <p><span className="text-muted-foreground">신청일:</span> {formatDate(selectedExpense.createdAt)}</p>
-                    <p><span className="text-muted-foreground">긴급도:</span> 
+                    <p><span className="text-muted-foreground">긴급도:</span>
                       <Badge variant={selectedExpense.urgency === 'urgent' ? 'destructive' : 'secondary'} className="ml-2">
                         {selectedExpense.urgency === 'urgent' ? '긴급' : '일반'}
                       </Badge>
                     </p>
-                    <p><span className="text-muted-foreground">상태:</span> 
+                    <p><span className="text-muted-foreground">상태:</span>
                       <Badge className="ml-2">
                         {EXPENSE_STATUS_LABELS[selectedExpense.status]}
                       </Badge>

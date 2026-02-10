@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
+import {
   Form,
   FormControl,
   FormField,
@@ -19,9 +19,9 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { 
-  Plus, 
-  Trash2, 
+import {
+  Plus,
+  Trash2,
   Calculator,
   Save,
   X,
@@ -32,12 +32,13 @@ import {
   Calendar
 } from 'lucide-react';
 import { useExpenses } from '@/hooks/use-expenses';
+import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  ExpenseCategory, 
-  EXPENSE_CATEGORY_LABELS 
+import {
+  ExpenseCategory,
+  EXPENSE_CATEGORY_LABELS
 } from '@/types/expense';
-import type { 
+import type {
   CreateExpenseRequestData
 } from '@/types/expense';
 // 폼 스키마 정의
@@ -85,6 +86,7 @@ const departments = [
 export function ExpenseRequestForm({ onSuccess, onCancel }: ExpenseRequestFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDraft, setIsDraft] = useState(false);
+  const { user } = useAuth();
   const { createExpenseRequest, submitExpenseRequest } = useExpenses();
   const { toast } = useToast();
   const form = useForm<ExpenseRequestFormData>({
@@ -172,13 +174,27 @@ export function ExpenseRequestForm({ onSuccess, onCancel }: ExpenseRequestFormPr
     setIsDraft(true);
     try {
       const requestData: CreateExpenseRequestData = {
-        requesterId: 'current-user-id', // 실제로는 현재 사용자 ID
-        requesterName: '현재 사용자', // 실제로는 현재 사용자 이름
-        requesterRole: '직원', // 실제로는 현재 사용자 역할
-        ...data,
+        requesterId: user?.id || 'unknown',
+        requesterName: user?.email?.split('@')[0] || '사용자',
+        requesterRole: (user as any)?.role || '직원',
+        title: data.title,
+        purpose: data.purpose,
+        urgency: data.urgency,
+        branchId: data.branchId,
+        branchName: data.branchName,
+        departmentId: data.departmentId || '',
+        departmentName: data.departmentName || '',
         items: data.items.map(item => ({
-          ...item,
-          purchaseDate: new Date(item.purchaseDate) as any
+          category: item.category as ExpenseCategory,
+          description: item.description,
+          amount: item.amount,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          taxAmount: item.taxAmount || 0,
+          purchaseDate: new Date(item.purchaseDate).toISOString() as any,
+          memo: item.memo || '',
+          supplier: item.supplier || '',
+          subcategory: item.subcategory || ''
         }))
       };
       await createExpenseRequest(requestData);
@@ -199,13 +215,27 @@ export function ExpenseRequestForm({ onSuccess, onCancel }: ExpenseRequestFormPr
     setIsSubmitting(true);
     try {
       const requestData: CreateExpenseRequestData = {
-        requesterId: 'current-user-id', // 실제로는 현재 사용자 ID
-        requesterName: '현재 사용자', // 실제로는 현재 사용자 이름
-        requesterRole: '직원', // 실제로는 현재 사용자 역할
-        ...data,
+        requesterId: user?.id || 'unknown',
+        requesterName: user?.email?.split('@')[0] || '사용자',
+        requesterRole: (user as any)?.role || '직원',
+        title: data.title,
+        purpose: data.purpose,
+        urgency: data.urgency,
+        branchId: data.branchId,
+        branchName: data.branchName,
+        departmentId: data.departmentId || '',
+        departmentName: data.departmentName || '',
         items: data.items.map(item => ({
-          ...item,
-          purchaseDate: new Date(item.purchaseDate) as any
+          category: item.category as ExpenseCategory,
+          description: item.description,
+          amount: item.amount,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          taxAmount: item.taxAmount || 0,
+          purchaseDate: new Date(item.purchaseDate).toISOString() as any,
+          memo: item.memo || '',
+          supplier: item.supplier || '',
+          subcategory: item.subcategory || ''
         }))
       };
       const requestId = await createExpenseRequest(requestData);
@@ -285,10 +315,10 @@ export function ExpenseRequestForm({ onSuccess, onCancel }: ExpenseRequestFormPr
                   <FormItem>
                     <FormLabel>사용 목적</FormLabel>
                     <FormControl>
-                      <Textarea 
+                      <Textarea
                         placeholder="비용 사용 목적을 상세히 입력하세요"
                         rows={3}
-                        {...field} 
+                        {...field}
                       />
                     </FormControl>
                     <FormMessage />
@@ -437,8 +467,8 @@ export function ExpenseRequestForm({ onSuccess, onCancel }: ExpenseRequestFormPr
                               <Input
                                 type="date"
                                 {...field}
-                                value={field.value instanceof Date ? 
-                                  field.value.toISOString().split('T')[0] : 
+                                value={field.value instanceof Date ?
+                                  field.value.toISOString().split('T')[0] :
                                   field.value
                                 }
                                 onChange={(e) => field.onChange(new Date(e.target.value))}

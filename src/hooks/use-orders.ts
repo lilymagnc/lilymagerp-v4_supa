@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { updateDailyStats } from '@/lib/stats-utils';
 import { useToast } from './use-toast';
@@ -157,6 +157,19 @@ export function useOrders(initialFetch = true) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+
+  // Track the most recent fetch parameters to reuse them in the realtime re-fetch
+  const lastFetchParamsRef = useRef<{
+    type: 'default' | 'range' | 'all' | 'calendar' | 'schedule';
+    days?: number;
+    start?: Date;
+    end?: Date;
+  }>({ type: 'default', days: 7 });
+
+  // Ref to track user role/branch to avoid unnecessary re-renders in callbacks
+  const userRef = useRef(user);
+  useEffect(() => { userRef.current = user; }, [user]);
+
   const mapRowToOrder = (row: any): Order => ({
     id: row.id,
     branchId: row.branch_id,
@@ -204,11 +217,21 @@ export function useOrders(initialFetch = true) {
   const fetchCalendarOrders = useCallback(async (baseDate: Date) => {
     try {
       setLoading(true);
+      lastFetchParamsRef.current = { type: 'calendar', start: baseDate };
+
       const startFilterDate = subDays(startOfDay(baseDate), 35).toISOString().split('T')[0];
-      const { data, error } = await supabase
+      let query = supabase
         .from('orders')
         .select('*')
-        .or(`pickup_info->>date.gte.${startFilterDate},delivery_info->>date.gte.${startFilterDate},order_date.gte.${startFilterDate}`)
+        .or(`pickup_info->>date.gte.${startFilterDate},delivery_info->>date.gte.${startFilterDate},order_date.gte.${startFilterDate}`);
+
+      // Branch filtering
+      const isAdmin = userRef.current?.role === '본사 관리자';
+      if (!isAdmin && userRef.current?.branchName) {
+        query = query.or(`branch_name.eq.${userRef.current.branchName},transfer_info->>processBranchName.eq.${userRef.current.branchName}`);
+      }
+
+      const { data, error } = await query
         .order('order_date', { ascending: false })
         .limit(2000);
 
@@ -281,6 +304,9 @@ export function useOrders(initialFetch = true) {
     const signal = controller.signal;
 
     try {
+      // Set current fetch params for re-sync
+      lastFetchParamsRef.current = { type: 'default', days };
+
       // Only show full-page loading skeleton if we have no orders or it's the very first fetch
       if (orders.length === 0) {
         setLoading(true);
@@ -290,19 +316,28 @@ export function useOrders(initialFetch = true) {
 
       const startDate = subDays(startOfDay(new Date()), days).toISOString();
 
-      // ... existing pagination logic ...
       let allData: any[] = [];
       let page = 0;
       const pageSize = 1000;
       let hasMore = true;
 
+      const isAdmin = userRef.current?.role === '본사 관리자';
+      const branchName = userRef.current?.branchName;
+
       while (hasMore) {
         if (signal.aborted) throw new Error('Aborted');
 
-        const { data, error } = await supabase
+        let query = supabase
           .from('orders')
           .select('*')
-          .or(`order_date.gte.${startDate},payment->>completedAt.gte.${startDate},transfer_info->>acceptedAt.gte.${startDate}`)
+          .or(`order_date.gte.${startDate},payment->>completedAt.gte.${startDate},transfer_info->>acceptedAt.gte.${startDate}`);
+
+        // Server-side branch filter
+        if (!isAdmin && branchName) {
+          query = query.or(`branch_name.eq.${branchName},transfer_info->>processBranchName.eq.${branchName}`);
+        }
+
+        const { data, error } = await query
           .order('order_date', { ascending: false })
           .range(page * pageSize, (page + 1) * pageSize - 1)
           .abortSignal(signal);
@@ -337,6 +372,8 @@ export function useOrders(initialFetch = true) {
 
   const fetchOrdersByRange = useCallback(async (start: Date, end: Date) => {
     try {
+      lastFetchParamsRef.current = { type: 'range', start, end };
+
       if (orders.length === 0) {
         setLoading(true);
       } else {
@@ -345,21 +382,30 @@ export function useOrders(initialFetch = true) {
       const rangeStart = startOfDay(start).toISOString();
       const rangeEnd = endOfDay(end).toISOString();
 
-
       let allOrders: any[] = [];
       let page = 0;
       const pageSize = 1000;
       let hasMore = true;
 
+      const isAdmin = userRef.current?.role === '본사 관리자';
+      const branchName = userRef.current?.branchName;
+
       while (hasMore) {
         const from = page * pageSize;
         const to = from + pageSize - 1;
 
-        const { data, error } = await supabase
+        let query = supabase
           .from('orders')
           .select('*')
           .gte('order_date', rangeStart)
-          .lte('order_date', rangeEnd)
+          .lte('order_date', rangeEnd);
+
+        // Server-side branch filter
+        if (!isAdmin && branchName) {
+          query = query.or(`branch_name.eq.${branchName},transfer_info->>processBranchName.eq.${branchName}`);
+        }
+
+        const { data, error } = await query
           .order('order_date', { ascending: false })
           .range(from, to);
 
@@ -452,6 +498,7 @@ export function useOrders(initialFetch = true) {
   const fetchOrdersForSettlement = useCallback(async (targetDateStr: string, startDateStr?: string) => {
     try {
       setLoading(true);
+      lastFetchParamsRef.current = { type: 'default', days: 30 }; // Approximate for settlement re-sync
 
       const end = `${targetDateStr}T23:59:59.999`;
       // Buffer of 1 day before the target/start date to handle UTC/KST overlap
@@ -460,11 +507,20 @@ export function useOrders(initialFetch = true) {
         : `${subDays(new Date(targetDateStr), 1).toISOString().split('T')[0]}T00:00:00`;
 
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('orders')
         .select('*')
         .or(`order_date.gte.${effectiveStart},payment->>completedAt.gte.${effectiveStart},transfer_info->>acceptedAt.gte.${effectiveStart}`)
-        .filter('order_date', 'lte', end)
+        .filter('order_date', 'lte', end);
+
+      const isAdmin = userRef.current?.role === '본사 관리자';
+      const branchName = userRef.current?.branchName;
+
+      if (!isAdmin && branchName) {
+        query = query.or(`branch_name.eq.${branchName},transfer_info->>processBranchName.eq.${branchName}`);
+      }
+
+      const { data, error } = await query
         .order('order_date', { ascending: false })
         .limit(5000);
 
@@ -491,28 +547,58 @@ export function useOrders(initialFetch = true) {
       fetchOrders();
     }
 
+    const triggerRefresh = () => {
+      const params = lastFetchParamsRef.current;
+      switch (params.type) {
+        case 'range':
+          if (params.start && params.end) fetchOrdersByRange(params.start, params.end);
+          break;
+        case 'calendar':
+          if (params.start) fetchCalendarOrders(params.start);
+          break;
+        case 'all':
+          fetchAllOrders();
+          break;
+        default:
+          fetchOrders(params.days || 7);
+      }
+    };
+
+    let debounceTimer: NodeJS.Timeout | null = null;
+
     // --- [Real-time Subscription] Act like Firebase ---
-    // Listen for changes on the 'orders' table
     const channel = supabase
       .channel('orders-realtime-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
         (payload) => {
+          // Optimization: Check if change is relevant for branch users
+          const isAdmin = userRef.current?.role === '본사 관리자';
+          const myBranch = userRef.current?.branchName;
 
-          // Re-fetch orders when any change happens to stay fully synced
-          // This ensures complex filters and statistics are always correct.
-          // Since we fixed the 'loading' state, users won't see a flicker.
-          fetchOrders();
+          if (!isAdmin && myBranch) {
+            const row = payload.new as any || payload.old as any;
+            if (row) {
+              const isMine = row.branch_name === myBranch ||
+                row.transfer_info?.processBranchName === myBranch;
+              if (!isMine) return; // Ignore irrelevant changes
+            }
+          }
+
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            triggerRefresh();
+          }, 1000); // 1s debounce
         }
       )
-      .subscribe((status) => {
-      });
+      .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
-  }, [fetchOrders, initialFetch]);
+  }, [fetchOrders, fetchOrdersByRange, fetchCalendarOrders, fetchAllOrders, initialFetch]);
 
   const addOrder = async (orderData: OrderData): Promise<string | null> => {
     setLoading(true);
