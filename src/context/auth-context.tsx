@@ -71,19 +71,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setTimeout(() => reject(new Error('Role fetch timeout')), 10000)
       );
 
-      // 3. Robust Retry Logic for Supabase
-      // If DB fails, do NOT fallback to "Unknown". Retry once, then fail safely.
+      // 3. Robust Retry Logic for All Users (Universal Reliability)
+      // Retry up to 3 times with increasing backoff (1s, 2s, 4s)
       let roleData = null;
-      try {
-        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
-        if (error) throw error;
-        roleData = data;
-      } catch (e) {
-        console.warn("[Auth] First attempt failed, retrying...", e);
-        // Retry once after 1s
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const { data, error } = await supabase.from('user_roles').select('*').eq('email', email).maybeSingle();
-        if (!error) roleData = data;
+      let attempts = 0;
+      while (attempts < 3 && !roleData) {
+        try {
+          // Re-create timeout promise for each attempt
+          const currentTimeout = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Role fetch timeout')), 5000 + (attempts * 2000))
+          );
+
+          const { data, error } = await Promise.race([
+            supabase.from('user_roles').select('*').eq('email', email).maybeSingle(),
+            currentTimeout
+          ]) as any;
+
+          if (!error) {
+            roleData = data;
+            break; // Success
+          } else {
+            console.warn(`[Auth] Attempt ${attempts + 1} failed:`, error);
+          }
+        } catch (e) {
+          console.warn(`[Auth] Attempt ${attempts + 1} timeout/error:`, e);
+        }
+        attempts++;
+        if (!roleData && attempts < 3) await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempts)));
       }
 
       // 4. Role Assignment
@@ -151,19 +165,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     // 2. 백그라운드에서 최신 정보 조회 (Background Sync)
     // 사용자는 이미 화면을 보고 있고, 뒤에서 조회가 끝나면 쓱 업데이트 됨.
-    const freshUser = await fetchUserRole(session.user.email, session.user.id);
+    try {
+      const freshUser = await fetchUserRole(session.user.email, session.user.id);
 
-    // 조회된 정보가 "직원/미정" (에러상태) 인데, 기존에 이미 "관리자" 정보가 짱짱하게 있다면 굳이 덮어쓰지 않음 (안전장치)
-    setUser(prev => {
-      // 이전 데이터가 더 좋은 데이터(관리자)라면 에러난 데이터로 덮어쓰지 말자.
-      if (freshUser.role === '직원' && prev?.role === '본사 관리자' && prev.email === freshUser.email) {
-        return prev;
-      }
-      return freshUser;
-    });
+      // 조회된 정보가 "직원/미정" (에러상태) 인데, 기존에 이미 "관리자" 정보가 짱짱하게 있다면 굳이 덮어쓰지 않음 (안전장치)
+      setUser(prev => {
+        // [Universal Safety] If new data implies downgrade to 'Unknown' due to some error, keep old data
+        if (freshUser.franchise === '미정' && prev?.franchise && prev.franchise !== '미정' && prev.email === freshUser.email) {
+          console.warn("[Auth] New data is 'Unknown', keeping previous valid data.");
+          return prev;
+        }
+        return freshUser;
+      });
 
-    saveUserToStorage(freshUser);
-    setLoading(false);
+      saveUserToStorage(freshUser);
+    } catch (error) {
+      console.warn("[Auth] Background fetch failed. Using cached data if available.", error);
+      // If we have no user at all (first load, no cache), THEN we might need to show error
+      // But if we loaded from cache, we just stay there.
+      setUser(prev => {
+        if (!prev) throw error; // No cache, no DB -> Real Error
+        return prev; // Keep cache
+      });
+    } finally {
+      setLoading(false);
+    }
   }, [fetchUserRole]);
 
 
