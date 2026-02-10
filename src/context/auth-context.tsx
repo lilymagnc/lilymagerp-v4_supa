@@ -39,7 +39,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
       }
     } catch (e) {
-      console.warn("Failed to save auth to storage:", e);
+      // Failed to save auth to storage - non-critical
     }
   };
 
@@ -50,7 +50,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         localStorage.removeItem(STORAGE_KEY);
       }
     } catch (e) {
-      console.warn("Failed to clear auth storage:", e);
+      // Failed to clear auth storage - non-critical
     }
   };
 
@@ -77,10 +77,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             roleData = data;
             break; // Success
           } else {
-            console.warn(`[Auth] Attempt ${attempts + 1} failed:`, error);
+            // Auth retry - silent
           }
         } catch (e) {
-          console.warn(`[Auth] Attempt ${attempts + 1} timeout/error:`, e);
+          // Auth retry timeout - silent
         }
         attempts++;
         if (!roleData && attempts < 3) await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempts)));
@@ -132,7 +132,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return newUser;
 
     } catch (error) {
-      console.error("[Auth] Fatal role fetch error:", error);
+      // Fatal role fetch error - handled gracefully by returning null
       // Do NOT throw error to prevent unhandled promise rejection. Return null instead.
       return null;
     }
@@ -162,7 +162,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(prev => {
         // [Universal Safety] If new data implies downgrade to 'Unknown' due to some error, keep old data
         if (freshUser.franchise === '미정' && prev?.franchise && prev.franchise !== '미정' && prev.email === freshUser.email) {
-          console.warn("[Auth] New data is 'Unknown', keeping previous valid data.");
+          // Keeping previous valid data (new data is 'Unknown')
           return prev;
         }
         return freshUser;
@@ -170,7 +170,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       saveUserToStorage(freshUser);
     } catch (error) {
-      console.warn("[Auth] Background fetch failed. Using cached data if available.", error);
+      // Background fetch failed - using cached data if available
       // If we have no user at all (first load, no cache), THEN we might need to show error
       // But if we loaded from cache, we just stay there.
       setUser(prev => {
@@ -199,7 +199,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             }
           }
         } catch (e) {
-          console.warn("[Auth] Cache parse error", e);
+          // Cache parse error - non-critical
         }
       }
 
@@ -242,7 +242,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       await supabase.auth.signOut();
     } catch (error) {
-      console.error("Sign out error:", error);
+      // Sign out error - silent
     } finally {
       setUser(null);
       clearUserFromStorage();

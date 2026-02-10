@@ -189,8 +189,20 @@ export function useOrders(initialFetch = true) {
     orderType: row.order_type || row.extra_data?.order_type || "etc",
     receiptType: row.receipt_type,
     payment: row.payment || {},
-    pickupInfo: row.pickup_info,
-    deliveryInfo: row.delivery_info,
+    // [Data Mapping Correctness]
+    // 1. Generate productNames string from items array if not present
+    productNames: row.product_names || row.productNames || (row.items && row.items.length > 0 ? row.items.map((i: any) => i.name).join(', ') : '상품 미지정'),
+
+    // 2. Normalize Time Strings logic
+    pickupInfo: row.pickup_info ? {
+      ...row.pickup_info,
+      time: row.pickup_info.time ? row.pickup_info.time.substring(0, 5) : '' // "09:00:00" -> "09:00"
+    } : null,
+    deliveryInfo: row.delivery_info ? {
+      ...row.delivery_info,
+      time: row.delivery_info.time ? row.delivery_info.time.substring(0, 5) : '' // "14:30:00" -> "14:30"
+    } : null,
+
     actualDeliveryCost: row.actual_delivery_cost ?? row.extra_data?.actualDeliveryCost ?? row.extra_data?.actual_delivery_cost,
     actualDeliveryCostCash: row.actual_delivery_cost_cash ?? row.extra_data?.actualDeliveryCostCash ?? row.extra_data?.actual_delivery_cost_cash,
     deliveryCostStatus: row.delivery_cost_status ?? row.extra_data?.deliveryCostStatus ?? row.extra_data?.delivery_cost_status,
@@ -218,9 +230,17 @@ export function useOrders(initialFetch = true) {
     extraData: row.extra_data
   });
 
+  // [Stability Fix] Use ref to track if we have orders, avoiding dependency loops
+  const hasOrdersRef = useRef(false);
+  useEffect(() => {
+    hasOrdersRef.current = orders.length > 0;
+  }, [orders.length]);
+
   const fetchCalendarOrders = useCallback(async (baseDate: Date) => {
     try {
-      setLoading(true);
+      if (!hasOrdersRef.current) setLoading(true);
+      else setIsRefreshing(true);
+
       lastFetchParamsRef.current = { type: 'calendar', start: baseDate };
 
       const startFilterDate = subDays(startOfDay(baseDate), 35).toISOString().split('T')[0];
@@ -251,12 +271,13 @@ export function useOrders(initialFetch = true) {
       setOrders(ordersData);
       return ordersData;
     } catch (error) {
-      console.error('캘린더 주문 로딩 오류:', error);
+      // console.error('캘린더 주문 로딩 오류:', error);
       return [];
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
-  }, []);
+  }, []); // Removed orders.length dependency
 
   const fetchOrdersBySchedule = useCallback(async (startDate: Date, endDate: Date) => {
     try {
@@ -301,7 +322,7 @@ export function useOrders(initialFetch = true) {
       setOrders(ordersData);
       return ordersData;
     } catch (error) {
-      console.error('Schedule orders fetch error:', error);
+      // console.error('Schedule orders fetch error:', error);
       return [];
     } finally {
       setLoading(false);
@@ -373,7 +394,7 @@ export function useOrders(initialFetch = true) {
       }
     } catch (error: any) {
       if (error.name !== 'AbortError' && error.message !== 'Aborted') {
-        console.error('주문 데이터 로딩 오류:', error);
+        // console.error('주문 데이터 로딩 오류:', error);
       }
     } finally {
       if (!signal.aborted) {
@@ -387,7 +408,7 @@ export function useOrders(initialFetch = true) {
     try {
       lastFetchParamsRef.current = { type: 'range', start, end };
 
-      if (orders.length === 0) setLoading(true);
+      if (!hasOrdersRef.current) setLoading(true);
       else setIsRefreshing(true);
 
       const rangeStart = startOfDay(start).toISOString();
@@ -441,7 +462,7 @@ export function useOrders(initialFetch = true) {
 
         // Safety break
         if (allOrders.length >= 20000) {
-          console.warn('[Period Load] Safety limit reached (20k rows)');
+          // console.warn('[Period Load] Safety limit reached (20k rows)');
           break;
         }
       }
@@ -451,18 +472,18 @@ export function useOrders(initialFetch = true) {
       setOrders(ordersData);
       return ordersData;
     } catch (error) {
-      console.error('Range 주문 로딩 오류:', error);
+      // console.error('Range 주문 로딩 오류:', error);
       setOrders([]);
       return [];
     } finally {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [orders.length]);
+  }, []); // Removed orders.length dependency
 
   const fetchAllOrders = useCallback(async () => {
     try {
-      if (orders.length === 0) {
+      if (!hasOrdersRef.current) {
         setLoading(true);
       } else {
         setIsRefreshing(true);
@@ -478,13 +499,13 @@ export function useOrders(initialFetch = true) {
       setOrders(ordersData);
       return ordersData;
     } catch (error) {
-      console.error('전체 주문 로딩 오류:', error);
+      // console.error('전체 주문 로딩 오류:', error);
       return [];
     } finally {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [orders.length]);
+  }, []); // Removed orders.length dependency
 
   const fetchOrdersByCustomer = useCallback(async (customerId: string, startDate?: Date, endDate?: Date) => {
     try {
@@ -503,7 +524,7 @@ export function useOrders(initialFetch = true) {
       if (error) throw error;
       return (data || []).map(mapRowToOrder);
     } catch (error) {
-      console.error('고객 주문 조회 오류:', error);
+      // console.error('고객 주문 조회 오류:', error);
       toast({ variant: 'destructive', title: '조회 실패', description: '고객 주문 내역을 불러오지 못했습니다.' });
       return [];
     } finally {
@@ -556,7 +577,7 @@ export function useOrders(initialFetch = true) {
 
       return ordersData;
     } catch (error) {
-      console.error("정산 데이터 로딩 오류:", error);
+      // console.error("정산 데이터 로딩 오류:", error);
       return [];
     } finally {
       setLoading(false);
@@ -567,23 +588,6 @@ export function useOrders(initialFetch = true) {
     if (initialFetch) {
       fetchOrders();
     }
-
-    const triggerRefresh = () => {
-      const params = lastFetchParamsRef.current;
-      switch (params.type) {
-        case 'range':
-          if (params.start && params.end) fetchOrdersByRange(params.start, params.end);
-          break;
-        case 'calendar':
-          if (params.start) fetchCalendarOrders(params.start);
-          break;
-        case 'all':
-          fetchAllOrders();
-          break;
-        default:
-          fetchOrders(params.days || 7);
-      }
-    };
 
     // --- [Real-time Subscription] Act like Firebase (Atomic Updates) ---
     const channel = supabase
@@ -611,21 +615,17 @@ export function useOrders(initialFetch = true) {
           }
 
           // [핵심] 원자적 업데이트 (Atomic Update) - 전체 다시 불러오지 않고 메모리에서 교체
+          // Firebase의 onSnapshot과 동일한 방식: 변경된 것만 반영
           if (payload.eventType === 'INSERT') {
             const mapped = mapRowToOrder(payload.new);
-            setOrders(prev => [mapped, ...prev].slice(0, 5000)); // 최대 갯수 유지
+            setOrders(prev => [mapped, ...prev].slice(0, 5000));
           } else if (payload.eventType === 'UPDATE') {
             const mapped = mapRowToOrder(payload.new);
             setOrders(prev => prev.map(o => o.id === mapped.id ? mapped : o));
           } else if (payload.eventType === 'DELETE') {
-            setOrders(prev => prev.filter(o => o.id === (payload.old as any).id));
+            setOrders(prev => prev.filter(o => o.id !== (payload.old as any).id));
           }
-
-          // 서버와의 최종 동기화를 위해 백그라운드에서 지연 갱신 (선택 사항)
-          if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-          debounceTimerRef.current = setTimeout(() => {
-            triggerRefresh();
-          }, 2000);
+          // triggerRefresh 제거: 원자적 업데이트만으로 충분 (Firebase와 동일 방식)
         }
       )
       .subscribe();
@@ -634,12 +634,7 @@ export function useOrders(initialFetch = true) {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
 
       if (channel) {
-        // [Safety] Clean up immediately but safely
-        supabase.removeChannel(channel).catch(err => {
-          // Ignore 'closed' errors as they are expected on unmount
-          if (err?.message?.includes('closed')) return;
-          console.warn('[Realtime] Cleanup warning:', err);
-        });
+        supabase.removeChannel(channel).catch(() => { });
       }
     };
   }, [fetchOrders, fetchOrdersByRange, fetchCalendarOrders, fetchAllOrders, initialFetch]);
@@ -752,7 +747,7 @@ export function useOrders(initialFetch = true) {
       await fetchOrders();
       return orderId;
     } catch (error) {
-      console.error(error);
+      // console.error(error);
       toast({ variant: 'destructive', title: '주문 처리 오류', description: '주문 추가 중 오류가 발생했습니다.' });
       return null;
     } finally {

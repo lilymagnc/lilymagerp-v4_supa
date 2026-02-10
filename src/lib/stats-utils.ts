@@ -37,7 +37,7 @@ export async function updateDailyStats(
 
         if (error) throw error;
     } catch (error) {
-        console.error('Error updating daily stats:', error);
+        // Error updating daily stats - non-critical
     }
 }
 
@@ -67,10 +67,10 @@ export async function fetchDailyStats(startDate: string, endDate: string) {
     } catch (error: any) {
         // 테이블이 아직 없거나 404 에러인 경우 빈 배열 반환하여 앱 충돌 방지
         if (error.code === '42P01' || error.message?.includes('404')) {
-            console.warn('Daily stats table missing or not found. Returning empty stats.');
+            // Daily stats table missing - returning empty stats
             return [];
         }
-        console.error('Error fetching daily stats:', error);
+        // Error fetching daily stats - returning empty
         return [];
     }
 }

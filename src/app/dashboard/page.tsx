@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
@@ -318,7 +318,15 @@ export default function DashboardPage() {
     const convertOrdersToEvents = orders.map(order => ({
       id: `order-${order.id}`,
       title: `${order.orderer?.name || '주문자'} - ${order.productNames || '상품'}`,
-      startDate: order.deliveryInfo?.date || order.pickupInfo?.date || order.orderDate,
+      startDate: (() => {
+        const info = order.deliveryInfo || order.pickupInfo;
+        if (info && info.date) {
+          const time = info.time || '00:00';
+          // 날짜와 시간을 결합하여 Date 객체가 인식할 수 있는 포맷으로 변환 (YYYY-MM-DDTHH:mm)
+          return `${info.date.split('T')[0]}T${time.includes(':') ? time : '00:00'}`;
+        }
+        return order.orderDate;
+      })(),
       type: order.pickupInfo ? 'pickup' : 'delivery',
       orderId: order.id
     }));
@@ -395,14 +403,19 @@ export default function DashboardPage() {
         if (error) throw error;
 
         return (data || []).map((row: any) => {
-          let productNames = '상품 정보 없음';
-          const items = row.items || [];
-          if (Array.isArray(items) && items.length > 0) {
-            productNames = items.slice(0, 2).map((item: any) => item.name || item.productName || item.product_name || '상품명').join(', ');
-            if (items.length > 2) productNames += ` 외 ${items.length - 2}건`;
+          // [Product Name Logic] Align with use-orders.ts
+          let productNames = row.product_names || row.productNames;
+          if (!productNames) {
+            const items = row.items || [];
+            if (Array.isArray(items) && items.length > 0) {
+              productNames = items.slice(0, 2).map((item: any) => item.name || item.productName || item.product_name || '상품명').join(', ');
+              if (items.length > 2) productNames += ` 외 ${items.length - 2}건`;
+            } else {
+              productNames = '상품 정보 없음';
+            }
           }
 
-          const ordererName = row.orderer?.name || row.orderer_name || '이름 없음';
+          const ordererName = row.orderer?.name || row.orderer_name || '주문자 정보 없음';
 
           return {
             ...row,
@@ -559,7 +572,7 @@ export default function DashboardPage() {
         }
       }
     } catch (error) {
-      console.error("Dashboard Data Fetch Error:", error);
+      // Dashboard data fetch error - handled gracefully
     } finally {
       setLoading(false);
     }
@@ -582,19 +595,38 @@ export default function DashboardPage() {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // 실시간 동기화 (Debounced/Throttled via single channel)
+  // orders 상태 변화 시 대시보드 통계도 갱신 (5초 디바운싱으로 과도한 호출 방지)
+  const ordersLengthRef = useRef(orders.length);
   useEffect(() => {
+    // 최초 렌더 시에는 스킵
+    if (ordersLengthRef.current === orders.length) return;
+    ordersLengthRef.current = orders.length;
+
+    const timer = setTimeout(() => {
+      fetchDashboardData();
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [orders.length, fetchDashboardData]);
+
+  // 실시간 동기화 (Debounced) - orders 테이블은 use-orders.ts 에서 이미 구독 중이므로 제외
+  // daily_stats 변경만 감지하되 3초 디바운싱으로 연쇄 호출 방지
+  useEffect(() => {
+    let debounceTimer: NodeJS.Timeout | null = null;
+
+    const debouncedFetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchDashboardData();
+      }, 3000);
+    };
+
     const channel = supabase
-      .channel('dashboard-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        fetchDashboardData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_stats' }, () => {
-        fetchDashboardData();
-      })
+      .channel('dashboard-stats-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_stats' }, debouncedFetch)
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel).catch(() => { });
     };
   }, [fetchDashboardData]);
@@ -753,60 +785,31 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* 일정 섹션 */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-2"><Clock className="h-5 w-5 text-orange-600" /> 오늘 & 내일 일정</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => router.push('/dashboard/calendar')} className="text-xs">전체보기</Button>
-          </CardHeader>
-          <CardContent>
-            {todayAndTomorrowEvents.length > 0 ? (
-              <div className="space-y-2">
-                {todayAndTomorrowEvents.slice(0, 5).map((ev: any) => (
-                  <div key={ev.id} className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-100">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-1 h-8 rounded ${ev.type === 'pickup' ? 'bg-blue-400' : 'bg-purple-400'}`} />
-                      <div>
-                        <p className="text-sm font-bold">{ev.title}</p>
-                        <p className="text-xs text-gray-500">{format(new Date(ev.startDate), 'HH:mm')} | {ev.type === 'pickup' ? '픽업' : '배송'}</p>
-                      </div>
-                    </div>
-                    <Button variant="ghost" size="sm" onClick={() => ev.orderId && handleOrderDetail(orders.find(o => o.id === ev.orderId) as any)}>상세</Button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="py-10 text-center text-gray-400 text-sm">일정이 없습니다.</div>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="grid grid-cols-1 gap-4">
-          <Card className="bg-blue-50/50 border-blue-100">
-            <CardContent className="pt-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="text-sm font-bold text-blue-800">픽업 대기</p>
-                  <p className="text-3xl font-black text-blue-900">{todayAndTomorrowEvents.filter(e => e.type === 'pickup' && isToday(new Date(e.startDate))).length}건</p>
-                </div>
-                <Package className="h-8 w-8 text-blue-300" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-purple-50/50 border-purple-100">
-            <CardContent className="pt-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="text-sm font-bold text-purple-800">배송 대기</p>
-                  <p className="text-3xl font-black text-purple-900">{todayAndTomorrowEvents.filter(e => e.type === 'delivery' && isToday(new Date(e.startDate))).length}건</p>
-                </div>
-                <Truck className="h-8 w-8 text-purple-300" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      {/* 월별 매출 섹션 (복구됨) */}
+      <Card className="col-span-full">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2"><CalendarDays className="h-5 w-5 text-purple-600" /> 월별 매출</CardTitle>
+          <div className="flex gap-1">
+            <Input type="date" value={monthlyStartDate} onChange={(e) => handleMonthlyDateChange(e.target.value, monthlyEndDate)} className="w-28 text-xs h-8" />
+            <Input type="date" value={monthlyEndDate} onChange={(e) => handleMonthlyDateChange(monthlyStartDate, e.target.value)} className="w-28 text-xs h-8" />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={monthlySales}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="month" fontSize={12} />
+              <YAxis tickFormatter={(val) => `${(val / 1000000).toFixed(0)}M`} fontSize={12} />
+              <Tooltip content={<CustomTooltip />} />
+              {isAdmin && !currentFilteredBranch ? (
+                availableBranches.map((b, i) => <Bar key={b.id} dataKey={b.name} stackId="a" fill={getBranchColor(i)} />)
+              ) : (
+                <Bar dataKey="sales" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+              )}
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
 
       {/* 최근 주문 목록 */}
       <Card>
@@ -815,25 +818,29 @@ export default function DashboardPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b text-left">
-                  <th className="py-2">이름</th>
-                  <th className="py-2">상품</th>
-                  <th className="py-2">지점</th>
-                  <th className="py-2">상태</th>
-                  <th className="py-2 text-right">금액</th>
-                  <th className="py-2 text-center">작업</th>
+                <tr className="border-b text-left text-gray-500 font-medium">
+                  <th className="py-3 px-2">주문ID</th>
+                  <th className="py-3 px-2">주문자</th>
+                  <th className="py-3 px-2">상품명</th>
+                  <th className="py-3 px-2">주문일</th>
+                  <th className="py-3 px-2">출고지점</th>
+                  <th className="py-3 px-2">상태</th>
+                  <th className="py-3 px-2 text-right">금액</th>
+                  <th className="py-3 px-2 text-center">작업</th>
                 </tr>
               </thead>
               <tbody>
                 {recentOrders.map(order => (
-                  <tr key={order.id} className="border-b hover:bg-gray-50">
-                    <td className="py-3 font-medium">{order.orderer?.name}</td>
-                    <td className="py-3 text-gray-600 truncate max-w-[200px]">{order.productNames}</td>
-                    <td className="py-3">{order.branchName}</td>
-                    <td className="py-3">{getStatusBadge(order.status)}</td>
-                    <td className="py-3 text-right font-bold">{formatCurrency(order.total)}</td>
-                    <td className="py-3 text-center">
-                      <Button variant="outline" size="sm" onClick={() => handleOrderDetail(order)}>상세</Button>
+                  <tr key={order.id} className="border-b hover:bg-gray-50 transition-colors">
+                    <td className="py-3 px-2 font-mono text-xs text-gray-500">#{order.id.slice(0, 8)}</td>
+                    <td className="py-3 px-2 font-medium text-gray-900">{order.orderer?.name}</td>
+                    <td className="py-3 px-2 text-gray-600 truncate max-w-[200px]" title={order.productNames}>{order.productNames}</td>
+                    <td className="py-3 px-2 text-gray-500 text-xs">{formatDate(order.orderDate)}</td>
+                    <td className="py-3 px-2 text-sm">{order.branchName}</td>
+                    <td className="py-3 px-2">{getStatusBadge(order.status)}</td>
+                    <td className="py-3 px-2 text-right font-bold text-gray-900">{formatCurrency(order.total)}</td>
+                    <td className="py-3 px-2 text-center">
+                      <Button variant="outline" size="sm" onClick={() => handleOrderDetail(order)} className="h-8 text-xs">상세보기</Button>
                     </td>
                   </tr>
                 ))}
