@@ -54,23 +54,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // 실제 DB에서 역할 가져오기 (타임아웃 안전장치 포함)
-  const fetchUserRole = useCallback(async (email: string, userId: string): Promise<UserProfile> => {
+  // 실제 DB에서 역할 가져오기 (타임아웃 안전장치 포함) - 에러 시 null 반환
+  const fetchUserRole = useCallback(async (email: string, userId: string): Promise<UserProfile | null> => {
     try {
-      // 1. user_roles 테이블 조회
-      const fetchPromise = supabase
-        .from('user_roles')
-        .select('*')
-        .eq('email', email)
-        .eq('is_active', true)
-        .limit(1)
-        .maybeSingle();
-
-      // 10초 타임아웃 (Supabase 인스턴스 기동 지연 고려)
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Role fetch timeout')), 10000)
-      );
-
       // 3. Robust Retry Logic for All Users (Universal Reliability)
       // Retry up to 3 times with increasing backoff (1s, 2s, 4s)
       let roleData = null;
@@ -147,8 +133,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     } catch (error) {
       console.error("[Auth] Fatal role fetch error:", error);
-      // Do NOT return a dummy user. Let the app stay in loading or handle error explicitly.
-      throw error;
+      // Do NOT throw error to prevent unhandled promise rejection. Return null instead.
+      return null;
     }
   }, []);
 
@@ -167,6 +153,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // 사용자는 이미 화면을 보고 있고, 뒤에서 조회가 끝나면 쓱 업데이트 됨.
     try {
       const freshUser = await fetchUserRole(session.user.email, session.user.id);
+
+      if (!freshUser) {
+        throw new Error("Failed to fetch fresh user role");
+      }
 
       // 조회된 정보가 "직원/미정" (에러상태) 인데, 기존에 이미 "관리자" 정보가 짱짱하게 있다면 굳이 덮어쓰지 않음 (안전장치)
       setUser(prev => {

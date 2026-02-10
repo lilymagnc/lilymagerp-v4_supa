@@ -83,7 +83,9 @@ export function useDisplayBoard() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(channel).catch(err => {
+        // Ignore errors during cleanup
+      });
     };
   }, [user?.franchise, branches, fetchDisplayItems]);
 

@@ -586,14 +586,6 @@ export function useOrders(initialFetch = true) {
     };
 
     // --- [Real-time Subscription] Act like Firebase (Atomic Updates) ---
-    // --- [Real-time Subscription] Act like Firebase (Atomic Updates) ---
-    const handleRealtimeUpdate = () => {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = setTimeout(() => {
-        // Silent Refresh: Don't set global loading, just fetch
-        triggerRefresh();
-      }, 500);
-    };
     const channel = supabase
       .channel('orders-realtime-changes')
       .on(
@@ -641,55 +633,17 @@ export function useOrders(initialFetch = true) {
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
 
-      // 채널 클린업: 
-      // 연결이 완료되기 전 해제가 발생할 경우의 경고 로그를 방지하기 위해 지연 처리
       if (channel) {
-        setTimeout(() => {
-          try {
-            supabase.removeChannel(channel).catch(() => { });
-          } catch (e) {
-            // 조용히 처리
-          }
-        }, 0);
+        // [Safety] Clean up immediately but safely
+        supabase.removeChannel(channel).catch(err => {
+          // Ignore 'closed' errors as they are expected on unmount
+          if (err?.message?.includes('closed')) return;
+          console.warn('[Realtime] Cleanup warning:', err);
+        });
       }
     };
   }, [fetchOrders, fetchOrdersByRange, fetchCalendarOrders, fetchAllOrders, initialFetch]);
 
-  // 실시간 동기화 (Background Silent Refresh)
-  useEffect(() => {
-    if (!initialFetch) return;
-
-    let debounceTimer: NodeJS.Timeout;
-
-    const channel = supabase
-      .channel('orders-realtime-global')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        () => {
-          // 실시간 업데이트 시에는 setLoading(true)를 하지 않고 배경에서 로드한다.
-          if (debounceTimer) clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(() => {
-            // fetchOrders() 내부에 setLoading(true)가 있으면 안 되므로 
-            // 배경 로드용 별도 플래그나 로직이 필요할 수 있음.
-            // 여기서는 fetchOrders를 직접 호출하되, 무거운 초기화는 방지.
-            fetchOrders();
-          }, 1000);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      if (channel) {
-        // 즉시 해제보다 약간의 여유를 두어 웹소켓 엉킴 방지
-        setTimeout(() => {
-          supabase.removeChannel(channel).catch(() => { });
-        }, 100);
-      }
-    };
-    // 의존성 배열을 극도로 단순화하여 무한 재연결 방지
-  }, [initialFetch, fetchOrders]);
 
   const addOrder = async (orderData: OrderData): Promise<string | null> => {
     setLoading(true);
