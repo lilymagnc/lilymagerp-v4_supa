@@ -199,8 +199,27 @@ export default function DashboardPage() {
   const userBranch = user?.franchise || "";
 
   // --- State Definitions ---
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<DashboardStats>({
+  // --- Dashboard Cache 복원 (페이지 전환 시 즉시 표시) ---
+  const dashboardCache = useRef<any>(null);
+  const [hasCachedData, setHasCachedData] = useState(false);
+
+  // 캐시 복원 시도 (초기 렌더 1회)
+  const initCache = useMemo(() => {
+    try {
+      const cached = typeof window !== 'undefined' ? sessionStorage.getItem('dashboard_cache') : null;
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        // 5분 이내 캐시만 유효
+        if (Date.now() - (parsed._ts || 0) < 5 * 60 * 1000) {
+          return parsed;
+        }
+      }
+    } catch { }
+    return null;
+  }, []);
+
+  const [loading, setLoading] = useState(!initCache);
+  const [stats, setStats] = useState<DashboardStats>(initCache?.stats || {
     totalRevenue: 0,
     newCustomers: 0,
     weeklyOrders: 0,
@@ -209,16 +228,16 @@ export default function DashboardPage() {
     pendingPaymentAmount: 0,
   });
 
-  const [recentOrders, setRecentOrders] = useState<Order[]>([]);
+  const [recentOrders, setRecentOrders] = useState<Order[]>(initCache?.recentOrders || []);
   const [weatherInfo, setWeatherInfo] = useState<WeatherInfo | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [orderDetailDialogOpen, setOrderDetailDialogOpen] = useState(false);
   const [statsEmpty, setStatsEmpty] = useState(false);
 
   // 차트 데이터 상태
-  const [dailySales, setDailySales] = useState<DailySalesData[]>([]);
-  const [weeklySales, setWeeklySales] = useState<any[]>([]);
-  const [monthlySales, setMonthlySales] = useState<any[]>([]);
+  const [dailySales, setDailySales] = useState<DailySalesData[]>(initCache?.dailySales || []);
+  const [weeklySales, setWeeklySales] = useState<any[]>(initCache?.weeklySales || []);
+  const [monthlySales, setMonthlySales] = useState<any[]>(initCache?.monthlySales || []);
 
   // 날짜 필터 상태
   const [dailyStartDate, setDailyStartDate] = useState(format(new Date(new Date().setDate(new Date().getDate() - 7)), 'yyyy-MM-dd'));
@@ -378,8 +397,9 @@ export default function DashboardPage() {
     if (authLoading) return;
     if (!user && !isAdmin) return;
 
-    // Silent Refresh: 이미 데이터가 있으면 로딩바 안 띄움
-    if (!ordersLoading && !isRefreshing) setLoading(true);
+    // Silent Refresh: 캐시 데이터가 있으면 로딩바 안 띄움 (페이지 전환 후 즉시 표시)
+    const hasAnyData = recentOrders.length > 0 || stats.totalRevenue > 0;
+    if (!hasAnyData && !ordersLoading && !isRefreshing) setLoading(true);
 
     try {
       const branchFilter = currentFilteredBranch;
@@ -572,9 +592,15 @@ export default function DashboardPage() {
         }
       }
     } catch (error) {
-      // Dashboard data fetch error - handled gracefully
+      console.error('[Dashboard] Data fetch error:', error);
     } finally {
       setLoading(false);
+      // 캐시 저장 (페이지 전환 시 즉시 복원용)
+      try {
+        sessionStorage.setItem('dashboard_cache', JSON.stringify({
+          stats, recentOrders, dailySales, weeklySales, monthlySales, _ts: Date.now()
+        }));
+      } catch { }
     }
   }, [user, branches, currentFilteredBranch, dailyStartDate, dailyEndDate, weeklyStartDate, weeklyEndDate, monthlyStartDate, monthlyEndDate, isAdmin]);
 
