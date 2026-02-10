@@ -226,8 +226,13 @@ export function useOrders(initialFetch = true) {
         .or(`pickup_info->>date.gte.${startFilterDate},delivery_info->>date.gte.${startFilterDate},order_date.gte.${startFilterDate}`);
 
       // Branch filtering
-      const isAdmin = userRef.current?.role === '본사 관리자';
-      if (!isAdmin && userRef.current?.branchName) {
+      const isAdmin =
+        (userRef.current?.role as any) === '본사 관리자' ||
+        (userRef.current?.role as any) === 'admin' ||
+        (userRef.current?.role as any) === 'hq_manager' ||
+        userRef.current?.email?.toLowerCase() === 'lilymag0301@gmail.com';
+
+      if (!isAdmin && userRef.current?.branchName && userRef.current?.branchName !== '미정') {
         query = query.or(`branch_name.eq.${userRef.current.branchName},transfer_info->>processBranchName.eq.${userRef.current.branchName}`);
       }
 
@@ -321,7 +326,11 @@ export function useOrders(initialFetch = true) {
       const pageSize = 1000;
       let hasMore = true;
 
-      const isAdmin = userRef.current?.role === '본사 관리자';
+      const isAdmin =
+        (userRef.current?.role as any) === '본사 관리자' ||
+        (userRef.current?.role as any) === 'admin' ||
+        (userRef.current?.role as any) === 'hq_manager' ||
+        userRef.current?.email?.toLowerCase() === 'lilymag0301@gmail.com';
       const branchName = userRef.current?.branchName;
 
       while (hasMore) {
@@ -333,7 +342,7 @@ export function useOrders(initialFetch = true) {
           .or(`order_date.gte.${startDate},payment->>completedAt.gte.${startDate},transfer_info->>acceptedAt.gte.${startDate}`);
 
         // Server-side branch filter
-        if (!isAdmin && branchName) {
+        if (!isAdmin && branchName && branchName !== '미정') {
           query = query.or(`branch_name.eq.${branchName},transfer_info->>processBranchName.eq.${branchName}`);
         }
 
@@ -387,7 +396,11 @@ export function useOrders(initialFetch = true) {
       const pageSize = 1000;
       let hasMore = true;
 
-      const isAdmin = userRef.current?.role === '본사 관리자';
+      const isAdmin =
+        (userRef.current?.role as any) === '본사 관리자' ||
+        (userRef.current?.role as any) === 'admin' ||
+        (userRef.current?.role as any) === 'hq_manager' ||
+        userRef.current?.email?.toLowerCase() === 'lilymag0301@gmail.com';
       const branchName = userRef.current?.branchName;
 
       while (hasMore) {
@@ -401,7 +414,7 @@ export function useOrders(initialFetch = true) {
           .lte('order_date', rangeEnd);
 
         // Server-side branch filter
-        if (!isAdmin && branchName) {
+        if (!isAdmin && branchName && branchName !== '미정') {
           query = query.or(`branch_name.eq.${branchName},transfer_info->>processBranchName.eq.${branchName}`);
         }
 
@@ -513,10 +526,14 @@ export function useOrders(initialFetch = true) {
         .or(`order_date.gte.${effectiveStart},payment->>completedAt.gte.${effectiveStart},transfer_info->>acceptedAt.gte.${effectiveStart}`)
         .filter('order_date', 'lte', end);
 
-      const isAdmin = userRef.current?.role === '본사 관리자';
+      const isAdmin =
+        (userRef.current?.role as any) === '본사 관리자' ||
+        (userRef.current?.role as any) === 'admin' ||
+        (userRef.current?.role as any) === 'hq_manager' ||
+        userRef.current?.email?.toLowerCase() === 'lilymag0301@gmail.com';
       const branchName = userRef.current?.branchName;
 
-      if (!isAdmin && branchName) {
+      if (!isAdmin && branchName && branchName !== '미정') {
         query = query.or(`branch_name.eq.${branchName},transfer_info->>processBranchName.eq.${branchName}`);
       }
 
@@ -566,37 +583,64 @@ export function useOrders(initialFetch = true) {
 
     let debounceTimer: NodeJS.Timeout | null = null;
 
-    // --- [Real-time Subscription] Act like Firebase ---
+    // --- [Real-time Subscription] Act like Firebase (Atomic Updates) ---
     const channel = supabase
       .channel('orders-realtime-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
         (payload) => {
-          // Optimization: Check if change is relevant for branch users
-          const isAdmin = userRef.current?.role === '본사 관리자';
+          const isAdmin =
+            (userRef.current?.role as any) === '본사 관리자' ||
+            (userRef.current?.role as any) === 'admin' ||
+            (userRef.current?.role as any) === 'hq_manager' ||
+            userRef.current?.email?.toLowerCase() === 'lilymag0301@gmail.com';
           const myBranch = userRef.current?.branchName;
 
-          if (!isAdmin && myBranch) {
+          // 지점 권한 필터링
+          if (!isAdmin && myBranch && myBranch !== '미정') {
             const row = payload.new as any || payload.old as any;
             if (row) {
               const isMine = row.branch_name === myBranch ||
                 row.transfer_info?.processBranchName === myBranch;
-              if (!isMine) return; // Ignore irrelevant changes
+              if (!isMine) return;
             }
           }
 
+          // [핵심] 원자적 업데이트 (Atomic Update) - 전체 다시 불러오지 않고 메모리에서 교체
+          if (payload.eventType === 'INSERT') {
+            const mapped = mapRowToOrder(payload.new);
+            setOrders(prev => [mapped, ...prev].slice(0, 5000)); // 최대 갯수 유지
+          } else if (payload.eventType === 'UPDATE') {
+            const mapped = mapRowToOrder(payload.new);
+            setOrders(prev => prev.map(o => o.id === mapped.id ? mapped : o));
+          } else if (payload.eventType === 'DELETE') {
+            setOrders(prev => prev.filter(o => o.id === (payload.old as any).id));
+          }
+
+          // 서버와의 최종 동기화를 위해 백그라운드에서 지연 갱신 (선택 사항)
           if (debounceTimer) clearTimeout(debounceTimer);
           debounceTimer = setTimeout(() => {
-            triggerRefresh();
-          }, 1000); // 1s debounce
+            // triggerRefresh(); // 주석 처리: 실시간 원자 업데이트만으로도 충분하도록 설계
+          }, 2000);
         }
       )
       .subscribe();
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
-      supabase.removeChannel(channel);
+
+      // 채널 클린업: 
+      // 연결이 완료되기 전 해제가 발생할 경우의 경고 로그를 방지하기 위해 지연 처리
+      if (channel) {
+        setTimeout(() => {
+          try {
+            supabase.removeChannel(channel).catch(() => { });
+          } catch (e) {
+            // 조용히 처리
+          }
+        }, 0);
+      }
     };
   }, [fetchOrders, fetchOrdersByRange, fetchCalendarOrders, fetchAllOrders, initialFetch]);
 
