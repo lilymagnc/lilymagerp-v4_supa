@@ -6,6 +6,7 @@ import { useToast } from './use-toast';
 import { useAuth } from './use-auth';
 import { subDays, startOfDay, endOfDay } from 'date-fns';
 import { isSettled, isCanceled } from '@/lib/order-utils';
+import { useOrdersContext } from '@/context/orders-context';
 
 // Simplified version for the form
 interface OrderItemForm {
@@ -153,6 +154,18 @@ export type PaymentStatus = "paid" | "pending" | "completed" | "split_payment";
 
 
 export function useOrders(initialFetch = true) {
+  // ★ Context가 있으면 전역 상태 재사용 (페이지 전환 시 즉시 로딩!)
+  const ctx = useOrdersContext();
+  if (ctx) {
+    return ctx;
+  }
+
+  // Context 밖에서 사용 시 기존 독립 인스턴스 (fallback)
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  return useOrdersLocal(initialFetch);
+}
+
+function useOrdersLocal(initialFetch = true) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(initialFetch);
   const [isRefreshing, setIsRefreshing] = useState(false);

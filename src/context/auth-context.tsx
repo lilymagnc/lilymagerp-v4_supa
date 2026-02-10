@@ -132,7 +132,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return newUser;
 
     } catch (error) {
-      // Fatal role fetch error - handled gracefully by returning null
+      console.error("[Auth] Fatal role fetch error:", error);
       // Do NOT throw error to prevent unhandled promise rejection. Return null instead.
       return null;
     }

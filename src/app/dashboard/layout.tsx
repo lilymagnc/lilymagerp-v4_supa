@@ -13,6 +13,7 @@ import { ROLE_LABELS } from '@/types/user-role';
 import { NotificationCenter } from '@/components/notification-center';
 import { SyncBridgeProvider } from '@/components/sync-bridge-provider';
 import { DiscountProvider } from '@/context/discount-context';
+import { OrdersProvider } from '@/context/orders-context';
 
 export default function DashboardLayout({
     children,
@@ -256,9 +257,11 @@ export default function DashboardLayout({
                 </header>
                 <div className="p-4 lg:p-6">
                     <SyncBridgeProvider>
-                        <DiscountProvider>
-                            {children}
-                        </DiscountProvider>
+                        <OrdersProvider>
+                            <DiscountProvider>
+                                {children}
+                            </DiscountProvider>
+                        </OrdersProvider>
                     </SyncBridgeProvider>
                 </div>
             </main>
