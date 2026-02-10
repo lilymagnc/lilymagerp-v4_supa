@@ -10,8 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { Save, Star, StarOff, Eye, Trash2, Copy, Download, Upload } from 'lucide-react'
-import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc, serverTimestamp, query, orderBy } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
+import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/use-auth'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 
@@ -23,7 +22,7 @@ interface EmailTemplate {
   category: 'delivery' | 'order' | 'status' | 'birthday' | 'custom'
   isHtml: boolean
   isFavorite: boolean
-  createdAt: any
+  createdAt: string
   createdBy: string
   variables: string[]
 }
@@ -35,11 +34,11 @@ interface EmailTemplateLibraryProps {
   variables: string[]
 }
 
-export function EmailTemplateLibrary({ 
-  currentTemplate, 
-  onTemplateSelect, 
+export function EmailTemplateLibrary({
+  currentTemplate,
+  onTemplateSelect,
   category,
-  variables 
+  variables
 }: EmailTemplateLibraryProps) {
   const [templates, setTemplates] = useState<EmailTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -51,7 +50,7 @@ export function EmailTemplateLibrary({
     description: '',
     isFavorite: false
   })
-  
+
   const { user } = useAuth()
   const { toast } = useToast()
 
@@ -62,15 +61,26 @@ export function EmailTemplateLibrary({
   const fetchTemplates = async () => {
     try {
       setLoading(true)
-      const templatesRef = collection(db, 'emailTemplates')
-      const q = query(templatesRef, orderBy('createdAt', 'desc'))
-      const snapshot = await getDocs(q)
-      
-      const templatesData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+      const { data, error } = await supabase
+        .from('email_templates')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      const templatesData = (data || []).map(item => ({
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        content: item.content,
+        category: item.category,
+        isHtml: item.is_html,
+        isFavorite: item.is_favorite,
+        createdAt: item.created_at,
+        createdBy: item.created_by,
+        variables: item.variables || []
       })) as EmailTemplate[]
-      
+
       setTemplates(templatesData)
     } catch (error) {
       console.error('템플릿 불러오기 실패:', error)
@@ -95,24 +105,29 @@ export function EmailTemplateLibrary({
     }
 
     try {
-      const templateData: Omit<EmailTemplate, 'id'> = {
+      const templatePayload = {
         name: saveForm.name.trim(),
         description: saveForm.description.trim(),
         content: currentTemplate,
         category,
-        isHtml: currentTemplate.includes('<!DOCTYPE html') || currentTemplate.includes('<html'),
-        isFavorite: saveForm.isFavorite,
+        is_html: currentTemplate.includes('<!DOCTYPE html') || currentTemplate.includes('<html'),
+        is_favorite: saveForm.isFavorite,
         variables,
-        createdAt: serverTimestamp(),
-        createdBy: user.uid
+        created_by: user.id, // Supabase user.id
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }
 
-      await addDoc(collection(db, 'emailTemplates'), templateData)
-      
+      const { error } = await supabase
+        .from('email_templates')
+        .insert([templatePayload])
+
+      if (error) throw error
+
       await fetchTemplates()
       setIsSaveOpen(false)
       setSaveForm({ name: '', description: '', isFavorite: false })
-      
+
       toast({
         title: "저장 완료",
         description: "템플릿이 라이브러리에 저장되었습니다."
@@ -129,9 +144,15 @@ export function EmailTemplateLibrary({
 
   const deleteTemplate = async (templateId: string) => {
     try {
-      await deleteDoc(doc(db, 'emailTemplates', templateId))
+      const { error } = await supabase
+        .from('email_templates')
+        .delete()
+        .eq('id', templateId)
+
+      if (error) throw error
+
       await fetchTemplates()
-      
+
       toast({
         title: "삭제 완료",
         description: "템플릿이 삭제되었습니다."
@@ -148,9 +169,13 @@ export function EmailTemplateLibrary({
 
   const toggleFavorite = async (template: EmailTemplate) => {
     try {
-      await updateDoc(doc(db, 'emailTemplates', template.id), {
-        isFavorite: !template.isFavorite
-      })
+      const { error } = await supabase
+        .from('email_templates')
+        .update({ is_favorite: !template.isFavorite, updated_at: new Date().toISOString() })
+        .eq('id', template.id)
+
+      if (error) throw error
+
       await fetchTemplates()
     } catch (error) {
       console.error('즐겨찾기 업데이트 실패:', error)
@@ -185,7 +210,7 @@ export function EmailTemplateLibrary({
               저장된 템플릿을 선택하거나 현재 템플릿을 저장할 수 있습니다.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-6">
             {/* 즐겨찾기 템플릿 */}
             {favoriteTemplates.length > 0 && (

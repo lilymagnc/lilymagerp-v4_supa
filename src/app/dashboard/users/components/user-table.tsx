@@ -106,23 +106,9 @@ export function UserTable({ users, onDeleteUser, onPasswordReset, onToggleStatus
   const formatLastLogin = (lastLogin: any) => {
     if (!lastLogin) return '-';
     try {
-      // Firestore Timestamp 객체인 경우
-      if (lastLogin.toDate) {
-        return format(lastLogin.toDate(), 'yyyy-MM-dd HH:mm');
-      }
-      // 문자열인 경우
-      if (typeof lastLogin === 'string') {
-        return format(new Date(lastLogin), 'yyyy-MM-dd HH:mm');
-      }
-      // Date 객체인 경우
-      if (lastLogin instanceof Date) {
-        return format(lastLogin, 'yyyy-MM-dd HH:mm');
-      }
-      // 숫자 타임스탬프인 경우
-      if (typeof lastLogin === 'number') {
-        return format(new Date(lastLogin), 'yyyy-MM-dd HH:mm');
-      }
-      return '-';
+      const d = new Date(lastLogin);
+      if (isNaN(d.getTime())) return '-';
+      return format(d, 'yyyy-MM-dd HH:mm');
     } catch {
       return '-';
     }

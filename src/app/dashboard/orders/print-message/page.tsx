@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MessagePrintLayout } from './components/message-print-layout';
 import type { Order as OrderType } from '@/hooks/use-orders';
-import { Timestamp } from 'firebase/firestore';
+
 import { useAuth } from '@/hooks/use-auth';
 import { useSearchParams } from 'next/navigation';
 
@@ -16,9 +16,10 @@ export interface SerializableOrder extends Omit<OrderType, 'orderDate' | 'id'> {
 
 const toLocalDate = (dateVal: any): Date => {
     if (!dateVal) return new Date();
-    if (dateVal instanceof Timestamp) return dateVal.toDate();
     if (typeof dateVal === 'string') return new Date(dateVal);
-    if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
+    // Supabase date strings are handled above. numeric timestamps?
+    if (typeof dateVal === 'number') return new Date(dateVal);
+    if (dateVal instanceof Date) return dateVal;
     return new Date(dateVal);
 };
 

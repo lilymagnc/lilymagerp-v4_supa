@@ -49,38 +49,6 @@ export default function SimpleExpensesPage() {
 
   // 본사관리자 권한 확인
   const isHeadOfficeAdmin = user?.role === '본사 관리자';
-  // 데이터 업데이트 함수
-  const updateEmptyBranchIds = async () => {
-    try {
-      // 릴리맥광화문점의 branchId 찾기
-      const gwanghwamunBranch = branches.find(b => b.name === '릴리맥광화문점');
-      if (!gwanghwamunBranch) {
-        console.error('릴리맥광화문점을 찾을 수 없습니다.');
-        return;
-      }
-      const { collection, getDocs, updateDoc, doc, query, where } = await import('firebase/firestore');
-      const { db } = await import('@/lib/firebase');
-      // 빈 branchId를 가진 지출 데이터 찾기
-      const expensesRef = collection(db, 'simpleExpenses');
-      const q = query(expensesRef, where('branchId', '==', ''));
-      const snapshot = await getDocs(q);
-      if (snapshot.empty) {
-        return;
-      }
-      // 배치 업데이트
-      const batch = [];
-      snapshot.docs.forEach((docSnapshot) => {
-        batch.push(updateDoc(docSnapshot.ref, { branchId: gwanghwamunBranch.id }));
-      });
-      await Promise.all(batch);
-      // 데이터 새로고침
-      fetchExpenses();
-    } catch (error) {
-      console.error('데이터 업데이트 오류:', error);
-    }
-  };
-
-
   // 사용자가 볼 수 있는 지점 목록
   const availableBranches = useMemo(() => {
     if (isAdmin) {
@@ -89,6 +57,7 @@ export default function SimpleExpensesPage() {
       return branches.filter(branch => branch.name === user?.franchise); // 지점 직원은 자신의 지점만
     }
   }, [branches, isAdmin, user?.franchise]);
+
   // 자동 지점 필터링 (지점 직원은 자동으로 자신의 지점으로 설정)
   useEffect(() => {
     if (!isAdmin && user?.franchise && selectedBranchId === 'all') {
@@ -98,12 +67,14 @@ export default function SimpleExpensesPage() {
       }
     }
   }, [isAdmin, user?.franchise, selectedBranchId, branches]);
+
   // 성공 시 새로고침
   const handleSuccess = () => {
     setRefreshTrigger(prev => prev + 1);
     // 전체 데이터 새로고침 (지점 필터 없이)
     fetchExpenses();
   };
+
   // 지점 변경 처리
   const handleBranchChange = useCallback((branchId: string) => {
     if (!isMounted || isUpdating) return;
@@ -155,6 +126,7 @@ export default function SimpleExpensesPage() {
       }
     }, 200);
   }, [isMounted, isUpdating, branches, fetchExpenses]);
+
   // 현재 선택된 지점 정보
   let currentBranchId = selectedBranchId === 'all' ? '' : selectedBranchId;
   let currentBranch = branches.find(b => b.id === currentBranchId);
@@ -168,7 +140,6 @@ export default function SimpleExpensesPage() {
       currentBranch = headOfficeBranch;
     }
   }
-
 
   // 필터링된 지출 데이터
   const filteredExpenses = useMemo(() => {
@@ -186,15 +157,17 @@ export default function SimpleExpensesPage() {
     }
     return expenses.filter(expense => expense.branchId === selectedBranchId);
   }, [expenses, selectedBranchId, branches]);
-  // 이번 달 지출 계산 (현자 지점만)
+
   // 날짜 변환 헬퍼 함수
   const getDateObject = (date: any): Date | null => {
     if (!date) return null;
-    if (typeof date.toDate === 'function') return date.toDate(); // Firestore Timestamp
     if (date instanceof Date) return date;
     if (typeof date === 'string') return new Date(date);
+    if (date && typeof date === 'object' && date.seconds) return new Date(date.seconds * 1000);
     return null;
   };
+
+
 
   // 이번 달 지출 계산 (현자 지점만)
   const thisMonthExpenses = filteredExpenses.filter(expense => {

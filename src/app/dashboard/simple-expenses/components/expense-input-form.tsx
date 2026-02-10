@@ -89,7 +89,6 @@ import {
   canViewSubCategory,
   isSensitiveSubCategory
 } from '@/types/simple-expense';
-import { Timestamp } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 
 // 폼 스키마 정의
@@ -743,7 +742,7 @@ export function ExpenseInputForm({
           }
 
           const expenseData = {
-            date: Timestamp.fromDate(item.purchaseDate), // 파싱된 날짜 객체 사용
+            date: item.purchaseDate.toISOString(), // 파싱된 날짜 객체의 ISO 문자열 사용
             supplier: item['구매처'],
             category: item.category,
             subCategory: item['세부분류'] || '',
@@ -855,7 +854,7 @@ export function ExpenseInputForm({
         }
 
         const expenseData = {
-          date: Timestamp.fromDate(new Date(values.date)),
+          date: new Date(values.date).toISOString(),
           supplier: finalSupplierName, // 확인된 구매처명 사용
           category: values.category,
           subCategory: values.subCategory,

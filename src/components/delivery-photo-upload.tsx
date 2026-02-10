@@ -18,11 +18,11 @@ interface DeliveryPhotoUploadProps {
   onPhotoRemoved: () => void
 }
 
-export function DeliveryPhotoUpload({ 
-  orderId, 
-  currentPhotoUrl, 
-  onPhotoUploaded, 
-  onPhotoRemoved 
+export function DeliveryPhotoUpload({
+  orderId,
+  currentPhotoUrl,
+  onPhotoUploaded,
+  onPhotoRemoved
 }: DeliveryPhotoUploadProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -45,7 +45,7 @@ export function DeliveryPhotoUpload({
     // 이미지 파일 타입 체크
     if (!file.type.startsWith('image/')) {
       toast({
-        title: "파일 형식 오류", 
+        title: "파일 형식 오류",
         description: "이미지 파일만 업로드 가능합니다.",
         variant: "destructive"
       })
@@ -58,7 +58,7 @@ export function DeliveryPhotoUpload({
       optimizedSize: file.size,
       compressionRatio: 0
     })
-    
+
     // 미리보기 생성
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -69,7 +69,7 @@ export function DeliveryPhotoUpload({
 
   const handleUpload = async () => {
     if (!selectedFile) return
-    
+
     // 인증 상태 확인
     if (!user) {
       toast({
@@ -87,7 +87,7 @@ export function DeliveryPhotoUpload({
       const uploadResult = await uploadWithOptimalStorage(selectedFile, fileName, {
         tags: ['delivery-photo', orderId]
       })
-      
+
       // 기존 사진이 있다면 삭제
       if (currentPhotoUrl) {
         try {
@@ -109,10 +109,10 @@ export function DeliveryPhotoUpload({
       setIsOpen(false)
       setPreviewUrl(null)
       setSelectedFile(null)
-      
+
       toast({
         title: "업로드 완료",
-        description: `${uploadResult.provider === 'firebase' ? 'Firebase' : 'Cloudinary'}에 사진이 업로드되었습니다.${uploadResult.compressionRatio > 0 ? ` (${uploadResult.compressionRatio}% 압축됨)` : ''}`
+        description: `${uploadResult.provider === 'supabase' ? 'Supabase' : 'Cloudinary'}에 사진이 업로드되었습니다.${uploadResult.compressionRatio > 0 ? ` (${uploadResult.compressionRatio}% 압축됨)` : ''}`
       })
     } catch (error) {
       console.error('업로드 실패:', error)
@@ -132,7 +132,7 @@ export function DeliveryPhotoUpload({
     try {
       await deleteFromOptimalStorage(currentPhotoUrl)
       onPhotoRemoved()
-      
+
       toast({
         title: "삭제 완료",
         description: "배송완료 사진이 삭제되었습니다."
@@ -140,7 +140,7 @@ export function DeliveryPhotoUpload({
     } catch (error) {
       console.error('삭제 실패:', error)
       toast({
-        title: "삭제 실패", 
+        title: "삭제 실패",
         description: "사진 삭제 중 오류가 발생했습니다.",
         variant: "destructive"
       })
@@ -228,7 +228,7 @@ export function DeliveryPhotoUpload({
                       <div>파일 크기: {(optimizationInfo.originalSize / 1024 / 1024).toFixed(2)}MB</div>
                       {optimizationInfo.provider && (
                         <div className="text-blue-600">
-                          📡 {optimizationInfo.provider === 'firebase' ? 'Firebase Storage' : 'Cloudinary'} 사용 예정
+                          📡 {optimizationInfo.provider === 'supabase' ? 'Supabase Storage' : 'Cloudinary'} 사용 예정
                         </div>
                       )}
                       {optimizationInfo.compressionRatio > 0 && (

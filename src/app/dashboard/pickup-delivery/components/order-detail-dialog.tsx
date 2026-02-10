@@ -9,7 +9,6 @@ import { Order } from "@/hooks/use-orders";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { Calendar, Phone, MapPin, Package, User, Building, CreditCard, MessageSquare } from "lucide-react";
-import { Timestamp } from "firebase/firestore";
 interface OrderDetailDialogProps {
   order: Order | null;
   open: boolean;
@@ -52,7 +51,7 @@ const formatDateTime = (date: string, time: string) => {
 };
 const toLocalDate = (dateVal: any): Date => {
   if (!dateVal) return new Date();
-  if (dateVal instanceof Timestamp) return dateVal.toDate();
+  if (dateVal instanceof Date) return dateVal;
   if (typeof dateVal === 'string') return new Date(dateVal);
   if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
   return new Date(dateVal);

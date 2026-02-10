@@ -26,7 +26,7 @@ export default function PhotoManagementPage() {
   const { user } = useAuth();
   const { isAdmin, userBranch } = useUserRole();
   const { toast } = useToast();
-  
+
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedBranch, setSelectedBranch] = useState("all");
   const [dateFilter, setDateFilter] = useState("all"); // all, today, week, month
@@ -34,8 +34,8 @@ export default function PhotoManagementPage() {
 
   // 배송완료 사진이 있는 주문들만 필터링
   const photosData = useMemo(() => {
-    let filteredOrders = orders.filter(order => 
-      order.deliveryInfo?.completionPhotoUrl && 
+    let filteredOrders = orders.filter(order =>
+      order.deliveryInfo?.completionPhotoUrl &&
       order.status === 'completed'
     );
 
@@ -58,22 +58,22 @@ export default function PhotoManagementPage() {
     // 날짜 필터링
     if (dateFilter !== 'all') {
       const now = new Date();
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      
+      const startOfDayValue = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
       filteredOrders = filteredOrders.filter(order => {
         const completedAt = order.deliveryInfo?.completedAt;
         if (!completedAt) return false;
-        
-        const completedDate = completedAt.toDate ? completedAt.toDate() : new Date(completedAt);
-        
+
+        const completedDate = new Date(completedAt);
+
         switch (dateFilter) {
           case 'today':
-            return completedDate >= startOfDay;
+            return completedDate >= startOfDayValue;
           case 'week':
-            const weekAgo = new Date(startOfDay.getTime() - 7 * 24 * 60 * 60 * 1000);
+            const weekAgo = new Date(startOfDayValue.getTime() - 7 * 24 * 60 * 60 * 1000);
             return completedDate >= weekAgo;
           case 'month':
-            const monthAgo = new Date(startOfDay.getTime() - 30 * 24 * 60 * 60 * 1000);
+            const monthAgo = new Date(startOfDayValue.getTime() - 30 * 24 * 60 * 60 * 1000);
             return completedDate >= monthAgo;
           default:
             return true;
@@ -94,11 +94,20 @@ export default function PhotoManagementPage() {
 
   const handleDeletePhoto = async (orderId: string, photoUrl: string) => {
     try {
-      // Firebase Storage에서 사진 삭제
-      const { deleteFile } = await import('@/lib/firebase-storage');
-      await deleteFile(photoUrl);
+      // Supabase Storage에서 사진 삭제
+      const { deleteFile } = await import('@/lib/supabase-storage');
 
-      // Firestore에서 completionPhotoUrl 제거
+      // URL에서 버킷과 경로 추출
+      // 예: https://.../storage/v1/object/public/delivery-photos/order-id/photo.jpg
+      const urlParts = photoUrl.split('/public/');
+      if (urlParts.length > 1) {
+        const fullPath = urlParts[1];
+        const bucket = fullPath.split('/')[0];
+        const path = fullPath.substring(bucket.length + 1);
+        await deleteFile(bucket, path);
+      }
+
+      // DB에서 completionPhotoUrl 제거
       const order = orders.find(o => o.id === orderId);
       if (order && order.deliveryInfo) {
         const updatedDeliveryInfo = {
@@ -129,14 +138,21 @@ export default function PhotoManagementPage() {
     if (selectedPhotos.length === 0) return;
 
     try {
+      const { deleteFile } = await import('@/lib/supabase-storage');
+
       const deletePromises = selectedPhotos.map(async (orderId) => {
         const photoData = photosData.find(p => p.orderId === orderId);
         if (photoData) {
-          // Firebase Storage에서 사진 삭제
-          const { deleteFile } = await import('@/lib/firebase-storage');
-          await deleteFile(photoData.photoUrl);
+          // Supabase Storage에서 사진 삭제
+          const urlParts = photoData.photoUrl.split('/public/');
+          if (urlParts.length > 1) {
+            const fullPath = urlParts[1];
+            const bucket = fullPath.split('/')[0];
+            const path = fullPath.substring(bucket.length + 1);
+            await deleteFile(bucket, path);
+          }
 
-          // Firestore에서 completionPhotoUrl 제거
+          // DB에서 completionPhotoUrl 제거
           const order = orders.find(o => o.id === orderId);
           if (order && order.deliveryInfo) {
             const updatedDeliveryInfo = {
@@ -169,8 +185,8 @@ export default function PhotoManagementPage() {
   };
 
   const togglePhotoSelection = (orderId: string) => {
-    setSelectedPhotos(prev => 
-      prev.includes(orderId) 
+    setSelectedPhotos(prev =>
+      prev.includes(orderId)
         ? prev.filter(id => id !== orderId)
         : [...prev, orderId]
     );
@@ -203,8 +219,8 @@ export default function PhotoManagementPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader 
-        title="배송완료 사진 관리" 
+      <PageHeader
+        title="배송완료 사진 관리"
         description="배송완료 사진을 일괄 관리하고 정리합니다"
         icon={Camera}
       />
@@ -420,8 +436,8 @@ export default function PhotoManagementPage() {
                         <Badge variant="outline">{photo.branchName}</Badge>
                       </TableCell>
                       <TableCell>
-                        {photo.completedAt ? 
-                          format(photo.completedAt.toDate ? photo.completedAt.toDate() : new Date(photo.completedAt), 'MM/dd HH:mm') 
+                        {photo.completedAt ?
+                          format(photo.completedAt.toDate ? photo.completedAt.toDate() : new Date(photo.completedAt), 'MM/dd HH:mm')
                           : '-'
                         }
                       </TableCell>
@@ -456,7 +472,7 @@ export default function PhotoManagementPage() {
                               </AlertDialogHeader>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>취소</AlertDialogCancel>
-                                <AlertDialogAction 
+                                <AlertDialogAction
                                   onClick={() => handleDeletePhoto(photo.orderId, photo.photoUrl)}
                                   className="bg-red-600 hover:bg-red-700"
                                 >

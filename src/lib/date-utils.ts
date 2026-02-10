@@ -1,11 +1,10 @@
 /**
- * Date parsing utility for handling both Firebase Timestamp and Supabase ISO strings
+ * Date parsing utility for handling ISO strings and Date objects
  */
 
 /**
  * Safely parse a date from various formats
  * Handles:
- * - Firebase Timestamp objects
  * - ISO date strings (Supabase)
  * - JavaScript Date objects
  * - Unix timestamps (seconds or milliseconds)
@@ -38,27 +37,10 @@ export function parseDate(date: any): Date | null {
         return isNaN(parsed.getTime()) ? null : parsed;
     }
 
-    // Firebase Timestamp with toDate method
-    if (typeof date.toDate === 'function') {
-        return date.toDate();
-    }
-
-    // Firebase Timestamp with seconds property
-    if (typeof date === 'object' && date !== null) {
-        if ('seconds' in date) {
-            return new Date(date.seconds * 1000);
-        }
-        // Handle raw Firestore object format {_seconds, _nanoseconds}
-        if ('_seconds' in date) {
-            return new Date(date._seconds * 1000);
-        }
-    }
-
     // Unix timestamp (number)
     if (typeof date === 'number') {
-        // Assume milliseconds if > year 2000 in seconds
-        const timestamp = date > 946684800 ? date * 1000 : date;
-        return new Date(timestamp);
+        const parsed = new Date(date);
+        return isNaN(parsed.getTime()) ? null : parsed;
     }
 
     return null;

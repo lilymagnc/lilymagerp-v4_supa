@@ -1,9 +1,6 @@
-
 "use client";
-
-import { useState, useMemo } from 'react';
-import { collection, getDocs, query, where, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { useState } from 'react';
+import { supabase } from '@/lib/supabase';
 import { DateRange } from 'react-day-picker';
 import { addDays, format } from 'date-fns';
 
@@ -36,47 +33,51 @@ export default function MaterialUsageReport() {
     if (!date?.from || !date?.to) return;
 
     setLoading(true);
-    const startDate = Timestamp.fromDate(date.from);
-    const endDate = Timestamp.fromDate(date.to);
+    try {
+      const { data: batches, error } = await supabase
+        .from('purchase_batches')
+        .select('*')
+        .eq('status', 'completed')
+        .gte('purchase_date', date.from.toISOString())
+        .lte('purchase_date', date.to.toISOString());
 
-    const q = query(
-      collection(db, 'purchaseBatches'),
-      where('status', '==', 'completed'),
-      where('purchaseDate', '>=', startDate),
-      where('purchaseDate', '<=', endDate)
-    );
+      if (error) throw error;
 
-    const querySnapshot = await getDocs(q);
-    const materialData: { [key: string]: MaterialStat } = {};
+      const materialData: { [key: string]: MaterialStat } = {};
 
-    querySnapshot.docs.forEach(doc => {
-      const batch = doc.data();
-      batch.purchasedItems.forEach((item: any) => {
-        const id = item.actualMaterialId || item.originalMaterialId;
-        if (!materialData[id]) {
-          materialData[id] = {
-            materialId: id,
-            materialName: item.actualMaterialName || item.originalMaterialName,
-            purchaseFrequency: 0,
-            totalQuantity: 0,
-            totalCost: 0,
-            averagePrice: 0,
-          };
-        }
-        materialData[id].purchaseFrequency += 1;
-        materialData[id].totalQuantity += item.actualQuantity;
-        materialData[id].totalCost += item.totalAmount;
+      batches?.forEach(batch => {
+        const purchasedItems = batch.purchased_items || [];
+        purchasedItems.forEach((item: any) => {
+          const id = item.actualMaterialId || item.originalMaterialId;
+          if (!materialData[id]) {
+            materialData[id] = {
+              materialId: id,
+              materialName: item.actualMaterialName || item.originalMaterialName,
+              purchaseFrequency: 0,
+              totalQuantity: 0,
+              totalCost: 0,
+              averagePrice: 0,
+            };
+          }
+          materialData[id].purchaseFrequency += 1;
+          materialData[id].totalQuantity += (item.actualQuantity || 0);
+          materialData[id].totalCost += (item.totalAmount || 0);
+        });
       });
-    });
 
-    const calculatedStats = Object.values(materialData).map(stat => ({
-      ...stat,
-      averagePrice: stat.totalCost / stat.totalQuantity,
-    }));
+      const calculatedStats = Object.values(materialData).map(stat => ({
+        ...stat,
+        averagePrice: stat.totalQuantity > 0 ? stat.totalCost / stat.totalQuantity : 0,
+      }));
 
-    setStats(calculatedStats.sort((a, b) => b.totalCost - a.totalCost));
-    setLoading(false);
+      setStats(calculatedStats.sort((a, b) => b.totalCost - a.totalCost));
+    } catch (error) {
+      console.error('리포트 생성 오류:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
 
   return (
     <Card>

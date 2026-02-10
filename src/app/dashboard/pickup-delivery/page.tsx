@@ -18,7 +18,6 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useBranches, Branch } from "@/hooks/use-branches";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Timestamp } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useSimpleExpenses } from "@/hooks/use-simple-expenses";
@@ -43,7 +42,7 @@ import { DeliverySettingsDialog } from "./components/DeliverySettingsDialog";
 
 const toLocalDate = (dateVal: any): Date => {
   if (!dateVal) return new Date();
-  if (dateVal instanceof Timestamp) return dateVal.toDate();
+  if (dateVal instanceof Date) return dateVal;
   if (typeof dateVal === 'string') return new Date(dateVal);
   if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
   return new Date(dateVal);
@@ -243,8 +242,8 @@ export default function PickupDeliveryPage() {
   const handleDeleteDeliveryPhoto = async (orderId: string, photoUrl: string) => {
     if (!confirm('배송완료 사진을 삭제하시겠습니까?')) return;
     try {
-      const { deleteFile } = await import('@/lib/firebase-storage');
-      await deleteFile(photoUrl);
+      const { deleteFromOptimalStorage } = await import('@/lib/storage-manager');
+      await deleteFromOptimalStorage(photoUrl);
       const order = orders.find(o => o.id === orderId);
       if (order?.deliveryInfo) {
         await updateOrder(orderId, { deliveryInfo: { ...order.deliveryInfo, completionPhotoUrl: null } });
@@ -318,7 +317,7 @@ export default function PickupDeliveryPage() {
       await updateOrder(selectedOrderForCost.id, {
         actualDeliveryCost: actualCost,
         deliveryCostStatus: 'completed',
-        deliveryCostUpdatedAt: new Date(),
+        deliveryCostUpdatedAt: new Date().toISOString(),
         deliveryCostUpdatedBy: user?.email || 'unknown',
         deliveryCostReason: deliveryCostReason,
         deliveryProfit: (selectedOrderForCost.summary?.deliveryFee || 0) - actualCost,

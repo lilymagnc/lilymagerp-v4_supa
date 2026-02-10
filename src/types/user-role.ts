@@ -1,4 +1,3 @@
-import { Timestamp } from 'firebase/firestore';
 // 사용자 역할 타입
 export enum UserRoleType {
   BRANCH_USER = 'branch_user',
@@ -25,10 +24,11 @@ export interface UserRole {
   branchId?: string; // 지점 사용자의 경우
   branchName?: string;
   permissions: Permission[];
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt: string | Date;
+  updatedAt: string | Date;
   isActive: boolean;
 }
+
 // 역할별 기본 권한 매핑
 export const ROLE_PERMISSIONS: Record<UserRoleType, Permission[]> = {
   [UserRoleType.BRANCH_USER]: [

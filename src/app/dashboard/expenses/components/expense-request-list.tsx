@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { 
+import {
   Table,
   TableBody,
   TableCell,
@@ -13,17 +13,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { 
-  Search, 
-  MoreHorizontal, 
-  Eye, 
-  Edit, 
+import {
+  Search,
+  MoreHorizontal,
+  Eye,
+  Edit,
   Trash2,
   RefreshCw,
   Calendar,
@@ -35,13 +35,13 @@ import {
   Clock,
   XCircle
 } from 'lucide-react';
-import { 
-  ExpenseStatus, 
+import {
+  ExpenseStatus,
   ExpenseCategory,
   EXPENSE_STATUS_LABELS,
-  EXPENSE_CATEGORY_LABELS 
+  EXPENSE_CATEGORY_LABELS
 } from '@/types/expense';
-import type { 
+import type {
   ExpenseRequest
 } from '@/types/expense';
 interface ExpenseRequestListProps {
@@ -56,13 +56,13 @@ export function ExpenseRequestList({ expenses, loading, onRefresh }: ExpenseRequ
   const [branchFilter, setBranchFilter] = useState<string>('all');
   // 필터링된 비용 신청 목록
   const filteredExpenses = expenses.filter(expense => {
-    const searchMatch = !searchTerm || 
+    const searchMatch = !searchTerm ||
       expense.requestNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       expense.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       expense.requesterName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       expense.branchName.toLowerCase().includes(searchTerm.toLowerCase());
     const statusMatch = statusFilter === 'all' || expense.status === statusFilter;
-    const categoryMatch = categoryFilter === 'all' || 
+    const categoryMatch = categoryFilter === 'all' ||
       expense.items.some(item => item.category === categoryFilter);
     const branchMatch = branchFilter === 'all' || expense.branchName === branchFilter;
     return searchMatch && statusMatch && categoryMatch && branchMatch;
@@ -98,16 +98,21 @@ export function ExpenseRequestList({ expenses, loading, onRefresh }: ExpenseRequ
     return expense.urgency === 'urgent';
   };
   // 날짜 포맷팅
-  const formatDate = (timestamp: any) => {
-    if (!timestamp) return '-';
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleDateString('ko-KR', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  const formatDate = (dateValue: any) => {
+    if (!dateValue) return '-';
+    try {
+      const date = new Date(dateValue);
+      if (isNaN(date.getTime())) return '-';
+      return date.toLocaleDateString('ko-KR', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (e) {
+      return '-';
+    }
   };
   // 통화 포맷팅
   const formatCurrency = (amount: number) => {

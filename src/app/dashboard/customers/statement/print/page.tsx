@@ -13,13 +13,10 @@ import { Order } from "@/hooks/use-orders";
 import { Branch } from "@/hooks/use-branches";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
-import { Timestamp } from "firebase/firestore";
-
 const toLocalDate = (dateVal: any): Date => {
   if (!dateVal) return new Date();
-  if (dateVal instanceof Timestamp) return dateVal.toDate();
   if (typeof dateVal === 'string') return new Date(dateVal);
-  if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
+  if (dateVal instanceof Date) return dateVal;
   return new Date(dateVal);
 };
 

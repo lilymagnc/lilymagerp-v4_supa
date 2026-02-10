@@ -12,9 +12,7 @@ import { sanitizeBranchKey } from '@/lib/stats-utils';
 
 export default function RebuildStats() {
     const [loading, setLoading] = useState(false);
-    const [syncLoading, setSyncLoading] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0, status: 'idle' });
-    const [syncProgress, setSyncProgress] = useState({ collection: '', total: 0, synced: 0, errors: 0 });
     const { toast } = useToast();
 
     const handleRebuild = async () => {
@@ -47,7 +45,6 @@ export default function RebuildStats() {
             console.log("Starting optimized batch processing...");
 
             // [성능 개선] 필요한 컬럼만 선택하여 데이터 전송량 최소화
-            // 'total', 'amount' 컬럼은 실제 테이블에 없고 summary JSON에 포함되어 있을 수 있으므로 제거함
             const SELECTED_COLUMNS = 'id, order_date, created_at, payment, summary, status, branch_name, completed_at, updated_at';
 
             const dailyStats: { [key: string]: any } = {};
@@ -55,7 +52,6 @@ export default function RebuildStats() {
             let lastId = '';
             let hasMore = true;
             const PAGE_SIZE = 1000;
-            // 첫 번째 요청 전에 total count를 알 수 없으므로, 일단 fetching 상태로 시작
             setProgress({ current: 0, total: 0, status: 'fetching' });
 
             while (hasMore) {
@@ -81,7 +77,6 @@ export default function RebuildStats() {
                     break;
                 }
 
-                // [성능 개선] 메모리에 쌓지 않고 즉시 처리 (Batch Processing)
                 const batchOrders = data;
                 lastId = batchOrders[batchOrders.length - 1].id;
 
@@ -90,39 +85,27 @@ export default function RebuildStats() {
                 }
 
                 batchOrders.forEach((order) => {
-                    // 취소된 주문은 집계에서 제외
                     if (!order || isCanceled(order)) return;
 
-                    // 1. 주문 날짜 (매출 기준일)
                     const parsedOrderDate = parseDate(order.order_date || order.created_at);
                     if (!parsedOrderDate) return;
 
                     const orderDateStr = format(parsedOrderDate, 'yyyy-MM-dd');
 
-                    // 2. 결제 날짜 (정산 기준일)
-                    // [수정] 사용자 요청 반영: "예약된 금액을 오늘 결제하면 금일 매출(정산)이어야 함"
-                    // 따라서 무조건 orderDateStr로 고정하지 않고, 실 결제일(completedAt)이 있으면 그것을 따릅니다.
-                    // 단, 데이터 이관 등으로 인한 updated_at은 절대 사용하지 않습니다. (과거 데이터가 오늘 날짜로 튀는 원인 차단)
                     const payment = order.payment || {};
                     const parsedPaymentDate = parseDate(payment.completedAt || (order as any).completed_at || order.order_date);
                     const settlementDateStr = parsedPaymentDate ? format(parsedPaymentDate, 'yyyy-MM-dd') : orderDateStr;
 
-                    // 3. 지점명 처리
-                    // Supabase 컬럼명은 snake_case가 기본이나, legacy 데이터는 camelCase일 수 있음
                     const branchName = order.branch_name || (order as any).branchName || "Unknown";
                     const branchKey = sanitizeBranchKey(branchName);
 
-                    // 4. 금액 추출
                     const summary = order.summary || {};
                     const revenue = Number(summary.total || (order as any).total || summary.total_amount || (order as any).amount || 0);
 
-                    // 5. 결제/정산 완료 여부 판정 (엄격한 기준 적용)
                     const paymentStatus = (order.payment?.status || '').toLowerCase();
                     const settled = (paymentStatus === 'paid' || paymentStatus === 'completed' || paymentStatus === '결제완료') && !isCanceled(order);
 
                     // --- 집계 로직 ---
-
-                    // A. 주문일 기준 매출/건수 (Daily Sales)
                     if (!dailyStats[orderDateStr]) {
                         dailyStats[orderDateStr] = { date: orderDateStr, totalRevenue: 0, totalOrderCount: 0, totalSettledAmount: 0, branches: {} };
                     }
@@ -135,7 +118,6 @@ export default function RebuildStats() {
                     dailyStats[orderDateStr].branches[branchKey].revenue += revenue;
                     dailyStats[orderDateStr].branches[branchKey].orderCount += 1;
 
-                    // B. 정산 매출 (Settled Amount) - settled 상태일 때만
                     if (settled) {
                         if (!dailyStats[settlementDateStr]) {
                             dailyStats[settlementDateStr] = { date: settlementDateStr, totalRevenue: 0, totalOrderCount: 0, totalSettledAmount: 0, branches: {} };
@@ -151,25 +133,17 @@ export default function RebuildStats() {
                 });
 
                 processedCount += batchOrders.length;
-
-                // 진행상황 업데이트 (total은 정확하지 않지만 increasing number로 표시)
                 setProgress(prev => ({ ...prev, current: processedCount, total: processedCount + (hasMore ? 1000 : 0), status: 'computing' }));
-
-                // UI 렌더링 틱 양보
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
 
             if (processedCount === 0) {
-                console.warn("No orders found.");
-                toast({ title: "데이터 없음", description: "주문 데이터가 없습니다.", variant: "default" });
+                toast({ title: "데이터 없음", description: "주문 데이터가 없습니다." });
                 setLoading(false);
                 return;
             }
 
             const processedDays = Object.keys(dailyStats);
-            console.log(`Stats computation complete. Processed ${processedDays.length} distinct days.`);
-
-            // 2. 결과 저장
             setProgress(prev => ({ ...prev, total: processedDays.length, status: 'saving' }));
 
             const statsArray = processedDays.map(dateStr => ({
@@ -181,7 +155,6 @@ export default function RebuildStats() {
                 last_updated: new Date().toISOString()
             }));
 
-            // 한 번에 저장하는 대신, 50개씩 나눠서 저장 (Payload Too Large 방지)
             const BATCH_SAVE_SIZE = 50;
             for (let i = 0; i < statsArray.length; i += BATCH_SAVE_SIZE) {
                 const chunk = statsArray.slice(i, i + BATCH_SAVE_SIZE);
@@ -189,18 +162,11 @@ export default function RebuildStats() {
                     .from('daily_stats')
                     .upsert(chunk as any, { onConflict: 'date' });
 
-                if (upsertError) {
-                    console.error("Upsert error:", upsertError);
-                    throw upsertError;
-                }
-
-                // 저장 진행상황 틱
+                if (upsertError) throw upsertError;
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
 
-            console.log("Save complete.");
             setProgress({ current: processedDays.length, total: processedDays.length, status: 'completed' });
-
             toast({
                 title: "통계 재계산 완료",
                 description: `${processedDays.length}일간의 데이터가 성공적으로 집계되었습니다.`,
@@ -211,64 +177,13 @@ export default function RebuildStats() {
             toast({
                 variant: "destructive",
                 title: "오류 발생",
-                description: `오류 상세보기: ${error.message || JSON.stringify(error)}`,
+                description: error.message || "작업 중 오류가 발생했습니다.",
             });
             setProgress(prev => ({ ...prev, status: 'error' }));
         } finally {
             setLoading(false);
         }
     };
-
-    const handleFirebaseSync = async (collectionName?: string) => {
-        setSyncLoading(true);
-        setSyncProgress({ collection: '', total: 0, synced: 0, errors: 0 });
-
-        toast({
-            title: collectionName ? `${collectionName} 동기화 시작` : "Firebase 전체 동기화 시작",
-            description: "Firebase 데이터를 Supabase로 동기화하고 있습니다..."
-        });
-
-        try {
-            const url = new URL('/api/firebase-sync', window.location.origin);
-            if (collectionName) url.searchParams.set('collection', collectionName);
-            const res = await fetch(url.toString());
-            const data = await res.json();
-
-            if (data.success) {
-                toast({
-                    title: "동기화 완료",
-                    description: collectionName
-                        ? `${collectionName} 데이터가 성공적으로 동기화되었습니다.`
-                        : "Firebase 데이터가 성공적으로 Supabase로 동기화되었습니다.",
-                });
-                console.log("Sync details:", data.result);
-            } else {
-                throw new Error(data.message || data.error || 'Unknown error');
-            }
-        } catch (error: any) {
-            console.error("Firebase sync error:", error);
-            toast({
-                variant: "destructive",
-                title: "동기화 오류",
-                description: `오류: ${error.message || JSON.stringify(error)}`,
-            });
-        } finally {
-            setSyncLoading(false);
-        }
-    };
-
-    const syncItems = [
-        { firebase: 'orders', label: '주문' },
-        { firebase: 'customers', label: '고객' },
-        { firebase: 'products', label: '상품' },
-        { firebase: 'branches', label: '지점' },
-        { firebase: 'materials', label: '자재' },
-        { firebase: 'simpleExpenses', label: '간편지출' },
-        { firebase: 'userRoles', label: '권한' },
-        { firebase: 'orderTransfers', label: '주문이관' },
-        { firebase: 'materialRequests', label: '자재요청' },
-        { firebase: 'dailyStats', label: '일별통계' },
-    ];
 
     return (
         <Card>
@@ -334,72 +249,6 @@ export default function RebuildStats() {
                     <p>• 이 작업은 브라우저에서 실행되므로 완료될 때까지 창을 닫지 마세요.</p>
                     <p>• 데이터 양에 따라 시간이 소요될 수 있습니다.</p>
                 </div>
-
-                {/* Firebase 동기화 섹션 */}
-                <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800 space-y-4">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h4 className="font-medium flex items-center gap-2">
-                                <Database className="h-4 w-4" />
-                                Firebase → Supabase 데이터 동기화
-                            </h4>
-                            <p className="text-sm text-muted-foreground">
-                                Firebase의 모든 데이터를 Supabase로 복사합니다.
-                            </p>
-                        </div>
-                        <Button
-                            onClick={() => handleFirebaseSync()}
-                            disabled={syncLoading}
-                            variant="default"
-                            className="min-w-[120px] bg-blue-600 hover:bg-blue-700 text-white"
-                        >
-                            {syncLoading ? (
-                                <>
-                                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                                    동기화 중...
-                                </>
-                            ) : (
-                                <>
-                                    <Database className="mr-2 h-4 w-4" />
-                                    전체 동기화
-                                </>
-                            )}
-                        </Button>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 pt-2 border-t border-blue-100 dark:border-blue-900">
-                        {syncItems.map((item) => (
-                            <Button
-                                key={item.firebase}
-                                onClick={() => handleFirebaseSync(item.firebase)}
-                                disabled={syncLoading}
-                                variant="outline"
-                                size="sm"
-                                className="text-xs h-9"
-                            >
-                                {item.label} 동기화
-                            </Button>
-                        ))}
-                    </div>
-                </div>
-
-                {syncProgress.total > 0 && (
-                    <div className="space-y-2 p-4 bg-muted/30 rounded-lg">
-                        <div className="flex justify-between text-sm">
-                            <span className="font-medium">{syncProgress.collection}</span>
-                            <span className="text-muted-foreground">
-                                {syncProgress.synced} / {syncProgress.total}
-                                {syncProgress.errors > 0 && ` (오류: ${syncProgress.errors})`}
-                            </span>
-                        </div>
-                        <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
-                            <div
-                                className="h-full bg-blue-500 transition-all duration-300"
-                                style={{ width: `${(syncProgress.synced / syncProgress.total) * 100}%` }}
-                            />
-                        </div>
-                    </div>
-                )}
             </CardContent>
         </Card>
     );

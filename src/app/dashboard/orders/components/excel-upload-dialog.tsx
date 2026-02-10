@@ -10,8 +10,8 @@ import { useOrders } from "@/hooks/use-orders";
 import { useBranches } from "@/hooks/use-branches";
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, XCircle, Download, Trash2, RefreshCw } from "lucide-react";
 import * as XLSX from "xlsx";
-import { Timestamp } from "firebase/firestore";
 import { parseDate } from "@/lib/date-utils";
+import { supabase } from "@/lib/supabase";
 
 interface ExcelUploadDialogProps {
   isOpen: boolean;
@@ -229,7 +229,7 @@ export function ExcelUploadDialog({ isOpen, onOpenChange }: ExcelUploadDialogPro
         // 완결 상태로 엑셀 업로드되는 경우 completedAt 설정 (매출 날짜 정확한 기록)
         completedAt: ((paymentStatusMap[excelData.paymentStatus] === 'paid' ||
           paymentStatusMap[excelData.paymentStatus] === 'completed'))
-          ? Timestamp.now()
+          ? new Date().toISOString()
           : undefined
       },
       pickupInfo: pickupInfo,
@@ -381,44 +381,48 @@ export function ExcelUploadDialog({ isOpen, onOpenChange }: ExcelUploadDialogPro
 
   const checkDuplicateOrder = async (order: ExcelOrderData): Promise<boolean> => {
     try {
-      // 기존 데이터 업로드용 중복 체크 (완화된 기준)
-      const { collection, query, where, getDocs } = await import('firebase/firestore');
-      const { db } = await import('@/lib/firebase');
-
+      // Supabase를 사용한 중복 체크
       // 주문일시를 Date 객체로 변환
       const orderDate = new Date(order.orderDate);
+
+      // 날짜 파싱 실패 시 패스
+      if (isNaN(orderDate.getTime())) return false;
+
+      // 해당 날짜의 시작과 끝 (UTC 기준 ISO 문자열로 변환 필요할 수 있음)
+      // Supabase store dates as ISO strings usually
       const startOfDay = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate());
       const endOfDay = new Date(orderDate.getFullYear(), orderDate.getMonth(), orderDate.getDate(), 23, 59, 59);
 
-      // 기존 주문 검색 (지점명 + 날짜 + 상품명 + 금액으로 중복 체크)
-      const q = query(
-        collection(db, 'orders'),
-        where('branchName', '==', order.branchName)
-      );
+      // 해당 지점의 주문 검색
+      const { data: dbOrders, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('branch_name', order.branchName)
+        .gte('order_date', startOfDay.toISOString())
+        .lte('order_date', endOfDay.toISOString());
 
-      const querySnapshot = await getDocs(q);
+      if (error || !dbOrders) return false;
 
       // 같은 날짜에 같은 상품과 금액으로 주문한 내역이 있는지 확인
-      for (const doc of querySnapshot.docs) {
-        const existingOrder = doc.data();
-        if (existingOrder.orderDate) {
-          const existingDate = parseDate(existingOrder.orderDate) || new Date();
+      for (const existingOrder of dbOrders) {
+        if (existingOrder.order_date) {
+          // 상품명과 금액도 비교 (items는 jsonb)
+          const existingItems = Array.isArray(existingOrder.items)
+            ? existingOrder.items.map((item: any) => item.name).join(',')
+            : '';
 
-          // 같은 날짜인지 확인
-          if (existingDate >= startOfDay && existingDate <= endOfDay) {
-            // 상품명과 금액도 비교
-            const existingItems = existingOrder.items?.map((item: any) => item.name).join(',') || '';
-            const existingTotal = existingOrder.summary?.total || 0;
+          // Supposed structure: total_amount in DB or summary->total
+          const existingTotal = existingOrder.total_amount || existingOrder.summary?.total || 0;
 
-            if (existingItems === order.orderItems && existingTotal === order.totalAmount) {
-              return true; // 중복 발견
-            }
+          if (existingItems === order.orderItems && existingTotal === order.totalAmount) {
+            return true; // 중복 발견
           }
         }
       }
 
       return false; // 중복 없음
     } catch (error) {
+      console.error("중복 체크 오류:", error);
       return false; // 오류 발생 시 중복이 아닌 것으로 처리
     }
   };

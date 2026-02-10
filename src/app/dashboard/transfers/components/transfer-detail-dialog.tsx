@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
-import { Timestamp } from "firebase/firestore";
 import { Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 
 interface TransferDetailDialogProps {
@@ -21,7 +20,7 @@ interface TransferDetailDialogProps {
 
 const toLocalDate = (dateVal: any): Date => {
   if (!dateVal) return new Date();
-  if (dateVal instanceof Timestamp) return dateVal.toDate();
+  if (dateVal instanceof Date) return dateVal;
   if (typeof dateVal === 'string') return new Date(dateVal);
   if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
   return new Date(dateVal);
@@ -144,10 +143,7 @@ export function TransferDetailDialog({
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">수락일</label>
                   <p className="text-sm">
-                    {transfer.acceptedAt instanceof Timestamp
-                      ? format(transfer.acceptedAt.toDate(), 'yyyy-MM-dd HH:mm:ss')
-                      : format(new Date(transfer.acceptedAt), 'yyyy-MM-dd HH:mm:ss')
-                    }
+                    {transfer.acceptedAt ? format(toLocalDate(transfer.acceptedAt), 'yyyy-MM-dd HH:mm:ss') : '-'}
                   </p>
                 </div>
               )}
@@ -155,10 +151,7 @@ export function TransferDetailDialog({
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">거절일</label>
                   <p className="text-sm">
-                    {transfer.rejectedAt instanceof Timestamp
-                      ? format(transfer.rejectedAt.toDate(), 'yyyy-MM-dd HH:mm:ss')
-                      : format(new Date(transfer.rejectedAt), 'yyyy-MM-dd HH:mm:ss')
-                    }
+                    {transfer.rejectedAt ? format(toLocalDate(transfer.rejectedAt), 'yyyy-MM-dd HH:mm:ss') : '-'}
                   </p>
                 </div>
               )}
@@ -166,10 +159,7 @@ export function TransferDetailDialog({
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">완료일</label>
                   <p className="text-sm">
-                    {transfer.completedAt instanceof Timestamp
-                      ? format(transfer.completedAt.toDate(), 'yyyy-MM-dd HH:mm:ss')
-                      : format(new Date(transfer.completedAt), 'yyyy-MM-dd HH:mm:ss')
-                    }
+                    {transfer.completedAt ? format(toLocalDate(transfer.completedAt), 'yyyy-MM-dd HH:mm:ss') : '-'}
                   </p>
                 </div>
               )}
@@ -183,19 +173,13 @@ export function TransferDetailDialog({
               <div>
                 <label className="text-sm font-medium text-muted-foreground">생성일</label>
                 <p className="text-sm">
-                  {transfer.createdAt instanceof Timestamp
-                    ? format(transfer.createdAt.toDate(), 'yyyy-MM-dd HH:mm:ss')
-                    : format(new Date(transfer.createdAt), 'yyyy-MM-dd HH:mm:ss')
-                  }
+                  {transfer.createdAt ? format(toLocalDate(transfer.createdAt), 'yyyy-MM-dd HH:mm:ss') : '-'}
                 </p>
               </div>
               <div>
                 <label className="text-sm font-medium text-muted-foreground">수정일</label>
                 <p className="text-sm">
-                  {transfer.updatedAt instanceof Timestamp
-                    ? format(transfer.updatedAt.toDate(), 'yyyy-MM-dd HH:mm:ss')
-                    : format(new Date(transfer.updatedAt), 'yyyy-MM-dd HH:mm:ss')
-                  }
+                  {transfer.updatedAt ? format(toLocalDate(transfer.updatedAt), 'yyyy-MM-dd HH:mm:ss') : '-'}
                 </p>
               </div>
             </div>

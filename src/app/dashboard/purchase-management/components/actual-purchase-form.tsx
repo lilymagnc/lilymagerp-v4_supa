@@ -10,9 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { AlertCircle, Package, ShoppingCart, Truck, CheckCircle2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
-  PurchaseBatch, 
-  ActualPurchaseItem, 
+import {
+  PurchaseBatch,
+  ActualPurchaseItem,
   PurchaseItemStatus,
   PURCHASE_ITEM_STATUS_LABELS,
   MaterialRequest,
@@ -20,14 +20,16 @@ import {
 } from '@/types/material-request';
 import { usePurchaseBatches } from '@/hooks/use-purchase-batches';
 import { useMaterialRequests } from '@/hooks/use-material-requests';
-import { Timestamp } from 'firebase/firestore';
 interface ActualPurchaseFormProps {
   batch: PurchaseBatch;
   onComplete: () => void;
   onCancel: () => void;
   loading: boolean; // usePurchaseBatches 훅의 로딩 상태를 전달받음
 }
-// ... (중간 코드 생략)
+interface PurchaseFormItem extends ActualPurchaseItem {
+  requestId: string;
+  branchName: string;
+}
 export function ActualPurchaseForm({
   batch,
   onComplete,
@@ -50,7 +52,7 @@ export function ActualPurchaseForm({
     const loadRequestsAndItems = async () => {
       try {
         // 배치에 포함된 요청들 로드
-        const requestPromises = batch.includedRequests.map(requestId => 
+        const requestPromises = batch.includedRequests.map(requestId =>
           getRequestById(requestId)
         );
         const loadedRequests = await Promise.all(requestPromises);
@@ -73,7 +75,7 @@ export function ActualPurchaseForm({
               totalAmount: requestItem.requestedQuantity * requestItem.estimatedPrice,
               status: 'purchased' as PurchaseItemStatus,
               memo: requestItem.memo || '',
-              purchaseDate: Timestamp.now(),
+              purchaseDate: new Date().toISOString(),
               supplier: ''
             });
           });
@@ -152,7 +154,7 @@ export function ActualPurchaseForm({
     try {
       const purchaseData = {
         batchId: batch.id,
-        purchaseDate: Timestamp.fromDate(new Date(purchaseDate)),
+        purchaseDate: new Date(purchaseDate).toISOString(),
         items: purchaseItems.map(item => ({
           originalMaterialId: item.originalMaterialId,
           originalMaterialName: item.originalMaterialName,
@@ -164,7 +166,7 @@ export function ActualPurchaseForm({
           totalAmount: item.totalAmount,
           status: item.status,
           memo: item.memo,
-          purchaseDate: Timestamp.fromDate(new Date(purchaseDate)),
+          purchaseDate: new Date(purchaseDate).toISOString(),
           supplier: item.supplier
         })),
         totalCost,
@@ -283,7 +285,7 @@ export function ActualPurchaseForm({
                       <Label>구매 상태 *</Label>
                       <Select
                         value={item.status}
-                        onValueChange={(value: PurchaseItemStatus) => 
+                        onValueChange={(value: PurchaseItemStatus) =>
                           updateItem(index, 'status', value)
                         }
                       >
@@ -307,7 +309,7 @@ export function ActualPurchaseForm({
                             min="0"
                             step="1"
                             value={item.actualQuantity}
-                            onChange={(e) => 
+                            onChange={(e) =>
                               updateItem(index, 'actualQuantity', parseInt(e.target.value) || 0)
                             }
                             className={errors[`item-${index}-actualQuantity`] ? 'border-red-500' : ''}
@@ -325,7 +327,7 @@ export function ActualPurchaseForm({
                             min="0"
                             step="0.01"
                             value={item.actualPrice}
-                            onChange={(e) => 
+                            onChange={(e) =>
                               updateItem(index, 'actualPrice', parseFloat(e.target.value) || 0)
                             }
                             className={errors[`item-${index}-actualPrice`] ? 'border-red-500' : ''}
@@ -353,7 +355,7 @@ export function ActualPurchaseForm({
                         <Input
                           placeholder="대체품 자재 ID"
                           value={item.actualMaterialId || ''}
-                          onChange={(e) => 
+                          onChange={(e) =>
                             updateItem(index, 'actualMaterialId', e.target.value)
                           }
                         />
@@ -363,7 +365,7 @@ export function ActualPurchaseForm({
                         <Input
                           placeholder="실제 구매한 대체품명"
                           value={item.actualMaterialName}
-                          onChange={(e) => 
+                          onChange={(e) =>
                             updateItem(index, 'actualMaterialName', e.target.value)
                           }
                           className={errors[`item-${index}-actualMaterialName`] ? 'border-red-500' : ''}
@@ -388,16 +390,16 @@ export function ActualPurchaseForm({
                     </div>
                     <div>
                       <Label>
-                        메모 
-                        {(item.status === 'unavailable' || item.status === 'substituted') && 
+                        메모
+                        {(item.status === 'unavailable' || item.status === 'substituted') &&
                           <span className="text-red-500"> *</span>
                         }
                       </Label>
                       <Input
                         placeholder={
                           item.status === 'unavailable' ? '구매 불가 사유를 입력하세요' :
-                          item.status === 'substituted' ? '대체 사유를 입력하세요' :
-                          '특이사항이나 메모를 입력하세요'
+                            item.status === 'substituted' ? '대체 사유를 입력하세요' :
+                              '특이사항이나 메모를 입력하세요'
                         }
                         value={item.memo}
                         onChange={(e) => updateItem(index, 'memo', e.target.value)}
@@ -423,9 +425,8 @@ export function ActualPurchaseForm({
                       </div>
                       <div>
                         <span className="text-gray-600">수량 차이:</span>
-                        <span className={`ml-2 font-medium ${
-                          item.actualQuantity - item.requestedQuantity >= 0 ? 'text-green-600' : 'text-red-600'
-                        }`}>
+                        <span className={`ml-2 font-medium ${item.actualQuantity - item.requestedQuantity >= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
                           {item.actualQuantity - item.requestedQuantity > 0 ? '+' : ''}
                           {item.actualQuantity - item.requestedQuantity}개
                         </span>

@@ -13,7 +13,6 @@ import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { supabase } from '@/lib/supabase';
 import type { Order as OrderType } from '@/hooks/use-orders';
-import { Timestamp } from 'firebase/firestore'; // Still needed for type checking if data is mixed
 
 // Define the type for serializable order data
 export interface SerializableOrder extends Omit<OrderType, 'orderDate' | 'id'> {
@@ -35,7 +34,7 @@ export function PrintPreviewClient({ orderId }: PrintPreviewClientProps) {
 
     const toLocalDate = (dateVal: any): Date => {
         if (!dateVal) return new Date();
-        if (dateVal instanceof Timestamp) return dateVal.toDate();
+        if (dateVal instanceof Date) return dateVal;
         if (typeof dateVal === 'string') return new Date(dateVal);
         if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
         return new Date(dateVal);
@@ -173,7 +172,7 @@ export function PrintPreviewClient({ orderId }: PrintPreviewClientProps) {
         recipientContact: order.deliveryInfo?.recipientContact ?? '',
         deliveryAddress: order.deliveryInfo?.address ?? '',
         message: (order.message?.content ?? '').replace(/\n---\n/g, ' / '),
-        messageType: order.message?.type ?? 'card', // 메시지 타입 추가
+        messageType: (order.message?.type === 'ribbon' ? 'ribbon' : 'card'), // 메시지 타입 추가
         isAnonymous: order.isAnonymous || false,
         branchInfo: {
             name: targetBranch?.name || order.branchName || '알 수 없는 지점',

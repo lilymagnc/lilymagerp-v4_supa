@@ -1,4 +1,4 @@
-import { Timestamp } from 'firebase/firestore';
+
 
 export interface DailySettlementRecord {
     id: string; // branchId_date

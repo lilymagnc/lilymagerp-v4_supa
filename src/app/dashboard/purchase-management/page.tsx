@@ -15,7 +15,7 @@ import { useMaterials } from '@/hooks/use-materials';
 import type { MaterialRequest, RequestStatus, UrgencyLevel } from '@/types/material-request';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
-import { Timestamp } from 'firebase/firestore';
+
 import { Trash2, Eye } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 export default function PurchaseManagementPage() {
@@ -57,7 +57,7 @@ export default function PurchaseManagementPage() {
     filtered = filtered.filter(request => request.status !== 'completed');
     // 검색어 필터
     if (searchTerm) {
-      filtered = filtered.filter(request => 
+      filtered = filtered.filter(request =>
         request.requestNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         request.branchName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         request.requesterName.toLowerCase().includes(searchTerm.toLowerCase())
@@ -69,7 +69,7 @@ export default function PurchaseManagementPage() {
     }
     // 긴급도 필터
     if (urgencyFilter !== 'all') {
-      filtered = filtered.filter(request => 
+      filtered = filtered.filter(request =>
         request.requestedItems.some(item => item.urgency === urgencyFilter)
       );
     }
@@ -89,8 +89,8 @@ export default function PurchaseManagementPage() {
       }
       const existingDelivery = currentRequest?.delivery;
       const deliveryData: any = {
-        shippingDate: existingDelivery?.shippingDate || Timestamp.now(),
-        deliveryDate: Timestamp.now(),
+        shippingDate: existingDelivery?.shippingDate || new Date().toISOString(),
+        deliveryDate: new Date().toISOString(),
         deliveryMethod: existingDelivery?.deliveryMethod || '직접배송',
         deliveryStatus: 'delivered',
       };
@@ -106,8 +106,8 @@ export default function PurchaseManagementPage() {
       // materialId에서 실제 자재 ID 추출 (format: "materialId-branchName")
       const stockItems = currentRequest.requestedItems.map(item => {
         // materialId가 "id-branch" 형태인 경우 실제 ID 추출
-        const actualMaterialId = item.materialId.includes('-') 
-          ? item.materialId.split('-')[0] 
+        const actualMaterialId = item.materialId.includes('-')
+          ? item.materialId.split('-')[0]
           : item.materialId;
         return {
           id: actualMaterialId,
@@ -120,7 +120,7 @@ export default function PurchaseManagementPage() {
         stockItems,
         'in', // 입고
         currentRequest.branchName,
-        user?.displayName || user?.email || '시스템'
+        user?.email || '시스템'
       );
       toast({
         title: "배송 완료 처리",
@@ -141,7 +141,7 @@ export default function PurchaseManagementPage() {
   const handleStartDelivery = async (requestId: string) => {
     try {
       const deliveryData: any = {
-        shippingDate: Timestamp.now(),
+        shippingDate: new Date().toISOString(),
         deliveryMethod: '직접배송',
         deliveryStatus: 'shipped'
       };
@@ -309,8 +309,8 @@ export default function PurchaseManagementPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => {
                 setSearchTerm('');
                 setStatusFilter('all');
@@ -333,7 +333,7 @@ export default function PurchaseManagementPage() {
           <TabsTrigger value="requests">요청 목록</TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard">
-          <PurchaseRequestDashboard 
+          <PurchaseRequestDashboard
             requests={filteredRequests}
             onRefresh={loadRequests}
           />
@@ -342,7 +342,7 @@ export default function PurchaseManagementPage() {
           <MaterialPivotTable requests={filteredRequests} />
         </TabsContent>
         <TabsContent value="batches">
-          <PurchaseBatchList 
+          <PurchaseBatchList
             onRefresh={loadRequests}
           />
         </TabsContent>
@@ -369,8 +369,8 @@ export default function PurchaseManagementPage() {
                         </div>
                         <Badge variant={
                           request.status === 'purchased' ? 'secondary' :
-                          request.status === 'shipping' ? 'default' : 
-                          request.status === 'delivered' ? 'outline' : 'secondary'
+                            request.status === 'shipping' ? 'default' :
+                              request.status === 'delivered' ? 'outline' : 'secondary'
                         }>
                           {request.status === 'purchased' && '배송 대기'}
                           {request.status === 'shipping' && '배송 중'}
@@ -403,11 +403,11 @@ export default function PurchaseManagementPage() {
                             )}
                             {request.delivery?.shippingDate && (
                               <p className="text-xs text-muted-foreground">
-                                배송 시작: {new Date(request.delivery.shippingDate.seconds * 1000).toLocaleDateString()}
+                                배송 시작: {new Date(request.delivery.shippingDate).toLocaleDateString()}
                               </p>
                             )}
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               className="mt-2"
                               onClick={() => handleDeliveryComplete(request.id)}
                             >
@@ -423,27 +423,27 @@ export default function PurchaseManagementPage() {
                             </p>
                             {request.delivery?.deliveryDate && (
                               <p className="text-xs text-muted-foreground">
-                                배송 완료: {new Date(request.delivery.deliveryDate.seconds * 1000).toLocaleDateString()}
+                                배송 완료: {new Date(request.delivery.deliveryDate).toLocaleDateString()}
                               </p>
                             )}
                           </div>
                         )}
                       </div>
                       <div className="mt-3 text-sm text-muted-foreground">
-                        요청 품목: {request.requestedItems.length}개 • 
-                        예상 비용: ₩{request.requestedItems.reduce((sum, item) => 
+                        요청 품목: {request.requestedItems.length}개 •
+                        예상 비용: ₩{request.requestedItems.reduce((sum, item) =>
                           sum + (item.requestedQuantity * item.estimatedPrice), 0
                         ).toLocaleString()}
                       </div>
                     </div>
                   ))}
-                {filteredRequests.filter(request => 
+                {filteredRequests.filter(request =>
                   ['purchased', 'shipping', 'delivered'].includes(request.status)
                 ).length === 0 && (
-                  <div className="text-center py-8 text-muted-foreground">
-                    배송 관리할 요청이 없습니다.
-                  </div>
-                )}
+                    <div className="text-center py-8 text-muted-foreground">
+                      배송 관리할 요청이 없습니다.
+                    </div>
+                  )}
               </div>
             </CardContent>
           </Card>
@@ -458,7 +458,7 @@ export default function PurchaseManagementPage() {
                 {filteredRequests.map(request => (
                   <div key={request.id} className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
                     <div className="flex justify-between items-start mb-2">
-                      <div 
+                      <div
                         className="flex-1 cursor-pointer"
                         onClick={() => handleViewRequestDetail(request)}
                       >
@@ -483,15 +483,13 @@ export default function PurchaseManagementPage() {
                       </div>
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      요청 품목: {request.requestedItems.length}개 • 
-                      예상 비용: ₩{request.requestedItems.reduce((sum, item) => 
+                      요청 품목: {request.requestedItems.length}개 •
+                      예상 비용: ₩{request.requestedItems.reduce((sum, item) =>
                         sum + (item.requestedQuantity * item.estimatedPrice), 0
                       ).toLocaleString()}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      요청일: {request.createdAt instanceof Date 
-                        ? request.createdAt.toLocaleDateString() 
-                        : new Date(request.createdAt.seconds * 1000).toLocaleDateString()}
+                      요청일: {new Date(request.createdAt).toLocaleDateString()}
                     </div>
                     <div className="flex justify-between items-center mt-3 pt-3 border-t">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -509,7 +507,7 @@ export default function PurchaseManagementPage() {
                           <AlertDialogHeader>
                             <AlertDialogTitle>요청 삭제</AlertDialogTitle>
                             <AlertDialogDescription>
-                              정말로 이 요청을 삭제하시겠습니까? 
+                              정말로 이 요청을 삭제하시겠습니까?
                               <br />
                               <strong>{request.requestNumber}</strong> - {request.branchName}
                               <br />
@@ -518,7 +516,7 @@ export default function PurchaseManagementPage() {
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>취소</AlertDialogCancel>
-                            <AlertDialogAction 
+                            <AlertDialogAction
                               onClick={() => handleDeleteRequest(request.id)}
                               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             >

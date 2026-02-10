@@ -1,5 +1,3 @@
-import { Timestamp } from 'firebase/firestore';
-
 // 주문 이관 설정 타입
 export interface OrderTransferSettings {
   defaultTransferSplit: {
@@ -19,7 +17,6 @@ export interface OrderTransferSettings {
   displayBoardDuration: number; // 분 단위
 }
 
-// 주문 이관 데이터 타입
 export interface OrderTransfer {
   id: string;
   originalOrderId: string;
@@ -27,7 +24,7 @@ export interface OrderTransfer {
   orderBranchName: string;
   processBranchId: string;
   processBranchName: string;
-  transferDate: Date | Timestamp;
+  transferDate: Date | string;
   transferReason: string;
   transferBy: string;
   transferByUser: string; // 이관한 사용자 이름
@@ -38,20 +35,18 @@ export interface OrderTransfer {
   };
   originalOrderAmount: number;
   notes?: string;
-  acceptedAt?: Date | Timestamp;
+  acceptedAt?: Date | string;
   acceptedBy?: string;
-  rejectedAt?: Date | Timestamp;
+  rejectedAt?: Date | string;
   rejectedBy?: string;
-  completedAt?: Date | Timestamp;
+  completedAt?: Date | string;
   completedBy?: string;
-  cancelledAt?: Date | Timestamp;
+  cancelledAt?: Date | string;
   cancelledBy?: string;
   cancelReason?: string;
   createdAt?: string;
   updatedAt?: string;
 }
-
-
 
 // 전광판 데이터 타입
 export interface DisplayBoardItem {
@@ -62,8 +57,9 @@ export interface DisplayBoardItem {
   branchId: string;
   branchName: string;
   priority: 'high' | 'medium' | 'low';
-  createdAt: Date | Timestamp;
-  expiresAt: Date | Timestamp;
+  createdAt: Date | string;
+  expiresAt: Date | string;
+
   isActive: boolean;
   transferId?: string; // 주문 이관 관련 전광판인 경우
   orderId?: string; // 주문 관련 전광판인 경우

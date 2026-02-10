@@ -7,13 +7,10 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { collection, query, where, orderBy, getDocs } from "firebase/firestore"
-import { db } from "@/lib/firebase"
+import { supabase } from "@/lib/supabase"
 import { format } from "date-fns"
 import { ko } from "date-fns/locale"
 import { Coins, TrendingUp, TrendingDown, History } from "lucide-react"
@@ -28,7 +25,7 @@ interface PointHistory {
   difference: number
   reason: string
   modifier: string
-  timestamp: any
+  timestamp: string // Supabase uses ISO string
 }
 
 interface PointHistoryDialogProps {
@@ -51,16 +48,27 @@ export function PointHistoryDialog({ isOpen, onOpenChange, customerId, customerN
   const fetchPointHistory = async () => {
     setLoading(true)
     try {
-      const q = query(
-        collection(db, 'pointHistory'),
-        where('customerId', '==', customerId),
-        orderBy('timestamp', 'desc')
-      )
-      const querySnapshot = await getDocs(q)
-      const history = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as PointHistory[]
+      const { data, error } = await supabase
+        .from('point_history')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const history = (data || []).map(row => ({
+        id: row.id,
+        customerId: row.customer_id,
+        customerName: row.customer_name,
+        customerContact: row.customer_contact,
+        previousPoints: row.previous_points,
+        newPoints: row.new_points,
+        difference: row.difference,
+        reason: row.reason,
+        modifier: row.modifier,
+        timestamp: row.created_at
+      }));
+
       setPointHistory(history)
     } catch (error) {
       // 개발 환경에서만 콘솔에 출력
@@ -72,15 +80,10 @@ export function PointHistoryDialog({ isOpen, onOpenChange, customerId, customerN
     }
   }
 
-  const formatDate = (timestamp: any) => {
+  const formatDate = (dateString: string) => {
     try {
-      if (timestamp?.toDate) {
-        return format(timestamp.toDate(), 'yyyy년 MM월 dd일 HH:mm', { locale: ko })
-      }
-      if (timestamp instanceof Date) {
-        return format(timestamp, 'yyyy년 MM월 dd일 HH:mm', { locale: ko })
-      }
-      return '-'
+      if (!dateString) return '-';
+      return format(new Date(dateString), 'yyyy년 MM월 dd일 HH:mm', { locale: ko })
     } catch (error) {
       return '-'
     }

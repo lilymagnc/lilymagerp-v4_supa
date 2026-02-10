@@ -1,4 +1,3 @@
-import { Timestamp } from 'firebase/firestore';
 // 요청 상태 enum (배송 단계 포함)
 export type RequestStatus =
   | 'submitted'    // 요청됨
@@ -38,20 +37,20 @@ export interface ActualPurchaseItem {
   totalAmount: number;
   status: PurchaseItemStatus;
   memo: string;
-  purchaseDate: Timestamp;
+  purchaseDate: string | Date;
   supplier?: string;
 }
 // 배송 정보 인터페이스
 export interface DeliveryInfo {
-  shippingDate: Timestamp;
-  deliveryDate?: Timestamp;
+  shippingDate: string | Date;
+  deliveryDate?: string | Date;
   deliveryMethod: string;
   trackingNumber?: string;
   deliveryStatus: 'preparing' | 'shipped' | 'delivered';
 }
 // 실제 구매 정보 인터페이스
 export interface ActualPurchaseInfo {
-  purchaseDate: Timestamp;
+  purchaseDate: string | Date;
   purchaserId: string;
   purchaserName: string;
   items: ActualPurchaseItem[];
@@ -72,14 +71,14 @@ export interface MaterialRequest {
   actualPurchase?: ActualPurchaseInfo;
   // 배송 정보
   delivery?: DeliveryInfo;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt: string | Date;
+  updatedAt: string | Date;
 }
 // 구매 배치 인터페이스
 export interface PurchaseBatch {
   id: string;
   batchNumber: string; // BATCH-2024-001
-  purchaseDate: Timestamp;
+  purchaseDate: string | Date;
   purchaserId: string;
   purchaserName: string;
   // 포함된 요청들
@@ -91,14 +90,14 @@ export interface PurchaseBatch {
   deliveryPlan: DeliveryPlanItem[];
   status: 'planning' | 'purchasing' | 'completed';
   notes: string;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt: string | Date;
+  updatedAt: string | Date;
 }
 // 취합 배치 (신규)
 export interface ConsolidatedBatch {
   id: string;
   batchNumber: string;
-  createdAt: Timestamp;
+  createdAt: string | Date;
   createdBy: string;
   status: ConsolidationStatus;
   includedRequestIds: string[];
@@ -167,7 +166,7 @@ export interface CreatePurchaseBatchData {
 // 실제 구매 입력 데이터
 export interface ActualPurchaseInputData {
   batchId: string;
-  purchaseDate: Timestamp;
+  purchaseDate: string | Date;
   items: ActualPurchaseItem[];
   totalCost: number;
   notes: string;
@@ -232,15 +231,15 @@ export interface MaterialRequestNotification {
   relatedRequestId?: string;
   relatedBatchId?: string;
   isRead: boolean;
-  readAt?: Timestamp;
-  createdAt: Timestamp;
+  readAt?: string | Date;
+  createdAt: string | Date;
 }
 // 자재 정보 확장 (구매 관련)
 export interface MaterialPurchaseInfo {
   suppliers?: string[];
   averagePrice?: number;
   lastPurchasePrice?: number;
-  lastPurchaseDate?: Timestamp;
+  lastPurchaseDate?: string | Date;
   purchaseUnit?: string;
   minimumOrderQuantity?: number;
 }

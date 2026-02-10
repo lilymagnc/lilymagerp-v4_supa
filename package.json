@@ -51,8 +51,6 @@
     "dotenv": "^17.2.4",
     "embla-carousel-react": "^8.6.0",
     "file-saver": "^2.0.5",
-    "firebase": "^11.10.0",
-    "firebase-admin": "^13.4.0",
     "html2canvas": "^1.4.1",
     "jsbarcode": "^3.11.6",
     "jspdf": "^3.0.3",

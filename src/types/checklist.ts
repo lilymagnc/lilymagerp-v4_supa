@@ -1,4 +1,4 @@
-import { Timestamp } from "firebase/firestore";
+
 
 // 체크리스트 템플릿
 export interface ChecklistTemplate {
@@ -7,8 +7,8 @@ export interface ChecklistTemplate {
   category: 'daily' | 'weekly' | 'monthly';
   items: ChecklistItem[];
   branchId: string;
-  createdAt: Timestamp;
-  updatedAt?: Timestamp;
+  createdAt: string | Date;
+  updatedAt?: string | Date;
 }
 
 // 체크리스트 항목
@@ -25,7 +25,7 @@ export interface ChecklistItem {
 export interface ChecklistItemRecord {
   itemId: string;
   checked: boolean;
-  checkedAt?: Timestamp;
+  checkedAt?: string | Date;
   checkedBy?: string;
   notes?: string;
 }
@@ -40,17 +40,17 @@ export interface ChecklistRecord {
   week: string; // "2025-W03"
   month: string; // "2025-01"
   category: 'daily' | 'weekly' | 'monthly';
-  
+
   // 담당자 정보 (직접 입력)
   openWorker: string;
   closeWorker: string;
   responsiblePerson: string;
-  
+
   items: ChecklistItemRecord[];
   completedBy: string;
-  completedAt: Timestamp;
+  completedAt: string | Date;
   status: 'pending' | 'completed' | 'partial';
-  
+
   // 메타 정보
   notes?: string;
   weather?: string;
@@ -62,8 +62,8 @@ export interface Worker {
   id: string;
   name: string;
   branchId: string;
-  createdAt: Timestamp;
-  lastUsed: Timestamp;
+  createdAt: string | Date;
+  lastUsed: string | Date;
 }
 
 // 체크리스트 통계
@@ -71,7 +71,7 @@ export interface ChecklistStats {
   totalItems: number;
   completedItems: number;
   completionRate: number;
-  lastUpdated: Timestamp;
+  lastUpdated: string | Date;
 }
 
 // 체크리스트 필터

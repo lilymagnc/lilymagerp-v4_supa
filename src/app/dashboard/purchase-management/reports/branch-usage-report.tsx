@@ -1,9 +1,6 @@
-
 "use client";
-
 import { useState } from 'react';
-import { collection, getDocs, query, where, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { DateRange } from 'react-day-picker';
 import { addDays, format } from 'date-fns';
 
@@ -35,44 +32,47 @@ export default function BranchUsageReport() {
     if (!date?.from || !date?.to) return;
 
     setLoading(true);
-    const startDate = Timestamp.fromDate(date.from);
-    const endDate = Timestamp.fromDate(date.to);
+    try {
+      const { data: requests, error } = await supabase
+        .from('material_requests')
+        .select('*')
+        .eq('status', 'completed')
+        .gte('updated_at', date.from.toISOString())
+        .lte('updated_at', date.to.toISOString());
 
-    const q = query(
-      collection(db, 'materialRequests'),
-      where('status', '==', 'completed'),
-      where('updatedAt', '>=', startDate),
-      where('updatedAt', '<=', endDate)
-    );
+      if (error) throw error;
 
-    const querySnapshot = await getDocs(q);
-    const branchData: { [key: string]: BranchStat } = {};
+      const branchData: { [key: string]: BranchStat } = {};
 
-    querySnapshot.docs.forEach(doc => {
-      const request = doc.data();
-      const id = request.branchId;
+      requests?.forEach(request => {
+        const id = request.branch_id;
 
-      if (!branchData[id]) {
-        branchData[id] = {
-          branchId: id,
-          branchName: request.branchName,
-          requestCount: 0,
-          totalItemCount: 0,
-          totalCost: 0,
-        };
-      }
+        if (!branchData[id]) {
+          branchData[id] = {
+            branchId: id,
+            branchName: request.branch_name,
+            requestCount: 0,
+            totalItemCount: 0,
+            totalCost: 0,
+          };
+        }
 
-      branchData[id].requestCount += 1;
-      if (request.actualPurchase?.items) {
-        branchData[id].totalItemCount += request.actualPurchase.items.length;
-        branchData[id].totalCost += request.actualPurchase.totalCost;
-      }
-    });
+        branchData[id].requestCount += 1;
+        if (request.actual_purchase?.items) {
+          branchData[id].totalItemCount += request.actual_purchase.items.length;
+          branchData[id].totalCost += (request.actual_purchase.totalCost || 0);
+        }
+      });
 
-    const calculatedStats = Object.values(branchData);
-    setStats(calculatedStats.sort((a, b) => b.totalCost - a.totalCost));
-    setLoading(false);
+      const calculatedStats = Object.values(branchData);
+      setStats(calculatedStats.sort((a, b) => b.totalCost - a.totalCost));
+    } catch (error) {
+      console.error('리포트 생성 오류:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
 
   return (
     <Card className="mt-8">

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { UploadProgress } from '@/types/album';
-import { FirebaseStorageService } from '@/lib/firebase-storage';
+import { SupabaseStorageService } from '@/lib/supabase-storage';
 interface PhotoUploadProps {
   albumId: string;
   onUploadComplete: (files: File[]) => Promise<void>;
@@ -22,7 +22,7 @@ export function PhotoUpload({ albumId, onUploadComplete, onCancel }: PhotoUpload
     const fileArray = Array.from(selectedFiles);
     // 파일 검증
     const validFiles = fileArray.filter(file => {
-      const validation = FirebaseStorageService.validateFile(file);
+      const validation = SupabaseStorageService.validateFile(file);
       if (!validation.isValid) {
         alert(`${file.name}: ${validation.error}`);
         return false;
@@ -81,11 +81,10 @@ export function PhotoUpload({ albumId, onUploadComplete, onCancel }: PhotoUpload
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             onClick={handleClick}
-            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-              isDragActive
-                ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-300 hover:border-gray-400'
-            }`}
+            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${isDragActive
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-gray-300 hover:border-gray-400'
+              }`}
           >
             <input
               ref={fileInputRef}

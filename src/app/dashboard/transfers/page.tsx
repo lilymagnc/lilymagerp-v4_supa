@@ -35,7 +35,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBranches } from "@/hooks/use-branches";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
-import { Timestamp } from "firebase/firestore";
+
 import { TransferFilter, TransferStats } from "@/types/order-transfer";
 import { TransferStatusDialog } from "./components/transfer-status-dialog";
 import { TransferDetailDialog } from "./components/transfer-detail-dialog";
@@ -201,11 +201,14 @@ export default function TransfersPage() {
 
   const toLocalDate = (dateVal: any): Date => {
     if (!dateVal) return new Date();
-    if (dateVal instanceof Timestamp) return dateVal.toDate();
     if (typeof dateVal === 'string') return new Date(dateVal);
-    if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
+    if (dateVal && typeof dateVal === 'object') {
+      if (typeof (dateVal as any).toDate === 'function') return (dateVal as any).toDate();
+      if ((dateVal as any).seconds) return new Date((dateVal as any).seconds * 1000);
+    }
     return new Date(dateVal);
   };
+
 
   // 상태 변경 핸들러
   const handleStatusChange = (transferId: string, status: 'accepted' | 'rejected' | 'completed', notes?: string) => {

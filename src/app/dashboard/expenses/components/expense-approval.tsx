@@ -89,16 +89,21 @@ export function ExpenseApproval() {
     }).format(amount);
   };
   // 날짜 포맷팅
-  const formatDate = (timestamp: any) => {
-    if (!timestamp) return '-';
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleDateString('ko-KR', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  const formatDate = (dateValue: any) => {
+    if (!dateValue) return '-';
+    try {
+      const date = new Date(dateValue);
+      if (isNaN(date.getTime())) return '-';
+      return date.toLocaleDateString('ko-KR', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (e) {
+      return '-';
+    }
   };
   if (loading) {
     return (

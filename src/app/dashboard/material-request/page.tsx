@@ -244,18 +244,7 @@ export default function MaterialRequestPage() {
       });
       return;
     }
-    // Firebase 인증 상태 확인
-    // Firebase Auth 상태 확인
-    const { auth } = await import('@/lib/firebase');
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      toast({
-        variant: 'destructive',
-        title: '인증 오류',
-        description: 'Firebase 인증이 필요합니다. 다시 로그인해주세요.',
-      });
-      return;
-    }
+
     const targetBranch = branches.find(b => b.name === selectedBranch);
     if (!targetBranch) {
       toast({
@@ -269,7 +258,7 @@ export default function MaterialRequestPage() {
       const requestData = {
         branchId: targetBranch.id,
         branchName: targetBranch.name,
-        requesterId: user.uid,
+        requesterId: user.id,
         requesterName: user.email, // 본사 관리자가 요청하더라도 요청자는 본인으로 기록
         requestedItems: cartItems
       };

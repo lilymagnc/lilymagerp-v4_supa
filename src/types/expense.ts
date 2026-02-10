@@ -1,4 +1,3 @@
-import { Timestamp } from 'firebase/firestore';
 // 비용 카테고리
 export enum ExpenseCategory {
   MATERIAL = 'material',        // 자재비
@@ -20,7 +19,7 @@ export enum ExpenseCategory {
 }
 // 비용 상태
 export enum ExpenseStatus {
-  DRAFT = 'draft',           
+  DRAFT = 'draft',
   PENDING = 'pending',       // 승인대기
   APPROVED = 'approved',     // 승인완료
   REJECTED = 'rejected',     // 반려
@@ -54,7 +53,7 @@ export interface ExpenseItem {
   memo?: string;
   receiptUrl?: string;
   supplier?: string;
-  purchaseDate: Timestamp;
+  purchaseDate: string | Date;
 }
 // 승인 기록 인터페이스
 export interface ApprovalRecord {
@@ -64,7 +63,7 @@ export interface ApprovalRecord {
   approverRole: string;
   status: 'pending' | 'approved' | 'rejected';
   comment?: string;
-  processedAt?: Timestamp;
+  processedAt?: string | Date;
 }
 // 비용 신청 메인 인터페이스
 export interface ExpenseRequest {
@@ -89,7 +88,7 @@ export interface ExpenseRequest {
   currentApprovalLevel?: ApprovalLevel;
   // 지급 정보
   paymentMethod?: PaymentMethod;
-  paymentDate?: Timestamp;
+  paymentDate?: string | Date;
   paymentReference?: string;
   // 예산 정보
   budgetId?: string;
@@ -101,11 +100,11 @@ export interface ExpenseRequest {
   purpose: string;
   urgency: 'normal' | 'urgent';
   tags?: string[];
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-  submittedAt?: Timestamp;
-  approvedAt?: Timestamp;
-  paidAt?: Timestamp;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  submittedAt?: string | Date;
+  approvedAt?: string | Date;
+  paidAt?: string | Date;
 }
 // 예산 인터페이스
 export interface Budget {
@@ -130,8 +129,8 @@ export interface Budget {
   };
   // 상태
   isActive: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt: string | Date;
+  updatedAt: string | Date;
 }
 // 비용 분석 데이터
 export interface ExpenseAnalytics {
@@ -197,7 +196,7 @@ export interface ProcessPaymentData {
   requestId: string;
   paymentMethod: PaymentMethod;
   paymentReference?: string;
-  paymentDate: Timestamp;
+  paymentDate: string | Date;
   processedBy: string;
 }
 // 라벨 매핑

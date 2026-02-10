@@ -167,14 +167,29 @@ export function useUserRole() {
 
   const isBranchUser = (): boolean => userRole?.role === 'branch_user' && userRole.isActive;
   const isBranchManager = (): boolean => userRole?.role === 'branch_manager' && userRole.isActive;
-  const isAdmin = (): boolean => userRole?.role === 'admin' && userRole.isActive;
+  const _isAdmin = (): boolean => userRole?.role === 'admin' && userRole.isActive;
   const isHeadOfficeAdmin = (): boolean => isHQManager();
+
+  const isAdminValue = isHQManager() || _isAdmin();
+  const userBranchValue = userRole?.branchName || user?.franchise || '';
 
   useEffect(() => {
     fetchUserRole();
   }, [fetchUserRole]);
 
   return {
-    userRole, loading, fetchUserRole, createUserRole, updateUserRole, hasPermission, hasAnyPermission, isHQManager, isBranchUser, isBranchManager, isAdmin, isHeadOfficeAdmin,
+    userRole,
+    loading,
+    fetchUserRole,
+    createUserRole,
+    updateUserRole,
+    hasPermission,
+    hasAnyPermission,
+    isHQManager,
+    isBranchUser,
+    isBranchManager,
+    isAdmin: isAdminValue,
+    isHeadOfficeAdmin,
+    userBranch: userBranchValue
   };
 }

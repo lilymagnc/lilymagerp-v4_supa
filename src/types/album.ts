@@ -1,4 +1,4 @@
-import { Timestamp } from 'firebase/firestore';
+
 export type AlbumCategory = 'wedding' | 'birthday' | 'memorial' | 'anniversary' | 'other';
 export interface Album {
   id: string;
@@ -8,8 +8,8 @@ export interface Album {
   thumbnailUrl?: string;
   photoCount: number;
   isPublic: boolean;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  createdAt: string | Date;
+  updatedAt: string | Date;
   createdBy: string;
 }
 export interface Photo {
@@ -22,7 +22,7 @@ export interface Photo {
   size: number;
   width: number;
   height: number;
-  uploadedAt: Timestamp;
+  uploadedAt: string | Date;
   uploadedBy: string;
 }
 export interface CreateAlbumData {

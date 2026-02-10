@@ -15,7 +15,7 @@ import { useMaterialRequests } from '@/hooks/use-material-requests';
 import { usePurchaseBatches } from '@/hooks/use-purchase-batches';
 import { useAuth } from '@/hooks/use-auth';
 import type { MaterialRequest, ConsolidatedItem, PurchaseBatch, ActualPurchaseInputData } from '@/types/material-request';
-import { Timestamp } from 'firebase/firestore';
+import { Priority } from '@/types/material-request';
 interface PurchaseRequestDashboardProps {
   requests: MaterialRequest[];
   onRefresh: () => void;
@@ -32,7 +32,7 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
   const { user } = useAuth(); // useAuth 훅을 사용하여 user 객체 가져오기 // usePurchaseBatches 훅에서 createPurchaseBatch 가져오기
   // 처리 가능한 요청들 (제출됨, 검토중 상태)
   const processableRequests = useMemo(() => {
-    return requests.filter(request => 
+    return requests.filter(request =>
       ['submitted', 'reviewing'].includes(request.status)
     );
   }, [requests]);
@@ -51,10 +51,12 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
           existing.totalQuantity += item.requestedQuantity;
           existing.estimatedTotalCost += item.requestedQuantity * item.estimatedPrice;
           existing.requestingBranches.push({
+            branchId: request.branchId,
             branchName: request.branchName,
             quantity: item.requestedQuantity,
             urgency: item.urgency,
-            requestId: request.id
+            requestIds: [request.id],
+            estimatedPrice: item.estimatedPrice
           });
         } else {
           itemsMap.set(key, {
@@ -62,12 +64,19 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
             materialName: item.materialName,
             totalQuantity: item.requestedQuantity,
             requestingBranches: [{
+              branchId: request.branchId,
               branchName: request.branchName,
               quantity: item.requestedQuantity,
               urgency: item.urgency,
-              requestId: request.id
+              requestIds: [request.id],
+              estimatedPrice: item.estimatedPrice
             }],
-            estimatedTotalCost: item.requestedQuantity * item.estimatedPrice
+            estimatedTotalCost: item.requestedQuantity * item.estimatedPrice,
+            category: '', // 필수 속성 추가
+            currentPrice: item.estimatedPrice,
+            supplier: '',
+            hasUrgent: item.urgency === 'urgent',
+            priority: item.urgency === 'urgent' ? Priority.URGENT : Priority.NORMAL
           });
         }
       });
@@ -99,7 +108,7 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
     const statsMap = new Map();
     processableRequests.forEach(request => {
       const key = request.branchId;
-      const totalCost = request.requestedItems.reduce((sum, item) => 
+      const totalCost = request.requestedItems.reduce((sum, item) =>
         sum + (item.requestedQuantity * item.estimatedPrice), 0
       );
       const hasUrgent = request.requestedItems.some(item => item.urgency === 'urgent');
@@ -124,7 +133,7 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
   }, [processableRequests]);
   // 요청 선택 토글
   const toggleRequestSelection = (requestId: string) => {
-    setSelectedRequests(prev => 
+    setSelectedRequests(prev =>
       prev.includes(requestId)
         ? prev.filter(id => id !== requestId)
         : [...prev, requestId]
@@ -151,9 +160,9 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
     // 실제 구매 배치 생성
     try {
       const newBatch = await createPurchaseBatch(
-        { 
-          purchaserId: user?.uid || '',
-          purchaserName: user?.displayName || user?.email || '',
+        {
+          purchaserId: user?.id || '',
+          purchaserName: user?.email || '시스템 관리자',
           includedRequests: purchasingRequestIds,
         },
         batchRequests
@@ -221,8 +230,8 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
                   <div>
                     <div className="font-medium">{request.requestNumber}</div>
                     <div className="text-sm text-gray-600">
-                      {request.branchName} • {request.requestedItems.length}개 품목 • 
-                      ₩{request.requestedItems.reduce((sum, item) => 
+                      {request.branchName} • {request.requestedItems.length}개 품목 •
+                      ₩{request.requestedItems.reduce((sum, item) =>
                         sum + (item.requestedQuantity * item.estimatedPrice), 0
                       ).toLocaleString()}
                     </div>
@@ -282,23 +291,23 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2 mb-4">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
               onClick={toggleAllRequests}
             >
               {selectedRequests.length === processableRequests.length ? '전체 해제' : '전체 선택'}
               ({selectedRequests.length}/{processableRequests.length})
             </Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
               onClick={selectUrgentRequests}
             >
               긴급 요청만 선택
             </Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
               onClick={() => setSelectedRequests([])}
             >
@@ -329,7 +338,7 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
             <div className="bg-red-50 p-4 rounded-lg">
               <div className="text-sm text-red-600 font-medium">긴급 요청</div>
               <div className="text-2xl font-bold text-red-700">
-                {processableRequests.filter(r => 
+                {processableRequests.filter(r =>
                   r.requestedItems.some(item => item.urgency === 'urgent')
                 ).length}건
               </div>
@@ -344,14 +353,14 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
           <TabsTrigger value="branch">지점별 요청 뷰</TabsTrigger>
         </TabsList>
         <TabsContent value="material">
-          <ConsolidatedItemsView 
+          <ConsolidatedItemsView
             items={sortedConsolidatedItems}
             selectedRequests={selectedRequests}
             onToggleRequest={toggleRequestSelection}
           />
         </TabsContent>
         <TabsContent value="branch">
-          <BranchRequestsView 
+          <BranchRequestsView
             requests={processableRequests}
             branchStats={branchStats}
             selectedRequests={selectedRequests}
@@ -361,7 +370,7 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
       </Tabs>
       {/* 구매 배치 관리 */}
       {selectedRequests.length > 0 && (
-        <PurchaseBatchManager 
+        <PurchaseBatchManager
           selectedRequestIds={selectedRequests}
           requests={processableRequests.filter(r => selectedRequests.includes(r.id))}
           onBatchCreated={() => {

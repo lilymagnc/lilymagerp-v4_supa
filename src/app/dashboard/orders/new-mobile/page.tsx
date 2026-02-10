@@ -25,8 +25,7 @@ import { useProducts, Product } from "@/hooks/use-products";
 import { useCustomers, Customer } from "@/hooks/use-customers";
 import { useAuth } from "@/hooks/use-auth";
 import { useDiscountSettings } from "@/hooks/use-discount-settings";
-import { serverTimestamp, collection, query, where, orderBy, limit, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { debounce } from "lodash";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter, SheetClose, SheetDescription } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -611,31 +610,27 @@ export default function NewOrderMobilePage() {
         try {
             if (!contact && (!company || !company.trim())) return;
 
-            const ordersRef = collection(db, 'orders');
-            let q;
+            let query = supabase
+                .from('orders')
+                .select('payment')
+                .order('order_date', { ascending: false })
+                .limit(1);
 
             if (company && company.trim()) {
-                q = query(
-                    ordersRef,
-                    where('orderer.company', '==', company.trim()),
-                    orderBy('orderDate', 'desc'),
-                    limit(1)
-                );
+                query = query.eq('orderer->>company', company.trim());
             } else {
-                q = query(
-                    ordersRef,
-                    where('orderer.contact', '==', contact),
-                    orderBy('orderDate', 'desc'),
-                    limit(1)
-                );
+                query = query.eq('orderer->>contact', contact);
             }
 
-            const snapshot = await getDocs(q);
-            if (!snapshot.empty) {
-                const lastOrder = snapshot.docs[0].data() as any;
+            const { data, error } = await query;
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                const lastOrder = data[0];
                 if (lastOrder.payment) {
-                    if (lastOrder.payment.method) setPaymentMethod(lastOrder.payment.method as PaymentMethod);
-                    if (lastOrder.payment.status) setPaymentStatus(lastOrder.payment.status as PaymentStatus);
+                    const payment = lastOrder.payment as any;
+                    if (payment.method) setPaymentMethod(payment.method as PaymentMethod);
+                    if (payment.status) setPaymentStatus(payment.status as PaymentStatus);
                 }
             }
         } catch (error) {
@@ -668,33 +663,24 @@ export default function NewOrderMobilePage() {
                 return;
             }
             try {
-                const ordersRef = collection(db, 'orders');
-                const q = query(
-                    ordersRef,
-                    where('orderer.contact', '==', selectedCustomer.contact),
-                    where('message.type', '==', 'ribbon'),
-                    orderBy('orderDate', 'desc'),
-                    limit(10)
-                );
-                const snapshot = await getDocs(q);
+                const { data, error } = await supabase
+                    .from('orders')
+                    .select('message, orderer')
+                    .eq('orderer->>contact', selectedCustomer.contact)
+                    .eq('message->>type', 'ribbon')
+                    .order('order_date', { ascending: false })
+                    .limit(10);
+
+                if (error) throw error;
+
                 const messages: { sender: string; content: string }[] = [];
                 const seen = new Set<string>();
-                snapshot.forEach(doc => {
-                    const data = doc.data();
-                    if (data.message?.content) {
-                        const sender = data.message.sender || data.orderer.name || '';
-                        const content = data.message.content;
-                        // For recent messages list, we might want to show original full content or parsed.
-                        // But desktop saves combined content for ribbon if checking handleCompleteOrder? 
-                        // Wait, desktop `handleCompleteOrder` splits content by separator for ID? No.
-                        // Desktop 'ribbon' logic: `messageContent` state holds "Message / Sender".
-                        // Desktop `handleCompleteOrder` splits it.
-                        // So here we should store unique combined messages or just content?
-                        // The loop in desktop: `const sender = data.message.sender ...`
-                        // It seems desktop DB has separated sender/content fields.
-
-                        // Let's mimic desktop logic: 
-                        // messages.push({ sender, content });
+                (data || []).forEach(row => {
+                    const msg = row.message as any;
+                    const orderer = row.orderer as any;
+                    if (msg?.content) {
+                        const sender = msg.sender || orderer.name || '';
+                        const content = msg.content;
                         const key = `${sender}|${content}`;
                         if (!seen.has(key)) {
                             seen.add(key);
@@ -858,7 +844,7 @@ export default function NewOrderMobilePage() {
                 summary: { subtotal: orderSummary.subtotal, discountAmount: orderSummary.discountAmount, discountRate: orderSummary.discountRate, deliveryFee: orderSummary.deliveryFee, pointsUsed: orderSummary.actualUsedPoints, pointsEarned: 0, total: orderSummary.finalTotal },
                 orderer: { id: selectedCustomer?.id || "", name: ordererName, contact: ordererContact, company: ordererCompany, email: "" },
                 isAnonymous, registerCustomer: isRegisterCustomer,
-                payment: { method: paymentMethod, status: paymentStatus, completedAt: (paymentStatus === 'paid' || paymentStatus === 'completed') ? serverTimestamp() as any : undefined, isSplitPayment: false },
+                payment: { method: paymentMethod, status: paymentStatus, completedAt: (paymentStatus === 'paid' || paymentStatus === 'completed') ? new Date().toISOString() : undefined, isSplitPayment: false },
                 pickupInfo: (receiptType !== 'delivery_reservation') ? { date: scheduleDate ? format(scheduleDate, "yyyy-MM-dd") : '', time: scheduleTime, pickerName: recipientName || ordererName, pickerContact: recipientContact || ordererContact } : null,
                 deliveryInfo: receiptType === 'delivery_reservation' ? { date: scheduleDate ? format(scheduleDate, "yyyy-MM-dd") : '', time: scheduleTime, recipientName, recipientContact, address: `${deliveryAddress} ${deliveryAddressDetail}`, district: selectedDistrict || '' } : null,
                 message: messageType !== 'none' ? (

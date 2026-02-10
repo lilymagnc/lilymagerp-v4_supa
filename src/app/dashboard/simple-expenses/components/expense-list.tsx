@@ -35,8 +35,6 @@ import { useSimpleExpenses } from '@/hooks/use-simple-expenses';
 import { useBranches } from '@/hooks/use-branches';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
-import { collection, query, where, orderBy, getDocs, limit as firestoreLimit, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { format } from 'date-fns';
 import {
   SIMPLE_EXPENSE_CATEGORY_LABELS,
@@ -71,7 +69,7 @@ export function ExpenseList({
   const [hasMore, setHasMore] = useState(true);
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [lastDoc, setLastDoc] = useState<any>(null); // 페이지네이션 커서
+
   const [selectedExpenses, setSelectedExpenses] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<any>(null);
@@ -109,7 +107,7 @@ export function ExpenseList({
         ? undefined
         : selectedBranchId;
 
-      const cursor = isLoadMore ? lastDoc : undefined;
+      const offset = isLoadMore ? expenses.length : 0;
       const limitCount = 50; // 한 번에 가져올 개수
 
       const result = await fetchExpenses({
@@ -117,12 +115,12 @@ export function ExpenseList({
         dateFrom: dateRange.start ? startOfDay(new Date(dateRange.start)) : undefined,
         dateTo: dateRange.end ? endOfDay(new Date(dateRange.end)) : undefined,
         limit: limitCount,
-        startAfterDoc: cursor,
+        offset: offset,
         category: categoryFilter && categoryFilter !== 'all' ? (categoryFilter as any) : undefined
       });
 
       if (result) {
-        const { expenses: newExpenses, lastDoc: newLastDoc } = result;
+        const { expenses: newExpenses, hasMore: moreAvailable } = result;
 
         // 지점 이름 보정
         const processedExpenses = newExpenses.map((expense: any) => {
@@ -135,14 +133,13 @@ export function ExpenseList({
 
         if (isLoadMore) {
           setExpenses(prev => [...prev, ...processedExpenses]);
-          setFilteredExpenses(prev => [...prev, ...processedExpenses]); // 필터링된 목록에도 추가 (클라이언트 필터가 없으면 동일)
+          setFilteredExpenses(prev => [...prev, ...processedExpenses]);
         } else {
           setExpenses(processedExpenses);
           setFilteredExpenses(processedExpenses);
         }
 
-        setLastDoc(newLastDoc);
-        setHasMore(newExpenses.length === limitCount); // 가져온 개수가 limit과 같으면 더 있을 가능성 있음
+        setHasMore(moreAvailable);
       }
     } catch (error) {
       console.error('지출 데이터 로드 오류:', error);
@@ -156,6 +153,7 @@ export function ExpenseList({
     }
   };
 
+
   // 필터링된 결과 중 화면에 보여줄 갯수 조절 (무한 스크롤)
   // 서버 페이지네이션을 하므로 여기서는 전체를 보여주되, 
   // loadExpenses가 append 방식으로 동작함.
@@ -168,7 +166,7 @@ export function ExpenseList({
   useEffect(() => {
     setExpenses([]);
     setFilteredExpenses([]);
-    setLastDoc(null);
+
     setHasMore(true);
 
     // 상태 업데이트 후 로딩 호출 (setTimeout으로 상태 반영 보장)
@@ -342,18 +340,23 @@ export function ExpenseList({
     const sheets = [];
 
     // 시트1: 통합 시트
-    const consolidatedData = filteredExpenses.length > 0 ? filteredExpenses.map(expense => ({
-      '날짜': expense.date?.toDate().toLocaleDateString() || '-',
-      '지점': expense.branchName,
-      '구매처': expense.supplier,
-      '분류': SIMPLE_EXPENSE_CATEGORY_LABELS[expense.category],
-      '세부분류': expense.subCategory || '-',
-      '품목명': expense.description,
-      '수량': expense.quantity || 1,
-      '단가': expense.unitPrice || 0,
-      '금액': expense.amount,
-      '등록일': expense.createdAt?.toDate().toLocaleDateString() || '-'
-    })) : [{
+    const consolidatedData = filteredExpenses.length > 0 ? filteredExpenses.map(expense => {
+      const expenseDate = expense.date ? (typeof expense.date === 'string' ? new Date(expense.date) : expense.date) : null;
+      const createdAt = expense.createdAt ? (typeof expense.createdAt === 'string' ? new Date(expense.createdAt) : expense.createdAt) : null;
+
+      return {
+        '날짜': expenseDate?.toLocaleDateString() || '-',
+        '지점': expense.branchName,
+        '구매처': expense.supplier,
+        '분류': SIMPLE_EXPENSE_CATEGORY_LABELS[expense.category],
+        '세부분류': expense.subCategory || '-',
+        '품목명': expense.description,
+        '수량': expense.quantity || 1,
+        '단가': expense.unitPrice || 0,
+        '금액': expense.amount,
+        '등록일': createdAt?.toLocaleDateString() || '-'
+      };
+    }) : [{
       '날짜': '',
       '지점': '데이터 없음',
       '구매처': '',
@@ -373,17 +376,22 @@ export function ExpenseList({
 
     // 시트2: 본사
     const headquartersExpenses = filteredExpenses.filter(expense => expense.branchId === '본사');
-    const headquartersData = headquartersExpenses.length > 0 ? headquartersExpenses.map(expense => ({
-      '날짜': expense.date?.toDate().toLocaleDateString() || '-',
-      '구매처': expense.supplier,
-      '분류': SIMPLE_EXPENSE_CATEGORY_LABELS[expense.category],
-      '세부분류': expense.subCategory || '-',
-      '품목명': expense.description,
-      '수량': expense.quantity || 1,
-      '단가': expense.unitPrice || 0,
-      '금액': expense.amount,
-      '등록일': expense.createdAt?.toDate().toLocaleDateString() || '-'
-    })) : [{
+    const headquartersData = headquartersExpenses.length > 0 ? headquartersExpenses.map(expense => {
+      const expenseDate = expense.date ? (typeof expense.date === 'string' ? new Date(expense.date) : expense.date) : null;
+      const createdAt = expense.createdAt ? (typeof expense.createdAt === 'string' ? new Date(expense.createdAt) : expense.createdAt) : null;
+
+      return {
+        '날짜': expenseDate?.toLocaleDateString() || '-',
+        '구매처': expense.supplier,
+        '분류': SIMPLE_EXPENSE_CATEGORY_LABELS[expense.category],
+        '세부분류': expense.subCategory || '-',
+        '품목명': expense.description,
+        '수량': expense.quantity || 1,
+        '단가': expense.unitPrice || 0,
+        '금액': expense.amount,
+        '등록일': createdAt?.toLocaleDateString() || '-'
+      };
+    }) : [{
       '날짜': '데이터 없음',
       '구매처': '',
       '분류': '',
@@ -406,8 +414,12 @@ export function ExpenseList({
       if (!branchExpenses[expense.branchId]) {
         branchExpenses[expense.branchId] = [];
       }
+
+      const expenseDate = expense.date ? (typeof expense.date === 'string' ? new Date(expense.date) : expense.date) : null;
+      const createdAt = expense.createdAt ? (typeof expense.createdAt === 'string' ? new Date(expense.createdAt) : expense.createdAt) : null;
+
       branchExpenses[expense.branchId].push({
-        '날짜': expense.date?.toDate().toLocaleDateString() || '-',
+        '날짜': expenseDate?.toLocaleDateString() || '-',
         '지점': expense.branchName || '미지정',
         '구매처': expense.supplier,
         '분류': SIMPLE_EXPENSE_CATEGORY_LABELS[expense.category],
@@ -416,7 +428,7 @@ export function ExpenseList({
         '수량': expense.quantity || 1,
         '단가': expense.unitPrice || 0,
         '금액': expense.amount,
-        '등록일': expense.createdAt?.toDate().toLocaleDateString() || '-'
+        '등록일': createdAt?.toLocaleDateString() || '-'
       });
     });
 
@@ -457,18 +469,23 @@ export function ExpenseList({
 
   // 지점별 엑셀 내보내기
   const exportBranchExcel = async () => {
-    const data = filteredExpenses.length > 0 ? filteredExpenses.map(expense => ({
-      '날짜': expense.date.toDate().toLocaleDateString(),
-      '지점': expense.branchName || '미지정',
-      '구매처': expense.supplier,
-      '분류': SIMPLE_EXPENSE_CATEGORY_LABELS[expense.category],
-      '세부분류': expense.subCategory || '-',
-      '품목명': expense.description,
-      '수량': expense.quantity || 1,
-      '단가': expense.unitPrice || 0,
-      '금액': expense.amount,
-      '등록일': expense.createdAt?.toDate().toLocaleDateString() || '-'
-    })) : [{
+    const data = filteredExpenses.length > 0 ? filteredExpenses.map(expense => {
+      const expenseDate = expense.date ? (typeof expense.date === 'string' ? new Date(expense.date) : expense.date) : null;
+      const createdAt = expense.createdAt ? (typeof expense.createdAt === 'string' ? new Date(expense.createdAt) : expense.createdAt) : null;
+
+      return {
+        '날짜': expenseDate?.toLocaleDateString() || '-',
+        '지점': expense.branchName || '미지정',
+        '구매처': expense.supplier,
+        '분류': SIMPLE_EXPENSE_CATEGORY_LABELS[expense.category],
+        '세부분류': expense.subCategory || '-',
+        '품목명': expense.description,
+        '수량': expense.quantity || 1,
+        '단가': expense.unitPrice || 0,
+        '금액': expense.amount,
+        '등록일': createdAt?.toLocaleDateString() || '-'
+      };
+    }) : [{
       '날짜': '',
       '지점': '데이터 없음',
       '구매처': '',
@@ -484,6 +501,7 @@ export function ExpenseList({
     const branchName = branches.find(b => b.id === selectedBranchId)?.name || '지점';
     await exportToExcel([{ name: branchName, data }], `${branchName}_간편지출보고서`);
   };
+
 
   // 총 금액 계산
   const totalAmount = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);

@@ -16,8 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Download, FileSpreadsheet, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, Timestamp, orderBy } from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 
@@ -50,47 +49,26 @@ export function YearEndExportDialog() {
             if (includeSales) {
                 toast({ title: "데이터 준비 중...", description: "매출 데이터를 불러오고 있습니다." });
 
-                const ordersRef = collection(db, "orders");
-                // Firestore 인덱스 문제 방지를 위해 날짜 범위 쿼리 대신 전체를 가져와서 클라이언트 필터링 할 수도 있으나,
-                // 성능을 위해 가능한 쿼리를 사용. orderDate가 타임스탬프인 경우를 가정.
-                // 하지만 여기서는 간단히 전체를 가져와 필터링하는 방식이 안전할 수 있음 (인덱스 에러 방지)
-                // 또는 기간별 쿼리 시도
+                const { data: orders, error: ordersError } = await supabase
+                    .from("orders")
+                    .select("*")
+                    .gte("order_date", startDate.toISOString())
+                    .lte("order_date", endDate.toISOString())
+                    .order("order_date", { ascending: false });
 
-                const q = query(
-                    ordersRef,
-                    where("orderDate", ">=", startDate),
-                    where("orderDate", "<=", endDate),
-                    orderBy("orderDate", "desc")
-                );
+                if (ordersError) throw ordersError;
 
-                let ordersSnapshot;
-                try {
-                    ordersSnapshot = await getDocs(q);
-                } catch (e) {
-                    console.warn("인덱스 오류 가능성, 전체 데이터에서 필터링 시도", e);
-                    const allOrdersQuery = query(ordersRef, orderBy("orderDate", "desc"));
-                    const allOrdersSnapshot = await getDocs(allOrdersQuery);
-                    // 클라이언트 필터링
-                    const docs = allOrdersSnapshot.docs.filter(doc => {
-                        const data = doc.data();
-                        const date = data.orderDate?.toDate ? data.orderDate.toDate() : new Date(data.orderDate);
-                        return date >= startDate && date <= endDate;
-                    });
-                    ordersSnapshot = { docs };
-                }
-
-                const ordersData = ordersSnapshot.docs.map(doc => {
-                    const data = doc.data();
+                const ordersData = (orders || []).map(doc => {
                     return {
                         "주문번호": doc.id,
-                        "주문일자": formatDate(data.orderDate),
-                        "지점명": data.branchName || "",
-                        "고객명": data.orderer?.name || "",
-                        "연락처": data.orderer?.contact || "",
-                        "상품명": data.productNames || (data.items?.map((i: any) => i.name).join(", ") || ""),
-                        "결제금액": data.summary?.total || data.total || 0,
-                        "결제상태": getStatusText(data.payment?.status || data.status),
-                        "결제수단": getPaymentMethodText(data.payment?.method)
+                        "주문일자": formatDate(doc.order_date),
+                        "지점명": doc.branch_name || "",
+                        "고객명": doc.orderer?.name || "",
+                        "연락처": doc.orderer?.contact || "",
+                        "상품명": doc.product_names || (doc.items?.map((i: any) => i.name).join(", ") || ""),
+                        "결제금액": doc.summary?.total || 0,
+                        "결제상태": getStatusText(doc.payment?.status || doc.status),
+                        "결제수단": getPaymentMethodText(doc.payment?.method)
                     };
                 });
 
@@ -99,12 +77,12 @@ export function YearEndExportDialog() {
                 XLSX.utils.book_append_sheet(workbook, wsOrders, `${year}년_주문내역`);
 
                 // 1-2. 월별 매출 집계
-                const monthlyStats = aggregateMonthlySales(ordersSnapshot.docs);
+                const monthlyStats = aggregateMonthlySales(orders || []);
                 const wsMonthly = XLSX.utils.json_to_sheet(monthlyStats);
                 XLSX.utils.book_append_sheet(workbook, wsMonthly, `${year}년_월별매출`);
 
                 // 1-3. 지점별 매출 집계
-                const branchStats = aggregateBranchSales(ordersSnapshot.docs);
+                const branchStats = aggregateBranchSales(orders || []);
                 const wsBranch = XLSX.utils.json_to_sheet(branchStats);
                 XLSX.utils.book_append_sheet(workbook, wsBranch, `${year}년_지점별매출`);
             }
@@ -113,32 +91,26 @@ export function YearEndExportDialog() {
             if (includeExpenses) {
                 toast({ title: "데이터 준비 중...", description: "지출 데이터를 불러오고 있습니다." });
 
-                const expensesRef = collection(db, "expenseRequests");
-                // 날짜 필터링 (createdAt 기준)
-                const expensesQuery = query(
-                    expensesRef,
-                    where("status", "in", ["paid", "approved"]), // 승인되거나 지급된 건만
-                    orderBy("createdAt", "desc")
-                );
+                const { data: expenses, error: expensesError } = await supabase
+                    .from("expense_requests")
+                    .select("*")
+                    .in("status", ["paid", "approved"])
+                    .gte("created_at", startDate.toISOString())
+                    .lte("created_at", endDate.toISOString())
+                    .order("created_at", { ascending: false });
 
-                const expensesSnapshot = await getDocs(expensesQuery);
-                const filteredExpenses = expensesSnapshot.docs.filter(doc => {
-                    const data = doc.data();
-                    const date = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
-                    return date >= startDate && date <= endDate;
-                });
+                if (expensesError) throw expensesError;
 
-                const expensesData = filteredExpenses.map(doc => {
-                    const data = doc.data();
+                const expensesData = (expenses || []).map(doc => {
                     return {
-                        "문서번호": data.requestNumber,
-                        "신청일자": formatDate(data.createdAt),
-                        "지점명": data.branchName || "",
-                        "신청자": data.requesterName || "",
-                        "제목": data.title || "",
-                        "총금액": data.totalAmount || 0,
-                        "상태": getStatusText(data.status),
-                        "지출항목": data.items?.map((i: any) => `${i.description}(${i.amount})`).join(", ") || ""
+                        "문서번호": doc.request_number,
+                        "신청일자": formatDate(doc.created_at),
+                        "지점명": doc.branch_name || "",
+                        "신청자": doc.requester_name || "",
+                        "제목": doc.title || "",
+                        "총금액": doc.total_amount || 0,
+                        "상태": getStatusText(doc.status),
+                        "지출항목": doc.items?.map((i: any) => `${i.description}(${i.amount})`).join(", ") || ""
                     };
                 });
 
@@ -171,7 +143,7 @@ export function YearEndExportDialog() {
     // 헬퍼 함수들
     const formatDate = (date: any) => {
         if (!date) return "";
-        const d = date.toDate ? date.toDate() : new Date(date);
+        const d = new Date(date);
         return format(d, "yyyy-MM-dd");
     };
 
@@ -196,11 +168,10 @@ export function YearEndExportDialog() {
         return map[method] || method;
     };
 
-    const aggregateMonthlySales = (docs: any[]) => {
+    const aggregateMonthlySales = (rows: any[]) => {
         const monthly: Record<string, number> = {};
-        docs.forEach(doc => {
-            const data = doc.data();
-            const date = data.orderDate?.toDate ? data.orderDate.toDate() : new Date(data.orderDate);
+        rows.forEach(data => {
+            const date = new Date(data.order_date);
             const monthKey = `${date.getMonth() + 1}월`;
 
             let amount = data.summary?.total || 0;
@@ -221,16 +192,15 @@ export function YearEndExportDialog() {
         return Object.entries(monthly).map(([month, sales]) => ({ "월": month, "매출액": sales }));
     };
 
-    const aggregateBranchSales = (docs: any[]) => {
+    const aggregateBranchSales = (rows: any[]) => {
         const branch: Record<string, number> = {};
-        docs.forEach(doc => {
-            const data = doc.data();
-            const originalBranchName = data.branchName || "미지정";
+        rows.forEach(data => {
+            const originalBranchName = data.branch_name || "미지정";
             const totalAmount = data.summary?.total || 0;
 
-            if (data.transferInfo?.isTransferred && (data.transferInfo.status === 'accepted' || data.transferInfo.status === 'completed')) {
-                const split = data.transferInfo.amountSplit || { orderBranch: 100, processBranch: 0 };
-                const processBranchName = data.transferInfo.processBranchName;
+            if (data.transfer_info?.isTransferred && (data.transfer_info.status === 'accepted' || data.transfer_info.status === 'completed')) {
+                const split = data.transfer_info.amount_split || { orderBranch: 100, processBranch: 0 };
+                const processBranchName = data.transfer_info.processBranchName;
 
                 // 발주지점 매출 가산
                 const orderBranchSales = Math.round(totalAmount * (split.orderBranch / 100));

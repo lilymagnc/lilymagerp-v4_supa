@@ -36,7 +36,6 @@ import {
 } from "lucide-react";
 import { useOutsourceOrders } from "@/hooks/use-outsource-orders";
 import { format, startOfDay, endOfDay, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
-import { Timestamp } from "firebase/firestore";
 import { OrderDetailDialog } from "../orders/components/order-detail-dialog";
 import {
     DropdownMenu,
@@ -76,7 +75,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const toLocalDate = (dateVal: any): Date => {
     if (!dateVal) return new Date();
-    if (dateVal instanceof Timestamp) return dateVal.toDate();
+    if (dateVal instanceof Date) return dateVal;
     if (typeof dateVal === 'string') return new Date(dateVal);
     if (dateVal && typeof dateVal === 'object' && dateVal.seconds) return new Date(dateVal.seconds * 1000);
     return new Date(dateVal);

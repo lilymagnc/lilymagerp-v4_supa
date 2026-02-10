@@ -1,10 +1,10 @@
 // 통합 저장소 관리 시스템
 
-import { uploadFile as uploadToFirebase, deleteFile as deleteFromFirebase } from './firebase-storage';
+import { uploadFile as uploadToSupabase, deleteFile as deleteFromSupabase } from './supabase-storage';
 import { uploadToCloudinary, deleteFromCloudinary, CloudinaryUploadResult } from './cloudinary-service';
 import { validateAndOptimizeImage } from './image-optimizer';
 
-export type StorageProvider = 'firebase' | 'cloudinary' | 'auto';
+export type StorageProvider = 'supabase' | 'cloudinary' | 'auto';
 
 export interface StorageConfig {
   provider: StorageProvider;
@@ -35,13 +35,13 @@ class StorageManager {
       return this.config.provider;
     }
 
-    // Firebase Storage 5GB 제한 고려
+    // 파일 크기에 따라 제공자 선택
     // 2MB 이상 파일은 Cloudinary 우선 고려
     if (fileSize > 2 * 1024 * 1024) {
       return 'cloudinary';
     }
 
-    return this.config.preferredProvider || 'firebase';
+    return this.config.preferredProvider || 'supabase';
   }
 
   async uploadFile(
@@ -50,6 +50,7 @@ class StorageManager {
     options: {
       tags?: string[];
       transformation?: string;
+      bucket?: string;
     } = {}
   ): Promise<UploadResult> {
     const originalSize = file.size;
@@ -71,8 +72,10 @@ class StorageManager {
       let publicId: string | undefined;
 
       switch (provider) {
-        case 'firebase':
-          url = await uploadToFirebase(processedFile, path);
+        case 'supabase':
+          // 기본 버킷명 설정 (필요에 따라 조정)
+          const bucket = options.bucket || 'general';
+          url = await uploadToSupabase(processedFile, bucket, path);
           break;
 
         case 'cloudinary':
@@ -102,8 +105,7 @@ class StorageManager {
 
       // Auto 모드에서 실패 시 다른 제공자로 재시도
       if (this.config.provider === 'auto') {
-        const fallbackProvider = provider === 'firebase' ? 'cloudinary' : 'firebase';
-
+        const fallbackProvider = provider === 'supabase' ? 'cloudinary' : 'supabase';
 
         try {
           const tempManager = new StorageManager({
@@ -121,7 +123,7 @@ class StorageManager {
     }
   }
 
-  async deleteFile(url: string, publicId?: string): Promise<void> {
+  async deleteFile(url: string, publicId?: string, bucket: string = 'general'): Promise<void> {
     try {
       if (url.includes('cloudinary.com')) {
         if (!publicId) {
@@ -138,7 +140,16 @@ class StorageManager {
           await deleteFromCloudinary(publicId);
         }
       } else {
-        await deleteFromFirebase(url);
+        // Supabase에서 삭제 (URL에서 경로 추출 logic 필요할 수 있음)
+        // 일단 URL에서 파일 경로를 추출하는 간단한 로직 적용
+        if (url.includes('storage/v1/object/public/')) {
+          const pathStart = url.indexOf('/public/') + 8;
+          const fullPath = url.substring(pathStart);
+          const firstSlashIndex = fullPath.indexOf('/');
+          const extractedBucket = fullPath.substring(0, firstSlashIndex);
+          const filePath = fullPath.substring(firstSlashIndex + 1);
+          await deleteFromSupabase(extractedBucket, filePath);
+        }
       }
     } catch (error) {
       console.error('파일 삭제 실패:', error);
@@ -148,13 +159,13 @@ class StorageManager {
 
   // 용량 사용량 체크
   async getStorageUsage(): Promise<{
-    firebase: { used: number; limit: number };
+    supabase: { used: number; limit: number };
     cloudinary: { used: number; limit: number };
   }> {
     // 실제로는 각 서비스 API를 통해 사용량을 조회해야 함
     // 여기서는 추정치 반환
     return {
-      firebase: { used: 0, limit: 5 * 1024 * 1024 * 1024 }, // 5GB
+      supabase: { used: 0, limit: 10 * 1024 * 1024 * 1024 }, // 10GB
       cloudinary: { used: 0, limit: 25 * 1024 * 1024 * 1024 }, // 25GB 대역폭
     };
   }
@@ -166,7 +177,7 @@ export const createStorageManager = (config?: Partial<StorageConfig>): StorageMa
     provider: 'auto',
     autoOptimize: true,
     maxFileSize: 10, // 10MB
-    preferredProvider: 'firebase',
+    preferredProvider: 'supabase',
   };
 
   return new StorageManager({ ...defaultConfig, ...config });
@@ -179,8 +190,9 @@ export const defaultStorageManager = createStorageManager();
 export const uploadWithOptimalStorage = (
   file: File,
   path: string,
-  options?: { tags?: string[]; transformation?: string }
+  options?: { tags?: string[]; transformation?: string; bucket?: string }
 ) => defaultStorageManager.uploadFile(file, path, options);
 
-export const deleteFromOptimalStorage = (url: string, publicId?: string) =>
-  defaultStorageManager.deleteFile(url, publicId);
+export const deleteFromOptimalStorage = (url: string, publicId?: string, bucket?: string) =>
+  defaultStorageManager.deleteFile(url, publicId, bucket);
+
