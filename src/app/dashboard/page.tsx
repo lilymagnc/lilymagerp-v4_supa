@@ -181,14 +181,17 @@ export default function DashboardPage() {
 
   // --- Auth & Role Logic (Early Exit/Memo) ---
   const isAdmin = useMemo(() => {
+    // 1순위: 이메일 기반 즉시 판정 (가장 강력함)
+    const userEmail = user?.email?.toLowerCase().trim();
+    if (userEmail === 'lilymag0301@gmail.com') return true;
+
+    // 2순위: 역할 기반 판정
     if (!user?.role) return false;
     const role = user.role.trim();
-    const email = user.email?.toLowerCase();
     return (
       (role as any) === '본사 관리자' ||
       (role as any) === 'admin' ||
-      (role as any) === 'hq_manager' ||
-      email === 'lilymag0301@gmail.com'
+      (role as any) === 'hq_manager'
     );
   }, [user?.role, user?.email]);
 
@@ -297,11 +300,13 @@ export default function DashboardPage() {
   }, [branches, isAdmin, userBranch]);
 
   const currentFilteredBranch = useMemo(() => {
+    // 관리자이거나 특정 이메일인 경우 필터가 '전체'면 null(전체조회) 반환
     if (isAdmin) {
       return selectedBranchFilter === '전체' ? null : selectedBranchFilter;
-    } else {
-      return userBranch;
     }
+    // 일반 사용자인 경우 소속 지점이 '미정'이면 전체가 아닌 자신의 실제 지점 기반 필터링 (없으면 null)
+    if (userBranch === '미정') return null;
+    return userBranch;
   }, [isAdmin, selectedBranchFilter, userBranch]);
 
   const todayAndTomorrowEvents = useMemo(() => {
@@ -388,15 +393,22 @@ export default function DashboardPage() {
           let productNames = '상품 정보 없음';
           const items = row.items || [];
           if (Array.isArray(items) && items.length > 0) {
-            productNames = items.slice(0, 2).map((item: any) => item.name || item.productName || '상품명').join(', ');
+            productNames = items.slice(0, 2).map((item: any) => item.name || item.productName || item.product_name || '상품명').join(', ');
             if (items.length > 2) productNames += ` 외 ${items.length - 2}건`;
           }
+
+          const ordererName = row.orderer?.name || row.orderer_name || '이름 없음';
+
           return {
             ...row,
             id: row.id,
             orderDate: parseDateUtil(row.order_date),
-            total: row.summary?.total || 0,
-            productNames
+            total: row.summary?.total || row.total_amount || 0,
+            productNames,
+            orderer: {
+              ...row.orderer,
+              name: ordererName
+            }
           } as Order;
         });
       };

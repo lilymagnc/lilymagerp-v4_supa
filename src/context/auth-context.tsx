@@ -111,14 +111,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return newUser;
 
     } catch (error) {
-      console.warn("[Auth] Background role fetch failed/timed out. Keeping existing state.", error);
-      // 에러 발생 시, 호출한 쪽에서 기존 캐시된 데이터를 계속 쓰거나 기본값을 쓰게 됨.
-      // 여기서는 최소한의 정보만 리턴
+      console.warn("[Auth] Background role fetch failed/timed out. Falling back to email check.", error);
+
+      // 에러 발생 시에는 이메일 기반 권한 판정이 최우선으로 된다.
+      const role = email.toLowerCase() === 'lilymag0301@gmail.com' ? '본사 관리자' : '직원';
+
       return {
         id: userId,
         email: email,
-        role: '직원',
-        franchise: '미정'
+        role: role as any,
+        franchise: role === '본사 관리자' ? '본사' : '미정'
       };
     }
   }, []);
