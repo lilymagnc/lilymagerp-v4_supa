@@ -86,14 +86,26 @@ export default function OrdersPage() {
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   // 사용자 권한에 따른 지점 필터링
-  const isAdmin = user?.role === '본사 관리자';
+  const isAdmin = useMemo(() => {
+    const email = user?.email?.toLowerCase().trim();
+    if (email === 'lilymag0301@gmail.com') return true; // Robust Admin Check (Email-first for instant recovery)
+    return (
+      (user?.role as any) === '본사 관리자' ||
+      (user?.role as any) === 'admin' ||
+      (user?.role as any) === 'hq_manager'
+    );
+  }, [user?.role, user?.email]);
+
   const userBranch = user?.franchise;
+
   // 사용자가 볼 수 있는 지점 목록
   const availableBranches = useMemo(() => {
     if (isAdmin) {
       return branches; // 관리자는 모든 지점
     } else {
-      return branches.filter(branch => branch.name === userBranch); // 직원은 소속 지점만
+      // 권한 정보가 올 때까지 기다리거나 본사 소속이면 전체 노출
+      if (!userBranch || userBranch === '미정') return [];
+      return branches.filter(branch => branch.name === userBranch);
     }
   }, [branches, isAdmin, userBranch]);
   // 직원의 경우 자동으로 소속 지점으로 필터링

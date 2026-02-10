@@ -225,15 +225,17 @@ export function useOrders(initialFetch = true) {
         .select('*')
         .or(`pickup_info->>date.gte.${startFilterDate},delivery_info->>date.gte.${startFilterDate},order_date.gte.${startFilterDate}`);
 
-      // Branch filtering
+      // Robust Admin Check (Email-first for instant recovery)
+      const userRefData = userRef.current;
       const isAdmin =
-        (userRef.current?.role as any) === '본사 관리자' ||
-        (userRef.current?.role as any) === 'admin' ||
-        (userRef.current?.role as any) === 'hq_manager' ||
-        userRef.current?.email?.toLowerCase() === 'lilymag0301@gmail.com';
+        userRefData?.email?.toLowerCase() === 'lilymag0301@gmail.com' ||
+        (userRefData?.role as any) === '본사 관리자' ||
+        (userRefData?.role as any) === 'admin' ||
+        (userRefData?.role as any) === 'hq_manager';
 
-      if (!isAdmin && userRef.current?.branchName && userRef.current?.branchName !== '미정') {
-        query = query.or(`branch_name.eq.${userRef.current.branchName},transfer_info->>processBranchName.eq.${userRef.current.branchName}`);
+      if (!isAdmin && userRefData?.franchise && userRefData?.franchise !== '미정') {
+        const bName = userRefData.franchise;
+        query = query.or(`branch_name.eq.${bName},transfer_info->>processBranchName.eq.${bName}`);
       }
 
       const { data, error } = await query
@@ -326,12 +328,13 @@ export function useOrders(initialFetch = true) {
       const pageSize = 1000;
       let hasMore = true;
 
-      const isAdmin =
-        (userRef.current?.role as any) === '본사 관리자' ||
-        (userRef.current?.role as any) === 'admin' ||
-        (userRef.current?.role as any) === 'hq_manager' ||
-        userRef.current?.email?.toLowerCase() === 'lilymag0301@gmail.com';
-      const branchName = userRef.current?.branchName;
+      const u = userRef.current;
+      const isAdmin = u?.email?.toLowerCase() === 'lilymag0301@gmail.com' ||
+        (u?.role as any) === '본사 관리자' ||
+        (u?.role as any) === 'admin' ||
+        (u?.role as any) === 'hq_manager';
+
+      const myBranch = u?.franchise || u?.branchName;
 
       while (hasMore) {
         if (signal.aborted) throw new Error('Aborted');
@@ -342,8 +345,8 @@ export function useOrders(initialFetch = true) {
           .or(`order_date.gte.${startDate},payment->>completedAt.gte.${startDate},transfer_info->>acceptedAt.gte.${startDate}`);
 
         // Server-side branch filter
-        if (!isAdmin && branchName && branchName !== '미정') {
-          query = query.or(`branch_name.eq.${branchName},transfer_info->>processBranchName.eq.${branchName}`);
+        if (!isAdmin && myBranch && myBranch !== '미정') {
+          query = query.or(`branch_name.eq.${myBranch},transfer_info->>processBranchName.eq.${myBranch}`);
         }
 
         const { data, error } = await query
@@ -396,12 +399,13 @@ export function useOrders(initialFetch = true) {
       const pageSize = 1000;
       let hasMore = true;
 
-      const isAdmin =
-        (userRef.current?.role as any) === '본사 관리자' ||
-        (userRef.current?.role as any) === 'admin' ||
-        (userRef.current?.role as any) === 'hq_manager' ||
-        userRef.current?.email?.toLowerCase() === 'lilymag0301@gmail.com';
-      const branchName = userRef.current?.branchName;
+      const u = userRef.current;
+      const isAdmin = u?.email?.toLowerCase() === 'lilymag0301@gmail.com' ||
+        (u?.role as any) === '본사 관리자' ||
+        (u?.role as any) === 'admin' ||
+        (u?.role as any) === 'hq_manager';
+
+      const myBranch = u?.franchise || u?.branchName;
 
       while (hasMore) {
         const from = page * pageSize;
@@ -414,8 +418,8 @@ export function useOrders(initialFetch = true) {
           .lte('order_date', rangeEnd);
 
         // Server-side branch filter
-        if (!isAdmin && branchName && branchName !== '미정') {
-          query = query.or(`branch_name.eq.${branchName},transfer_info->>processBranchName.eq.${branchName}`);
+        if (!isAdmin && myBranch && myBranch !== '미정') {
+          query = query.or(`branch_name.eq.${myBranch},transfer_info->>processBranchName.eq.${myBranch}`);
         }
 
         const { data, error } = await query
@@ -526,15 +530,16 @@ export function useOrders(initialFetch = true) {
         .or(`order_date.gte.${effectiveStart},payment->>completedAt.gte.${effectiveStart},transfer_info->>acceptedAt.gte.${effectiveStart}`)
         .filter('order_date', 'lte', end);
 
-      const isAdmin =
-        (userRef.current?.role as any) === '본사 관리자' ||
-        (userRef.current?.role as any) === 'admin' ||
-        (userRef.current?.role as any) === 'hq_manager' ||
-        userRef.current?.email?.toLowerCase() === 'lilymag0301@gmail.com';
-      const branchName = userRef.current?.branchName;
+      const u = userRef.current;
+      const isAdmin = u?.email?.toLowerCase() === 'lilymag0301@gmail.com' ||
+        (u?.role as any) === '본사 관리자' ||
+        (u?.role as any) === 'admin' ||
+        (u?.role as any) === 'hq_manager';
 
-      if (!isAdmin && branchName && branchName !== '미정') {
-        query = query.or(`branch_name.eq.${branchName},transfer_info->>processBranchName.eq.${branchName}`);
+      const myBranch = u?.franchise || u?.branchName;
+
+      if (!isAdmin && myBranch && myBranch !== '미정') {
+        query = query.or(`branch_name.eq.${myBranch},transfer_info->>processBranchName.eq.${myBranch}`);
       }
 
       const { data, error } = await query
@@ -590,19 +595,20 @@ export function useOrders(initialFetch = true) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
         (payload) => {
-          const isAdmin =
-            (userRef.current?.role as any) === '본사 관리자' ||
-            (userRef.current?.role as any) === 'admin' ||
-            (userRef.current?.role as any) === 'hq_manager' ||
-            userRef.current?.email?.toLowerCase() === 'lilymag0301@gmail.com';
-          const myBranch = userRef.current?.branchName;
+          const u = userRef.current;
+          const isAdmin = u?.email?.toLowerCase() === 'lilymag0301@gmail.com' ||
+            (u?.role as any) === '본사 관리자' ||
+            (u?.role as any) === 'admin' ||
+            (u?.role as any) === 'hq_manager';
+
+          const myBranchName = u?.franchise || u?.branchName;
 
           // 지점 권한 필터링
-          if (!isAdmin && myBranch && myBranch !== '미정') {
+          if (!isAdmin && myBranchName && myBranchName !== '미정') {
             const row = payload.new as any || payload.old as any;
             if (row) {
-              const isMine = row.branch_name === myBranch ||
-                row.transfer_info?.processBranchName === myBranch;
+              const isMine = row.branch_name === myBranchName ||
+                row.transfer_info?.processBranchName === myBranchName;
               if (!isMine) return;
             }
           }
