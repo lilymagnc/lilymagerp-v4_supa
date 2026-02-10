@@ -6,6 +6,7 @@ import { useToast } from './use-toast';
 import { useAuth } from './use-auth';
 import { subDays, startOfDay, endOfDay } from 'date-fns';
 import { isSettled, isCanceled } from '@/lib/order-utils';
+import { calculateGrade } from '@/lib/customer-utils';
 import { useOrdersContext } from '@/context/orders-context';
 
 // Simplified version for the form
@@ -187,7 +188,7 @@ function useOrdersLocal(initialFetch = true) {
   // Ref for debouncing realtime updates
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const mapRowToOrder = (row: any): Order => ({
+  const mapRowToOrder = useCallback((row: any): Order => ({
     id: row.id,
     branchId: row.branch_id,
     branchName: row.branch_name,
@@ -202,20 +203,15 @@ function useOrdersLocal(initialFetch = true) {
     orderType: row.order_type || row.extra_data?.order_type || "etc",
     receiptType: row.receipt_type,
     payment: row.payment || {},
-    // [Data Mapping Correctness]
-    // 1. Generate productNames string from items array if not present
     productNames: row.product_names || row.productNames || (row.items && row.items.length > 0 ? row.items.map((i: any) => i.name).join(', ') : '상품 미지정'),
-
-    // 2. Normalize Time Strings logic
     pickupInfo: row.pickup_info ? {
       ...row.pickup_info,
-      time: row.pickup_info.time ? row.pickup_info.time.substring(0, 5) : '' // "09:00:00" -> "09:00"
+      time: row.pickup_info.time ? row.pickup_info.time.substring(0, 5) : ''
     } : null,
     deliveryInfo: row.delivery_info ? {
       ...row.delivery_info,
-      time: row.delivery_info.time ? row.delivery_info.time.substring(0, 5) : '' // "14:30:00" -> "14:30"
+      time: row.delivery_info.time ? row.delivery_info.time.substring(0, 5) : ''
     } : null,
-
     actualDeliveryCost: row.actual_delivery_cost ?? row.extra_data?.actualDeliveryCost ?? row.extra_data?.actual_delivery_cost,
     actualDeliveryCostCash: row.actual_delivery_cost_cash ?? row.extra_data?.actualDeliveryCostCash ?? row.extra_data?.actual_delivery_cost_cash,
     deliveryCostStatus: row.delivery_cost_status ?? row.extra_data?.deliveryCostStatus ?? row.extra_data?.delivery_cost_status,
@@ -241,7 +237,7 @@ function useOrdersLocal(initialFetch = true) {
     transferInfo: row.transfer_info || row.extra_data?.transfer_info,
     outsourceInfo: row.outsource_info || row.extra_data?.outsource_info,
     extraData: row.extra_data
-  });
+  }), []);
 
   // [Stability Fix] Use ref to track if we have orders, avoiding dependency loops
   const hasOrdersRef = useRef(false);
@@ -520,30 +516,46 @@ function useOrdersLocal(initialFetch = true) {
     }
   }, []); // Removed orders.length dependency
 
-  const fetchOrdersByCustomer = useCallback(async (customerId: string, startDate?: Date, endDate?: Date) => {
+  const fetchOrdersByCustomer = useCallback(async (customerId: string, options?: { contact?: string }) => {
     try {
       setLoading(true);
-      let query = supabase
+
+      // 1. ID로 검색
+      const { data: idData, error: idError } = await supabase
         .from('orders')
         .select('*')
-        .eq('orderer->>id', customerId)
-        .order('order_date', { ascending: false });
+        .eq('orderer->>id', customerId);
 
-      if (startDate) query = query.gte('order_date', startOfDay(startDate).toISOString());
-      if (endDate) query = query.lte('order_date', endOfDay(endDate).toISOString());
+      if (idError) throw idError;
 
-      const { data, error } = await query;
+      // 2. 연락처로 검색
+      let contactData: any[] = [];
+      if (options?.contact) {
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('orderer->>contact', options.contact);
+        if (!error && data) contactData = data;
+      }
 
-      if (error) throw error;
-      return (data || []).map(mapRowToOrder);
+      // 3. 병합 및 중복 제거 (order_number 또는 id 기준)
+      const combined = [...(idData || []), ...contactData];
+      const uniqueOrders = new Map();
+      combined.forEach(order => {
+        uniqueOrders.set(order.id, order);
+      });
+
+      const finalData = Array.from(uniqueOrders.values())
+        .sort((a, b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime());
+
+      return finalData.map(mapRowToOrder);
     } catch (error) {
-      // console.error('고객 주문 조회 오류:', error);
-      toast({ variant: 'destructive', title: '조회 실패', description: '고객 주문 내역을 불러오지 못했습니다.' });
+      console.error('고객 주문 조회 오류:', error);
       return [];
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [mapRowToOrder]);
 
   const fetchOrdersForSettlement = useCallback(async (targetDateStr: string, startDateStr?: string) => {
     try {
@@ -1187,6 +1199,24 @@ function useOrdersLocal(initialFetch = true) {
 const registerCustomerFromOrder = async (orderData: OrderData) => {
   try {
     const { data: customer } = await supabase.from('customers').select('*').eq('contact', orderData.orderer.contact).eq('is_deleted', false).maybeSingle();
+
+    // 전체 주문 내역을 조회하여 정밀한 등급 산정
+    const { data: orderHistory } = await supabase
+      .from('orders')
+      .select('order_date, summary, status')
+      .eq('orderer->>contact', orderData.orderer.contact);
+
+    const currentOrderForCalc = {
+      orderDate: new Date().toISOString(),
+      summary: orderData.summary,
+      status: 'processing'
+    };
+
+    const calculatedGrade = calculateGrade([...(orderHistory || []), currentOrderForCalc]);
+
+    const pointsEarned = Math.floor(orderData.summary.total * 0.02);
+    const pointsUsed = orderData.summary.pointsUsed || 0;
+
     const customerPayload = {
       name: orderData.orderer.name,
       contact: orderData.orderer.contact,
@@ -1194,10 +1224,10 @@ const registerCustomerFromOrder = async (orderData: OrderData) => {
       company_name: orderData.orderer.company || '',
       type: orderData.orderer.company ? 'company' : 'personal',
       branch: orderData.branchName,
-      grade: '신규',
-      total_spent: orderData.summary.total,
-      order_count: 1,
-      points: Math.floor(orderData.summary.total * 0.02) - (orderData.summary.pointsUsed || 0),
+      grade: calculatedGrade, // 자동 산정된 등급 적용
+      total_spent: (customer?.total_spent || 0) + orderData.summary.total,
+      order_count: (customer?.order_count || 0) + 1,
+      points: (customer?.points || 0) + pointsEarned - pointsUsed,
       last_order_date: new Date().toISOString(),
       is_deleted: false,
       primary_branch: orderData.branchName,
@@ -1205,13 +1235,7 @@ const registerCustomerFromOrder = async (orderData: OrderData) => {
     };
 
     if (customer) {
-      await supabase.from('customers').update({
-        ...customerPayload,
-        total_spent: (customer.total_spent || 0) + orderData.summary.total,
-        order_count: (customer.order_count || 0) + 1,
-        points: (customer.points || 0) - (orderData.summary.pointsUsed || 0) + Math.floor(orderData.summary.total * 0.02),
-        grade: customer.grade || '신규'
-      }).eq('id', customer.id);
+      await supabase.from('customers').update(customerPayload).eq('id', customer.id);
     } else {
       await supabase.from('customers').insert([{ ...customerPayload, id: crypto.randomUUID(), created_at: new Date().toISOString() }]);
     }

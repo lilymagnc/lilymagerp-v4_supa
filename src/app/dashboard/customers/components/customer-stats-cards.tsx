@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Trophy, MapPin, TrendingUp, Users } from "lucide-react";
 import { Customer } from "@/hooks/use-customers";
 import { useOrders } from "@/hooks/use-orders";
+import { useAuth } from "@/hooks/use-auth";
 import { useMemo } from "react";
 import { parseDate } from "@/lib/date-utils";
 
@@ -15,12 +16,21 @@ interface CustomerStatsCardsProps {
 
 export function CustomerStatsCards({ customers, selectedBranch }: CustomerStatsCardsProps) {
   const { orders } = useOrders();
+  const { user } = useAuth();
 
-  // 지점별 포인트 사용 통계 계산
-  const branchPointStats = useMemo(() => {
+  const isHeadOfficeAdmin = user?.role === '본사 관리자';
+  const myBranch = user?.franchise || user?.branchName;
+  const currentTargetBranch = selectedBranch && selectedBranch !== "all" ? selectedBranch : (!isHeadOfficeAdmin ? myBranch : null);
+
+  // 지점별 포인트 사용 통계 및 등급 분포 계산
+  const { branchPointStats, gradeStats } = useMemo(() => {
     const stats: Record<string, { totalPointsUsed: number; totalCustomers: number; topCustomer: Customer | null }> = {};
+    const grades: Record<string, number> = { 'VVIP': 0, 'VIP': 0, '일반': 0, '신규': 0 };
 
     customers.forEach(customer => {
+      const grade = customer.grade || '신규';
+      grades[grade] = (grades[grade] || 0) + 1;
+
       const branches = customer.branches || {};
       const primaryBranch = customer.primaryBranch || customer.branch;
 
@@ -55,12 +65,21 @@ export function CustomerStatsCards({ customers, selectedBranch }: CustomerStatsC
       });
     });
 
-    return stats;
+    return { branchPointStats: stats, gradeStats: grades };
   }, [customers, orders]);
+
+  // 해당 지점 고객 필터링 (통계용)
+  const branchCustomers = useMemo(() => {
+    if (!currentTargetBranch) return [];
+    return customers.filter(c =>
+      c.branch === currentTargetBranch || (c.branches && c.branches[currentTargetBranch])
+    );
+  }, [customers, currentTargetBranch]);
 
   // TOP 10 고객 리스트 (포인트 보유량 기준)
   const top10Customers = useMemo(() => {
-    return [...customers]
+    const list = currentTargetBranch ? branchCustomers : customers;
+    return [...list]
       .sort((a, b) => (b.points || 0) - (a.points || 0))
       .slice(0, 10)
       .map((customer, index) => {
@@ -104,9 +123,16 @@ export function CustomerStatsCards({ customers, selectedBranch }: CustomerStatsC
           <Users className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{customers.length}명</div>
+          <div className="text-2xl font-bold">
+            {customers.length.toLocaleString()}명
+            {currentTargetBranch && (
+              <span className="text-sm font-normal text-muted-foreground ml-2">
+                (지점: {branchCustomers.length}명)
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
-            등록된 총 고객 수
+            {currentTargetBranch ? `${currentTargetBranch} 및 전체 고객 수` : "등록된 총 고객 수"}
           </p>
         </CardContent>
       </Card>
@@ -114,66 +140,76 @@ export function CustomerStatsCards({ customers, selectedBranch }: CustomerStatsC
       {/* 총 보유 포인트 */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">총 보유 포인트</CardTitle>
+          <CardTitle className="text-sm font-medium">총 포인트</CardTitle>
           <TrendingUp className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">
             {customers.reduce((total, customer) => total + (customer.points || 0), 0).toLocaleString()}P
+            {currentTargetBranch && (
+              <span className="text-sm font-normal text-muted-foreground ml-2">
+                ({branchCustomers.reduce((total, c) => total + (c.points || 0), 0).toLocaleString()}P)
+              </span>
+            )}
           </div>
           <p className="text-xs text-muted-foreground">
-            모든 고객의 포인트 합계
+            {currentTargetBranch ? `${currentTargetBranch} 및 전체 포인트` : "모든 고객의 포인트 합계"}
           </p>
         </CardContent>
       </Card>
 
-      {/* 지점별 통계 */}
-      <Card className="md:col-span-2">
-        <CardHeader>
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <MapPin className="h-4 w-4" />
-            지점별 고객 현황
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {Object.entries(displayBranchStats).slice(0, 4).map(([branchName, stats]) => (
-              <div key={branchName} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">
-                    {branchName}
-                  </Badge>
-                  <span className="text-sm text-muted-foreground">
-                    {stats?.totalCustomers || 0}명
-                  </span>
+      {/* 등급별 현황 및 지점별 통계는 본사 관리자에게만 노출 */}
+      {isHeadOfficeAdmin && !selectedBranch && (
+        <>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">등급별 현황</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col items-center flex-1 min-w-[60px] p-2 bg-primary/5 rounded-lg border border-primary/20">
+                  <span className="text-[10px] text-primary font-bold">VVIP</span>
+                  <span className="text-lg font-bold">{gradeStats['VVIP']}</span>
                 </div>
-                <div className="text-right">
-                  <div className="text-sm font-medium">
-                    {(stats?.totalPointsUsed || 0).toLocaleString()}P 사용
-                  </div>
-                  {stats?.topCustomer && (
-                    <div className="text-xs text-muted-foreground">
-                      최고: {stats.topCustomer.name} ({(stats.topCustomer.points || 0).toLocaleString()}P)
-                    </div>
-                  )}
+                <div className="flex flex-col items-center flex-1 min-w-[60px] p-2 bg-orange-500/5 rounded-lg border border-orange-500/20">
+                  <span className="text-[10px] text-orange-600 font-bold">VIP</span>
+                  <span className="text-lg font-bold">{gradeStats['VIP']}</span>
+                </div>
+                <div className="flex flex-col items-center flex-1 min-w-[60px] p-2 bg-blue-500/5 rounded-lg border border-blue-500/20">
+                  <span className="text-[10px] text-blue-600 font-bold">일반</span>
+                  <span className="text-lg font-bold">{gradeStats['일반']}</span>
                 </div>
               </div>
-            ))}
-            {Object.keys(displayBranchStats).length > 4 && (
-              <p className="text-xs text-muted-foreground text-center">
-                외 {Object.keys(displayBranchStats).length - 4}개 지점
-              </p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+
+          <Card className="md:col-span-2 lg:col-span-1">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                지점별 현황
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 gap-1">
+                {Object.entries(displayBranchStats).slice(0, 3).map(([branchName, stats]) => (
+                  <div key={branchName} className="flex items-center justify-between text-xs py-1 border-b last:border-0">
+                    <span className="font-medium truncate max-w-[80px]">{branchName}</span>
+                    <span className="text-muted-foreground">{stats?.totalCustomers || 0}명</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* TOP 10 고객 */}
       <Card className="md:col-span-2 lg:col-span-4">
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Trophy className="h-4 w-4" />
-            TOP 10 고객 (포인트 보유량)
+            TOP 10 고객 (포인트 보유량 {currentTargetBranch ? `- ${currentTargetBranch}` : ""})
           </CardTitle>
         </CardHeader>
         <CardContent>

@@ -15,6 +15,7 @@ import { format } from "date-fns"
 import { ko } from "date-fns/locale"
 import { Customer, useCustomers } from "@/hooks/use-customers"
 import { useOrders } from "@/hooks/use-orders"
+import { calculateGrade } from "@/lib/customer-utils"
 import { useState, useEffect } from "react"
 import { PointEditDialog } from "./point-edit-dialog"
 import { PointHistoryDialog } from "./point-history-dialog"
@@ -216,62 +217,45 @@ export function CustomerDetailDialog({ isOpen, onOpenChange, customer, onCustome
       if (isOpen && currentCustomer) {
         setLoadingOrders(true);
         try {
-          // fetchOrdersByCustomer는 내부적으로 name/contact 매칭보다는 customerId(orderer->>id) 매칭에 최적화되어 있을 수 있음
-          // 하지만 하위 호환성을 위해 이름/연락처로도 조회할 수 있는 로직이 필요할 수 있음
-          const results = await fetchOrdersByCustomer(currentCustomer.id);
+          // 훅에서 제공하는 통합 검색 기능 활용 (ID + 연락처)
+          const results = await fetchOrdersByCustomer(currentCustomer.id, {
+            contact: currentCustomer.contact
+          });
 
-          // 만약 ID로 검색했는데 결과가 없다면 (과거 이관 데이터 등), 이름과 연락처로 다시 한번 시도
-          if (results.length === 0) {
-            const { data: nameContactResults, error } = await supabase
-              .from('orders')
-              .select('*')
-              .or(`orderer->>name.eq.${currentCustomer.name},orderer->>contact.eq.${currentCustomer.contact}`)
-              .order('order_date', { ascending: false });
+          setCustomerOrders(results);
 
-            if (!error && nameContactResults) {
-              // 수동 필터링 (정확한 매칭을 위해)
-              const matched = nameContactResults.filter(order => {
-                const nameMatch = order.orderer?.name === currentCustomer.name;
-                const contactMatch = order.orderer?.contact === currentCustomer.contact;
-                const normalizedOrderContact = typeof order.orderer?.contact === 'string' ? order.orderer.contact.replace(/[-]/g, '') : '';
-                const normalizedCustomerContact = typeof currentCustomer.contact === 'string' ? currentCustomer.contact.replace(/[-]/g, '') : '';
-                return nameMatch && (contactMatch || normalizedOrderContact === normalizedCustomerContact);
-              });
-
-              // 훅에서 제공하는 mapRowToOrder가 여기에 선언되어 있지 않으므로 수동 매핑하거나 
-              // 훅의 로직을 활용해야 함. 여기서는 이미 가져온 데이터를 훅의 orders와 동일한 포맷으로 변환해야 함.
-              // useOrders의 결과값과 형식을 맞추기 위해 results를 사용
-              setCustomerOrders(matched.map(row => ({
-                id: row.id,
-                orderNumber: row.order_number,
-                status: row.status,
-                receiptType: row.receipt_type,
-                branchId: row.branch_id,
-                branchName: row.branch_name,
-                orderDate: row.order_date,
-                orderer: row.orderer,
-                deliveryInfo: row.delivery_info,
-                pickupInfo: row.pickup_info,
-                summary: row.summary,
-                payment: row.payment,
-                items: row.items,
-                memo: row.memo,
-                transferInfo: row.transfer_info,
-                extraData: row.extra_data,
-                createdAt: row.created_at,
-                updatedAt: row.updated_at,
-                completedAt: row.completed_at,
-                completedBy: row.completed_by
-              })));
-            }
-          } else {
-            setCustomerOrders(results);
+          // 등급 재산정 및 업데이트
+          if (results.length > 0) {
+            await updateGradeIfChanged(results);
           }
         } catch (error) {
           console.error('Error fetching customer orders:', error);
           setCustomerOrders([]);
         } finally {
           setLoadingOrders(false);
+        }
+      }
+    };
+
+    const updateGradeIfChanged = async (ordersArray: any[]) => {
+      if (!currentCustomer) return;
+
+      const newGrade = calculateGrade(ordersArray);
+      if (newGrade !== currentCustomer.grade) {
+        try {
+          const { error } = await supabase
+            .from('customers')
+            .update({ grade: newGrade, updated_at: new Date().toISOString() })
+            .eq('id', currentCustomer.id);
+
+          if (!error) {
+            // 로컬 상태 업데이트
+            const updated = { ...currentCustomer, grade: newGrade };
+            setCurrentCustomer(updated);
+            if (onCustomerUpdate) onCustomerUpdate(updated);
+          }
+        } catch (e) {
+          console.error('Grade update error:', e);
         }
       }
     };

@@ -13,6 +13,7 @@ import { CustomerForm, CustomerFormValues } from "./components/customer-form";
 import { CustomerTable } from "./components/customer-table";
 import { CustomerDetails } from "./components/customer-details";
 import { CustomerDetailDialog } from "./components/customer-detail-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatementDialog } from "./components/statement-dialog";
 import { CustomerStatsCards } from "./components/customer-stats-cards";
 import { ImportButton } from "@/components/import-button";
@@ -22,6 +23,9 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { downloadXLSX } from "@/lib/utils";
 import { format } from "date-fns";
+import { calculateGrade } from "@/lib/customer-utils";
+import { isCanceled } from "@/lib/order-utils";
+import { supabase } from "@/lib/supabase";
 export default function CustomersPage() {
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -32,11 +36,13 @@ export default function CustomersPage() {
     const [selectedBranch, setSelectedBranch] = useState("all");
     const [selectedType, setSelectedType] = useState("all");
     const [selectedGrade, setSelectedGrade] = useState("all");
+    const [activeTab, setActiveTab] = useState("all");
     const { customers, loading, addCustomer, updateCustomer, deleteCustomer, bulkAddCustomers } = useCustomers();
     const { branches } = useBranches();
     const { user } = useAuth();
     const { toast } = useToast();
-    const isHeadOfficeAdmin = user?.role === '본사 관리자';
+    const isHeadOfficeAdmin = user?.role === '본사 관리자' || user?.email?.toLowerCase() === 'lilymag0301@gmail.com';
+    const canSyncGrades = isHeadOfficeAdmin || user?.role === '가맹점 관리자' || (user?.role as any) === 'admin';
     const userBranch = user?.franchise;
     const customerGrades = useMemo(() => [...new Set(customers.map(c => c.grade || "신규"))], [customers]);
     const filteredCustomers = useMemo(() => {
@@ -70,8 +76,20 @@ export default function CustomersPage() {
         if (selectedGrade !== "all") {
             filtered = filtered.filter(customer => (customer.grade || "신규") === selectedGrade);
         }
+
+        // 탭에 따른 필터링 (activeTab)
+        if (activeTab === "vvip") {
+            filtered = filtered.filter(customer => (customer.grade === "VVIP"));
+        } else if (activeTab === "vip") {
+            filtered = filtered.filter(customer => (customer.grade === "VIP"));
+        } else if (activeTab === "normal") {
+            filtered = filtered.filter(customer => (customer.grade === "일반"));
+        } else if (activeTab === "new") {
+            filtered = filtered.filter(customer => (customer.grade === "신규" || !customer.grade));
+        }
+
         return filtered;
-    }, [customers, searchTerm, selectedBranch, selectedType, selectedGrade, isHeadOfficeAdmin, userBranch]);
+    }, [customers, searchTerm, selectedBranch, selectedType, selectedGrade, isHeadOfficeAdmin, userBranch, activeTab]);
     const handleAdd = () => {
         setSelectedCustomer(null);
         setIsFormOpen(true);
@@ -159,6 +177,122 @@ export default function CustomersPage() {
         setSelectedCustomer(updatedCustomer);
     };
 
+    // 전 고객 등급 및 주문 통계 일괄 동기화 (본사 관리자용)
+    const [isSyncing, setIsSyncing] = useState(false);
+    const handleSyncGrades = async () => {
+        if (!confirm("모든 고객의 등급, 주문 횟수, 총 구매액을 주문 내역 기반으로 정밀 재산정하시겠습니까?")) return;
+
+        setIsSyncing(true);
+        try {
+            // 1. 모든 주문 데이터 가져오기 (페이지네이션으로 전체 누락 없이 로드)
+            let allOrders: any[] = [];
+            let page = 0;
+            const pageSize = 1000;
+            let hasMore = true;
+
+            while (hasMore) {
+                const { data, error } = await supabase
+                    .from('orders')
+                    .select('id, order_date, summary, status, orderer')
+                    .range(page * pageSize, (page + 1) * pageSize - 1);
+
+                if (error) throw error;
+                if (data && data.length > 0) {
+                    allOrders = [...allOrders, ...data];
+                    if (data.length < pageSize) hasMore = false;
+                    else page++;
+                } else {
+                    hasMore = false;
+                }
+                if (allOrders.length > 20000) break; // 안전 브레이크
+            }
+
+            // 2. 고객 매칭을 위한 주문 데이터 맵 생성 (연락처 정규화 기준)
+            const ordersByContact = new Map<string, any[]>();
+            const ordersById = new Map<string, any[]>();
+
+            allOrders?.forEach(order => {
+                if (isCanceled(order)) return;
+
+                const contact = String(order.orderer?.contact || '').replace(/[^0-9]/g, '');
+                const id = order.orderer?.id;
+
+                if (contact) {
+                    if (!ordersByContact.has(contact)) ordersByContact.set(contact, []);
+                    ordersByContact.get(contact)?.push(order);
+                }
+                if (id) {
+                    if (!ordersById.has(id)) ordersById.set(id, []);
+                    ordersById.get(id)?.push(order);
+                }
+            });
+
+            let updatedCount = 0;
+            const updatePromises = [];
+
+            // 3. 전체 고객 순회하며 보정
+            for (const customer of customers) {
+                const normContact = String(customer.contact || '').replace(/[^0-9]/g, '');
+
+                // ID 매칭 주문 + 연락처 매칭 주문 합산 (중복 제거)
+                const idMatches = ordersById.get(customer.id) || [];
+                const contactMatches = normContact ? (ordersByContact.get(normContact) || []) : [];
+
+                const uniqueIdSet = new Set();
+                const combinedOrders: any[] = [];
+
+                [...idMatches, ...contactMatches].forEach(o => {
+                    if (!uniqueIdSet.has(o.id)) {
+                        uniqueIdSet.add(o.id);
+                        combinedOrders.push(o);
+                    }
+                });
+
+                const newGrade = calculateGrade(combinedOrders);
+                const actualOrderCount = combinedOrders.length;
+                const actualTotalSpent = combinedOrders.reduce((sum, o) => sum + (o.summary?.total || 0), 0);
+
+                // 정보가 하나라도 다르면 업데이트
+                if (
+                    newGrade !== customer.grade ||
+                    actualOrderCount !== customer.orderCount ||
+                    Math.abs(actualTotalSpent - (customer.totalSpent || 0)) > 1
+                ) {
+                    updatePromises.push(
+                        supabase
+                            .from('customers')
+                            .update({
+                                grade: newGrade,
+                                order_count: actualOrderCount,
+                                total_spent: actualTotalSpent,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', customer.id)
+                    );
+                    updatedCount++;
+                }
+
+                // 너무 많은 프로미스가 쌓이지 않도록 배치 처리 (10개씩)
+                if (updatePromises.length >= 10) {
+                    await Promise.all(updatePromises);
+                    updatePromises.length = 0;
+                }
+            }
+
+            if (updatePromises.length > 0) {
+                await Promise.all(updatePromises);
+            }
+
+            toast({ title: "동기화 완료", description: `${updatedCount}명의 고객 데이터가 정정되었습니다.` });
+            window.location.reload();
+        } catch (error) {
+            console.error("Sync error:", error);
+            toast({ variant: "destructive", title: "동기화 실패", description: "데이터 처리 중 오류가 발생했습니다." });
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     return (
         <div>
             <PageHeader title="고객 관리" description="고객 정보를 등록하고 관리합니다.">
@@ -180,14 +314,22 @@ export default function CustomersPage() {
 
             {/* 고객 통계 카드 */}
             <CustomerStatsCards
-                customers={filteredCustomers}
+                customers={customers}
                 selectedBranch={selectedBranch}
             />
 
-            <Card className="mb-4">
-                <CardContent className="pt-6">
-                    <div className="flex flex-col sm:flex-row items-center gap-2">
-                        <div className="relative w-full sm:w-auto flex-1 sm:flex-initial">
+            <Tabs defaultValue="all" className="w-full mb-6" onValueChange={setActiveTab}>
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-4">
+                    <TabsList className="grid grid-cols-5 w-full md:w-[550px]">
+                        <TabsTrigger value="all">전체</TabsTrigger>
+                        <TabsTrigger value="vvip" className="text-primary font-bold">VVIP 리스트</TabsTrigger>
+                        <TabsTrigger value="vip">VIP</TabsTrigger>
+                        <TabsTrigger value="normal">일반</TabsTrigger>
+                        <TabsTrigger value="new">신규</TabsTrigger>
+                    </TabsList>
+
+                    <div className="flex items-center gap-2 w-full md:w-auto">
+                        <div className="relative flex-1 md:w-[300px]">
                             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                             <Input
                                 type="search"
@@ -197,57 +339,42 @@ export default function CustomersPage() {
                             />
                         </div>
                         <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                            <SelectTrigger className="w-full sm:w-[160px]">
-                                <SelectValue placeholder="담당 지점" />
+                            <SelectTrigger className="w-[160px]">
+                                <SelectValue placeholder="지점 선택" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">모든 지점</SelectItem>
-                                {branches.filter(b => b.type !== '본사').map(branch => (
-                                    <SelectItem key={branch.id} value={branch.name}>{branch.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <Select value={selectedType} onValueChange={setSelectedType}>
-                            <SelectTrigger className="w-full sm:w-[120px]">
-                                <SelectValue placeholder="고객 유형" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">모든 유형</SelectItem>
-                                <SelectItem value="personal">개인</SelectItem>
-                                <SelectItem value="company">기업</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <Select value={selectedGrade} onValueChange={setSelectedGrade}>
-                            <SelectTrigger className="w-full sm:w-[120px]">
-                                <SelectValue placeholder="고객 등급" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">모든 등급</SelectItem>
-                                {customerGrades.map(grade => (
-                                    <SelectItem key={grade} value={grade}>{grade}</SelectItem>
+                                <SelectItem value="all">전체 지점</SelectItem>
+                                {branches.map((branch) => (
+                                    <SelectItem key={branch.id} value={branch.name}>
+                                        {branch.name}
+                                    </SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
                     </div>
-                </CardContent>
-            </Card>
-            {loading ? (
-                <Card>
-                    <CardContent className="pt-6">
-                        <div className="space-y-2">
-                            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-                        </div>
-                    </CardContent>
-                </Card>
-            ) : (
-                <CustomerTable
-                    customers={filteredCustomers}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                    onRowClick={handleRowClick}
-                    onStatementPrint={handleStatementPrint}
-                />
-            )}
+                </div>
+
+                <TabsContent value={activeTab} className="mt-0">
+                    {loading ? (
+                        <Card>
+                            <CardContent className="pt-6">
+                                <div className="space-y-2">
+                                    {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    ) : (
+                        <CustomerTable
+                            customers={filteredCustomers}
+                            onEdit={handleEdit}
+                            onDelete={handleDelete}
+                            onRowClick={handleRowClick}
+                            onStatementPrint={handleStatementPrint}
+                        />
+                    )}
+                </TabsContent>
+            </Tabs>
+
             <CustomerForm
                 isOpen={isFormOpen}
                 onOpenChange={setIsFormOpen}
@@ -274,3 +401,4 @@ export default function CustomersPage() {
         </div>
     );
 }
+
