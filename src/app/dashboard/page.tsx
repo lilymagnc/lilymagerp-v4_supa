@@ -440,6 +440,9 @@ export default function DashboardPage() {
           return {
             ...row,
             id: row.id,
+            branchName: row.transfer_info?.isTransferred && row.transfer_info?.processBranchName
+              ? row.transfer_info.processBranchName
+              : row.branch_name,
             orderDate: parseDateUtil(row.order_date),
             total: row.summary?.total || row.total_amount || 0,
             productNames,
