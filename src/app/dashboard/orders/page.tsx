@@ -132,6 +132,9 @@ export default function OrdersPage() {
       const overdueOrders = orders.filter(order => {
         if (order.status !== 'processing') return false;
 
+        // 미결 주문은 자동완료 대상에서 제외 (의도적으로 보류된 건)
+        if (order.payment?.status === 'pending') return false;
+
         // 권한 체크: 본사 관리자는 전체, 지점 관리자는 본인 지점만
         if (!isAdmin && userBranch && order.branchName !== userBranch) return false;
 
