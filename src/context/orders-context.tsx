@@ -598,6 +598,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
             if (updates.deliveryCostStatus !== undefined) updatePayload.delivery_cost_status = updates.deliveryCostStatus;
             if (updates.deliveryCostReason !== undefined) updatePayload.delivery_cost_reason = updates.deliveryCostReason;
             if (updates.deliveryProfit !== undefined) updatePayload.delivery_profit = updates.deliveryProfit;
+            if (updates.orderDate) updatePayload.order_date = updates.orderDate;
             if ((updates as any).outsourceInfo !== undefined) updatePayload.outsource_info = (updates as any).outsourceInfo;
 
             const { error } = await supabase.from('orders').update(updatePayload).eq('id', orderId);
