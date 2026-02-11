@@ -154,9 +154,10 @@ const HRManagementPage = () => {
     try {
       // 1. Delete file from Storage if exists
       if (document.file_url) {
-        const pathMatch = document.file_url.match(/hr-submissions\/(.*)/);
+        // hr_submissions 버킷 경로 매칭 (언더바 사용)
+        const pathMatch = document.file_url.match(/hr_submissions\/(.*)/);
         if (pathMatch && pathMatch[1]) {
-          await supabase.storage.from('hr-submissions').remove([pathMatch[1]]);
+          await supabase.storage.from('hr_submissions').remove([pathMatch[1]]);
         }
       }
 
