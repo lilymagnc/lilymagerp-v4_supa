@@ -10,9 +10,10 @@ import { Order } from "@/hooks/use-orders";
 interface DeliveryCostTableProps {
   orders: Order[];
   onCostInput: (order: Order) => void;
+  onRowClick: (order: Order) => void;
 }
 
-export function DeliveryCostTable({ orders, onCostInput }: DeliveryCostTableProps) {
+export function DeliveryCostTable({ orders, onCostInput, onRowClick }: DeliveryCostTableProps) {
   if (orders.length === 0) {
     return (
       <div className="bg-muted/30 p-8 rounded-lg text-center border-2 border-dashed">
@@ -23,10 +24,10 @@ export function DeliveryCostTable({ orders, onCostInput }: DeliveryCostTableProp
   }
 
   return (
-    <div className="overflow-x-auto border rounded-xl">
+    <div className="overflow-x-auto border rounded-xl shadow-sm">
       <Table>
         <TableHeader>
-          <TableRow className="bg-slate-50">
+          <TableRow className="bg-slate-50/80">
             <TableHead className="w-[100px]">주문번호</TableHead>
             <TableHead>배송일시</TableHead>
             <TableHead>수령자</TableHead>
@@ -41,7 +42,11 @@ export function DeliveryCostTable({ orders, onCostInput }: DeliveryCostTableProp
         </TableHeader>
         <TableBody>
           {orders.map((order) => (
-            <TableRow key={order.id} className="hover:bg-slate-50/50">
+            <TableRow
+              key={order.id}
+              className="hover:bg-slate-50 transition-colors cursor-pointer"
+              onClick={() => onRowClick(order)}
+            >
               <TableCell className="font-mono text-[10px] text-slate-400">
                 {order.id.slice(0, 8)}
               </TableCell>
@@ -70,8 +75,15 @@ export function DeliveryCostTable({ orders, onCostInput }: DeliveryCostTableProp
                 ₩{(order.summary?.deliveryFee || 0).toLocaleString()}
               </TableCell>
               <TableCell className="text-sm font-bold">
-                {order.actualDeliveryCost != null ? (
-                  `₩${order.actualDeliveryCost.toLocaleString()}`
+                {(order.actualDeliveryCost != null || order.actualDeliveryCostCash != null) ? (
+                  <div className="flex flex-col">
+                    <span>₩{((order.actualDeliveryCost || 0) + (order.actualDeliveryCostCash || 0)).toLocaleString()}</span>
+                    {order.actualDeliveryCostCash && order.actualDeliveryCostCash > 0 && (
+                      <span className="text-[10px] text-red-500 font-normal">
+                        (현금: ₩{order.actualDeliveryCostCash.toLocaleString()})
+                      </span>
+                    )}
+                  </div>
                 ) : (
                   <span className="text-slate-300 font-normal italic">미입력</span>
                 )}
@@ -92,7 +104,7 @@ export function DeliveryCostTable({ orders, onCostInput }: DeliveryCostTableProp
                   <Badge variant="secondary" className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-none px-2 h-5 text-[10px]">미입력</Badge>
                 )}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                 <Button
                   variant="outline"
                   size="sm"

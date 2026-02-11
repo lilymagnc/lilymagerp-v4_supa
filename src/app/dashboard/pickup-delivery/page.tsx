@@ -638,6 +638,7 @@ export default function PickupDeliveryPage() {
                 setDeliveryCostReason(order.deliveryCostReason || '');
                 setIsDeliveryCostDialogOpen(true);
               }}
+              onRowClick={(order) => { setSelectedOrder(order); setIsDialogOpen(true); }}
             />
           </TabsContent>
 
