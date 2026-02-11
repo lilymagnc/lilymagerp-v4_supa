@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { format } from "date-fns";
-import { Order } from "@/hooks/use-orders";
+
 import { parseDate } from "@/lib/date-utils";
 import {
   User,
@@ -25,8 +25,15 @@ import {
   ArrowRightLeft,
   DollarSign,
   ExternalLink,
-  Printer
+
+  Printer,
+  Settings
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useAuth } from "@/hooks/use-auth";
+import { useOrders, Order } from "@/hooks/use-orders";
+import { useState, useEffect } from "react";
 interface OrderDetailDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -37,6 +44,70 @@ interface OrderDetailDialogProps {
 
 
 export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage }: OrderDetailDialogProps) {
+  const { user } = useAuth();
+  const { updateOrder } = useOrders();
+  const [editOrderDate, setEditOrderDate] = useState("");
+  const [editPaymentDate, setEditPaymentDate] = useState("");
+  const [isDateEditing, setIsDateEditing] = useState(false);
+
+  useEffect(() => {
+    if (order && isOpen) {
+      setEditOrderDate(order.orderDate ? format(parseDate(order.orderDate), "yyyy-MM-dd") : "");
+      setEditPaymentDate(order.payment?.completedAt ? format(parseDate(order.payment.completedAt), "yyyy-MM-dd'T'HH:mm") : "");
+      setIsDateEditing(false);
+    }
+  }, [order, isOpen]);
+
+  // Handle Order Date Change with Auto-Sync to Payment Date
+  const handleOrderDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = e.target.value;
+    setEditOrderDate(newDate);
+
+    // Auto-sync payment date to same day (preserving current time if possible, or 09:00 default)
+    if (newDate) {
+      // If there was an existing payment time, try to keep it, otherwise use 09:00
+      const currentPaymentTime = editPaymentDate ? editPaymentDate.split('T')[1] : "09:00";
+      setEditPaymentDate(`${newDate}T${currentPaymentTime}`);
+    }
+  };
+
+  const isAdmin = user?.email === 'lilymag0301@gmail.com' || user?.role === '본사 관리자' || (user?.role as any) === 'admin' || (user?.role as any) === 'hq_manager';
+
+  const handleSaveDateCorrection = async () => {
+    if (!order) return;
+    try {
+      const updates: any = {};
+
+      // 1. Order Date
+      if (editOrderDate) {
+        // Keep the original time if possible, or sets to 00:00?
+        // Usually date correction implies moving the revenue day.
+        // Let's assume user picks a date, we preserve original time or set to start of day?
+        // NewOrderPage uses ISO string.
+        // Let's preserve time part of original orderDate if possible, but input is date only.
+        const original = new Date(order.orderDate);
+        const newDate = new Date(editOrderDate);
+        newDate.setHours(original.getHours(), original.getMinutes(), original.getSeconds());
+        updates.orderDate = newDate.toISOString();
+      }
+
+      // 2. Payment Date
+      if (editPaymentDate) {
+        const currentPayment = order.payment || {};
+        updates.payment = {
+          ...currentPayment,
+          completedAt: new Date(editPaymentDate).toISOString()
+        };
+      }
+
+      await updateOrder(order.id, updates);
+      setIsDateEditing(false);
+      // toast is handled in updateOrder
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   if (!order) return null;
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -137,6 +208,69 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-6">
+          {/* 관리자 데이터 정정 섹션 */}
+          {isAdmin && (
+            <Card className="border-red-200 bg-red-50/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center justify-between text-base text-red-700">
+                  <div className="flex items-center gap-2">
+                    <Settings className="h-4 w-4" />
+                    관리자 데이터 정정
+                  </div>
+                  <Button
+                    variant={isDateEditing ? "outline" : "ghost"}
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setIsDateEditing(!isDateEditing)}
+                  >
+                    {isDateEditing ? "취소" : "수정 모드"}
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              {isDateEditing && (
+                <CardContent className="space-y-4 pt-0">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-order-date" className="text-xs font-semibold text-red-600">
+                        주문 일자 (매출일)
+                      </Label>
+                      <Input
+                        id="edit-order-date"
+                        type="date"
+                        value={editOrderDate}
+                        onChange={handleOrderDateChange}
+                        className="bg-white"
+                      />
+                      <p className="text-[10px] text-gray-500">
+                        * 변경 시 해당 날짜로 매출 집계가 이동됩니다.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-payment-date" className="text-xs font-semibold text-red-600">
+                        결제 완료일 (정산일)
+                      </Label>
+                      <Input
+                        id="edit-payment-date"
+                        type="datetime-local"
+                        value={editPaymentDate}
+                        onChange={(e) => setEditPaymentDate(e.target.value)}
+                        className="bg-white"
+                      />
+                      <p className="text-[10px] text-gray-500">
+                        * 변경 시 해당 날짜로 정산/입금 내역이 이동됩니다.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex justify-end pt-2">
+                    <Button size="sm" onClick={handleSaveDateCorrection} className="bg-red-600 hover:bg-red-700 text-white">
+                      변경사항 저장
+                    </Button>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+          )}
+
           {/* 주문 기본 정보 */}
           <Card>
             <CardHeader>

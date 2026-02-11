@@ -926,6 +926,76 @@ function useOrdersLocal(initialFetch = true) {
         throw error;
       }
 
+      // --- [Date Migration Logic] ---
+      try {
+        const oldOrderDate = new Date(oldOrder.order_date);
+        const newOrderDate = data.orderDate ? new Date(data.orderDate) : oldOrderDate;
+
+        // YYYY-MM-DD Comparison
+        const isOrderDateChanged = oldOrderDate.toISOString().split('T')[0] !== newOrderDate.toISOString().split('T')[0];
+
+        // Payment Date Data
+        const oldPaymentDate = oldOrder.payment?.completedAt ? new Date(oldOrder.payment.completedAt) : null;
+        let newPaymentDate = data.payment?.completedAt ? new Date(data.payment.completedAt) : oldPaymentDate;
+
+        // [User Requirement]: If Order Date changes, Payment Date should auto-sync if it was previously same as Order Date or if not explicitly set differently.
+        // Actually, the UI might send both. But if valid, we assume revenue moves if payment date moves.
+
+        const isPaymentDateChanged = (oldPaymentDate?.getTime() !== newPaymentDate?.getTime());
+
+        // 1. Order Count Migration (Based on Order Date)
+        if (isOrderDateChanged && !isCanceled(oldOrder)) {
+          // Remove Order Count from Old Date
+          await updateDailyStats(oldOrderDate, oldOrder.branch_name, {
+            revenueDelta: 0,
+            orderCountDelta: -1,
+            settledAmountDelta: 0
+          });
+
+          // Add Order Count to New Date
+          await updateDailyStats(newOrderDate, oldOrder.branch_name, {
+            revenueDelta: 0,
+            orderCountDelta: 1,
+            settledAmountDelta: 0
+          });
+        }
+
+        // 2. Revenue & Settlement Migration (Based on Payment Date)
+        // Only if payment date actually changed
+        if (isPaymentDateChanged) {
+          const wasSettled = isSettled(oldOrder);
+          // Check new settled status (using new payment data if available, else old)
+          const newPaymentObj = data.payment || oldOrder.payment;
+          const isNowSettled = isSettled({ status: newStatus, payment: newPaymentObj });
+
+          // Remove from Old Payment Date (Both Revenue & Settlement)
+          if (wasSettled && oldPaymentDate) {
+            await updateDailyStats(oldPaymentDate, oldOrder.branch_name, {
+              revenueDelta: -oldTotal, // Revenue is recognized on payment date
+              orderCountDelta: 0,
+              settledAmountDelta: -oldTotal // Settlement is also on payment date
+            });
+          }
+
+          // Add to New Payment Date (Both Revenue & Settlement)
+          if (isNowSettled && newPaymentDate) {
+            await updateDailyStats(newPaymentDate, oldOrder.branch_name, {
+              revenueDelta: newTotal,
+              orderCountDelta: 0,
+              settledAmountDelta: newTotal
+            });
+          }
+
+          // Disable standard deltas since we handled it here manually
+          revenueDelta = 0;
+          settledDelta = 0;
+        }
+
+      } catch (statError) {
+        console.error("통계 이동 중 오류 (비치명적):", statError);
+      }
+      // --- [End Date Migration] ---
+
       // --- [Auto-Sync Logic] Sync Delivery Cost (Standard & Cash) to Simple Expenses ---
       // 동기화 로직: 
       // 1. 실제 배송료(Standard): 주문 수정 시 입력한 '실제 배송비(actualDeliveryCost)'를 지출로 기록 (전산 배송비 아님, 사용자가 직접 입력한 값)
