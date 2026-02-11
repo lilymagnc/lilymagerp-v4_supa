@@ -32,9 +32,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
-import { useNotifications } from "@/hooks/use-notifications";
-import { useDisplayBoard } from "@/hooks/use-display-board";
-import { useCalendar } from "@/hooks/use-calendar";
+
 import { parseDate } from "@/lib/date-utils";
 import { isSettled, isCanceled, isPendingPayment } from "@/lib/order-utils";
 
@@ -115,9 +113,6 @@ export default function OrdersPage() {
     }
   }, [isAdmin, userBranch, selectedBranch]);
 
-  const { createNotification } = useNotifications();
-  const { createDisplayItem } = useDisplayBoard();
-  const { createEvent } = useCalendar();
   const [hasRunAutomation, setHasRunAutomation] = useState(false);
 
   // 주문 날짜 경과 시 자동 완료 처리
@@ -147,49 +142,11 @@ export default function OrdersPage() {
         return;
       }
 
-
       let processedCount = 0;
       for (const order of overdueOrders) {
         try {
-          // 1. 주문 상태 업데이트 (Supabase 사용)
+          // 주문 상태만 업데이트 (알림/캘린더/전광판은 생성하지 않음 - 중복 방지)
           await updateOrderStatus(order.id, 'completed');
-
-          // 2. 시스템 알림 생성
-          await createNotification({
-            type: 'system',
-            subType: 'auto_complete',
-            title: '주문 자동 완료 알림',
-            message: `[${order.branchName}] ${order.orderer.name}님의 주문이 수령일(${order.pickupInfo?.date || order.deliveryInfo?.date}) 경과로 자동 완료되었습니다.`,
-            severity: 'low',
-            branchId: order.branchId,
-            relatedId: order.id,
-            relatedType: 'order'
-          });
-
-          // 3. 전광판 등록 (24시간 노출)
-          await createDisplayItem(
-            'delivery_complete',
-            '주문 자동 완료 알림',
-            `수령일(${order.pickupInfo?.date || order.deliveryInfo?.date}) 경과로 주문이 자동 완료 처리되었습니다.\n주문자: ${order.orderer.name}`,
-            order.branchId,
-            order.branchName,
-            'low',
-            undefined,
-            order.id
-          );
-
-          // 4. 캘린더 일정 등록
-          await createEvent({
-            type: 'notice',
-            title: `[자동완료] ${order.orderer.name}`,
-            description: `지나간 주문 자동 완료 처리됨 (원래 수령일: ${order.pickupInfo?.date || order.deliveryInfo?.date})`,
-            startDate: new Date(),
-            branchName: order.branchName,
-            status: 'completed',
-            relatedId: order.id,
-            color: '#94a3b8' // slate-400
-          });
-
           processedCount++;
         } catch (err) {
           console.error(`[Automation] 주문 ${order.id} 자동 완료 처리 중 오류:`, err);
@@ -201,14 +158,14 @@ export default function OrdersPage() {
           title: "미처리 주문 정리 완료",
           description: `${processedCount}건의 주문이 과거 수령일 경과로 자동 완료되었습니다.`,
         });
-        // 상태 변경 반영을 위해 데이터 다시 불러오기
         fetchOrders();
       }
       setHasRunAutomation(true);
     };
 
     runAutomation();
-  }, [loading, orders, hasRunAutomation, isAdmin, userBranch, createNotification, createDisplayItem, createEvent, fetchOrders, toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, orders.length, hasRunAutomation]);
 
   // URL 파라미터에서 메시지 인쇄 다이얼로그 자동 열기
   useEffect(() => {
