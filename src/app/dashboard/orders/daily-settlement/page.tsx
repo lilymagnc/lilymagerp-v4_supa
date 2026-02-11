@@ -225,7 +225,8 @@ export default function DailySettlementPage() {
         };
 
         loadData();
-    }, [currentBranchId, reportDate, currentTargetBranch, getSettlement, fetchExpenses, fetchOrdersForSettlement, findLastSettlementBefore]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentBranchId, reportDate, currentTargetBranch]);
 
     const loading = ordersLoading || branchesLoading || productsLoading || expensesLoading || settlementLoading;
 
