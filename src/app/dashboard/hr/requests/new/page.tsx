@@ -173,6 +173,7 @@ const NewHRRequestPage = () => {
 
     try {
       const { error } = await supabase.from('hr_documents').insert({
+        id: crypto.randomUUID(),
         user_id: user.id,
         user_name: name,
         document_type: documentType,

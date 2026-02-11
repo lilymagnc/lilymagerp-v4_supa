@@ -130,6 +130,7 @@ const createInfoTable = (documentType: HRDocumentType) => {
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    alignment: AlignmentType.CENTER,
     rows,
   });
 };
@@ -138,6 +139,7 @@ const createContentTable = (documentType: HRDocumentType) => {
   if (documentType === '휴직원') {
     return new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
+      alignment: AlignmentType.CENTER,
       rows: [
         createTableRow('휴직 기간', ''),
         createTableRow('사유', ''),
@@ -150,6 +152,7 @@ const createContentTable = (documentType: HRDocumentType) => {
   if (documentType === '퇴직원') {
     return new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
+      alignment: AlignmentType.CENTER,
       rows: [
         createTableRow('퇴직 예정일', ''),
         createTableRow('사유', ''),
@@ -159,6 +162,7 @@ const createContentTable = (documentType: HRDocumentType) => {
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    alignment: AlignmentType.CENTER,
     rows: [
       createTableRow('휴가 종류', ''),
       createTableRow('휴가 기간', ''),
@@ -323,6 +327,7 @@ const HRRequestsPage = () => {
         .getPublicUrl(filePath);
 
       const documentData: Record<string, unknown> = {
+        id: crypto.randomUUID(),
         user_id: user.id,
         user_name: parsedResult?.userName || user.email?.split('@')[0] || 'Unknown User',
         document_type: documentType,
