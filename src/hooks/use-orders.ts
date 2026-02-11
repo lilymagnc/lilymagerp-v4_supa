@@ -752,6 +752,8 @@ function useOrdersLocal(initialFetch = true) {
             item_id: item.id,
             item_name: item.name,
             quantity: item.quantity,
+            from_stock: 0, // Added to satisfying potential NOT NULL constraint
+            to_stock: 0,   // Added to satisfying potential NOT NULL constraint
             branch: orderData.branchName,
             operator: user?.email || "Excel Upload",
             price: item.price,
