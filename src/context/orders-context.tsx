@@ -128,7 +128,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     }, []);
 
     // ===== Fetch Functions =====
-    const fetchOrders = useCallback(async (days: number = 7) => {
+    const fetchOrders = useCallback(async (days: number = 30) => {
         const controller = new AbortController();
         const signal = controller.signal;
 
@@ -138,7 +138,13 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
             if (!hasOrdersRef.current) setLoading(true);
             else setIsRefreshing(true);
 
-            const startDate = subDays(startOfDay(new Date()), days).toISOString();
+            const now = new Date();
+            // 이번 달 1일과 요청된 days 중 더 과거인 날짜를 선택하여 데이터 누락 방지
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const requestedDate = subDays(now, days);
+            const effectiveStart = requestedDate < monthStart ? requestedDate : monthStart;
+            const startDate = effectiveStart.toISOString();
+
             let allData: any[] = [];
             let page = 0;
             const pageSize = 1000;
@@ -152,7 +158,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
                 let query = supabase
                     .from('orders')
                     .select('*')
-                    .or(`order_date.gte.${startDate},payment->>completedAt.gte.${startDate},transfer_info->>acceptedAt.gte.${startDate}`);
+                    .or(`order_date.gte.${startDate},status.in.(pending,processing,대기,처리중,준비중),payment->>status.eq.pending`);
 
                 if (!isAdmin && myBranch && myBranch !== '미정') {
                     query = query.or(`branch_name.eq.${myBranch},transfer_info->>processBranchName.eq.${myBranch}`);
