@@ -232,7 +232,7 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="edit-order-date" className="text-xs font-semibold text-red-600">
-                        주문 일자 (매출일)
+                        주문 일자 (접수일)
                       </Label>
                       <Input
                         id="edit-order-date"
@@ -242,12 +242,12 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
                         className="bg-white"
                       />
                       <p className="text-[10px] text-gray-500">
-                        * 변경 시 해당 날짜로 매출 집계가 이동됩니다.
+                        * 변경 시 주문 접수 건수가 이동됩니다. (결제일도 자동 변경됨)
                       </p>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="edit-payment-date" className="text-xs font-semibold text-red-600">
-                        결제 완료일 (정산일)
+                        결제 완료일 (매출/정산일)
                       </Label>
                       <Input
                         id="edit-payment-date"
@@ -257,7 +257,7 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
                         className="bg-white"
                       />
                       <p className="text-[10px] text-gray-500">
-                        * 변경 시 해당 날짜로 정산/입금 내역이 이동됩니다.
+                        * 실제 매출과 정산은 이 날짜를 기준으로 집계됩니다.
                       </p>
                     </div>
                   </div>
