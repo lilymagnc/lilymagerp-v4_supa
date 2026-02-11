@@ -38,7 +38,7 @@ export default function SimpleExpensesPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const { expenses, fetchExpenses, calculateStats } = useSimpleExpenses();
+  const { expenses, fetchExpenses, calculateStats } = useSimpleExpenses({ enableRealtime: true });
   const { user } = useAuth();
   const { branches, loading: branchesLoading } = useBranches();
 

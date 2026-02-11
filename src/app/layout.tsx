@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { AuthProvider } from "@/context/auth-context";
 import { SyncBridgeProvider } from "@/components/sync-bridge-provider";
 import { Toaster } from "@/components/ui/toaster";
+import { NotificationProvider } from "@/hooks/use-realtime-notifications";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -27,10 +28,12 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased min-h-screen bg-background text-foreground" suppressHydrationWarning>
         <AuthProvider>
-          {/* <SyncBridgeProvider> */}
-          {children}
-          {/* </SyncBridgeProvider> */}
-          <Toaster />
+          <NotificationProvider>
+            {/* <SyncBridgeProvider> */}
+            {children}
+            {/* </SyncBridgeProvider> */}
+            <Toaster />
+          </NotificationProvider>
         </AuthProvider>
       </body>
     </html>
