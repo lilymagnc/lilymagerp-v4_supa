@@ -312,19 +312,20 @@ const HRRequestsPage = () => {
       const parsedResult = await parseDocxFile(file, fallbackDocumentType);
       const documentType = parsedResult?.documentType ?? fallbackDocumentType;
 
-      const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9가-힣._-]/g, '_');
-      const filePath = `${user.id}/${Date.now()}_${sanitizedFileName}`;
+      // 스토리지용 경로는 영문/숫자/타임스탬프만 사용하여 "Invalid key" 에러 방지
+      const fileExt = file.name.split('.').pop();
+      const safeFilePath = `${user.id}/${Date.now()}.${fileExt}`;
 
       // Upload to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('hr_submissions')
-        .upload(filePath, file);
+        .upload(safeFilePath, file);
 
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage
         .from('hr_submissions')
-        .getPublicUrl(filePath);
+        .getPublicUrl(safeFilePath);
 
       const documentData: Record<string, unknown> = {
         id: crypto.randomUUID(),
