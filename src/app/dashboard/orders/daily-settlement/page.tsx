@@ -271,8 +271,9 @@ export default function DailySettlementPage() {
             if (!orderDate) return false;
             const isBeforeToday = orderDate < from;
             const isCanceled = order.status === 'canceled';
+            const isPending = order.payment?.status === 'pending';
 
-            if (!isBeforeToday || isCanceled) return false;
+            if (!isBeforeToday || isCanceled || isPending) return false;
 
             // 결제 완료일 확인 (payment.completedAt 또는 payment.secondPaymentDate)
             const completedAt = parseDate((order.payment as any).completedAt);
@@ -374,8 +375,9 @@ export default function DailySettlementPage() {
             const transferStatus = order.transferInfo?.status;
             const isValidTransfer = isTransferred && (transferStatus === 'accepted' || transferStatus === 'completed');
 
-            // 실제 결제 상태 확인
-            const isPaidGlobal = order.payment?.status === 'paid' || order.payment?.status === 'completed';
+            // 실제 결제 상태 확인 (pending/split_payment 등은 미결건)
+            const paymentStatus = order.payment?.status;
+            const isPaidGlobal = paymentStatus === 'paid' || paymentStatus === 'completed';
 
             // 결제 시점 확인
             const completedAt = parseDate((order.payment as any).completedAt);
