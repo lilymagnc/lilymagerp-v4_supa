@@ -42,6 +42,7 @@ export default function DailySettlementPage() {
     const [settlementRecord, setSettlementRecord] = useState<DailySettlementRecord | null>(null);
     const [prevSettlementRecord, setPrevSettlementRecord] = useState<DailySettlementRecord | null>(null);
     const [dailyExpenses, setDailyExpenses] = useState<any[]>([]);
+    const [settlementOrders, setSettlementOrders] = useState<Order[]>([]); // 로컬 주문 상태 추가
     const [vaultDeposit, setVaultDeposit] = useState<number>(0);
     const [manualPreviousBalance, setManualPreviousBalance] = useState<number>(0);
 
@@ -67,7 +68,8 @@ export default function DailySettlementPage() {
         const loadData = async () => {
 
             if (currentTargetBranch === 'all') {
-                await fetchOrdersForSettlement(reportDate);
+                const res = await fetchOrdersForSettlement(reportDate);
+                setSettlementOrders(res || []);
                 setSettlementRecord(null);
                 setVaultDeposit(0);
                 setManualPreviousBalance(0);
@@ -85,7 +87,7 @@ export default function DailySettlementPage() {
             const prevDate = format(subDays(new Date(reportDate), 1), 'yyyy-MM-dd');
 
             // 1. 기본 데이터 병렬 로드 (오늘 정산, 어제 정산, 오늘 비용, 전체 주문)
-            const [settlementResult, prevSettlementResult, _expensesToday, _ordersResult] = await Promise.all([
+            const [settlementResult, prevSettlementResult, _expensesToday, ordersResult] = await Promise.all([
                 getSettlement(currentBranchId, reportDate),
                 getSettlement(currentBranchId, prevDate),
                 fetchExpenses({
@@ -96,6 +98,7 @@ export default function DailySettlementPage() {
                 fetchOrdersForSettlement(reportDate)
             ]);
 
+            setSettlementOrders(ordersResult || []);
             setSettlementRecord(settlementResult);
             setVaultDeposit(settlementResult?.vaultDeposit || 0);
             setManualPreviousBalance(settlementResult?.previousVaultBalance || 0);
@@ -121,9 +124,31 @@ export default function DailySettlementPage() {
                         });
 
                         // 갭 기간의 전체 주문 불러오기 (v4_supa에서는 range 지원하는 fetchOrdersForSettlement 사용)
+                        // [최적화] 이전 주문 및 지출 데이터를 날짜별로 인덱싱하여 루프 안에서의 O(N) 검색을 O(1)로 변경
                         const gapOrders = await fetchOrdersForSettlement(prevDate, format(gapStart, 'yyyy-MM-dd'));
-                        // _ordersResult 대신 gapOrders와 _ordersResult를 통합하여 사용
-                        const combinedOrders = [...(gapOrders || []), ...(_ordersResult || [])];
+                        const combinedOrders = [...(gapOrders || []), ...(ordersResult || [])];
+
+                        // 날짜별 주문/지출 Map 생성
+                        const ordersByDate = new Map<string, Order[]>();
+                        combinedOrders.forEach(o => {
+                            const od = parseDate(o.orderDate);
+                            if (od) {
+                                const dStr = format(od, 'yyyy-MM-dd');
+                                if (!ordersByDate.has(dStr)) ordersByDate.set(dStr, []);
+                                ordersByDate.get(dStr)!.push(o);
+                            }
+                        });
+
+                        const expensesByDate = new Map<string, any[]>();
+                        (gapExpenses || []).forEach(e => {
+                            const ed = parseDate(e.date);
+                            if (ed) {
+                                const dStr = format(ed, 'yyyy-MM-dd');
+                                if (!expensesByDate.has(dStr)) expensesByDate.set(dStr, []);
+                                expensesByDate.get(dStr)!.push(e);
+                            }
+                        });
+
 
                         let runningBalance = (
                             Number(lastRecord.previousVaultBalance || 0) +
@@ -140,18 +165,9 @@ export default function DailySettlementPage() {
                         while (currentDate <= gapEnd) {
                             const dateStr = format(currentDate, 'yyyy-MM-dd');
 
-                            // 해당 날짜의 Cash Flow 계산
-                            // Orders
-                            const dayOrders = (combinedOrders || []).filter((o: Order) => {
-                                const od = parseDate(o.orderDate);
-                                return od && format(od, 'yyyy-MM-dd') === dateStr && o.branchName === currentTargetBranch;
-                            });
-
-                            // Expenses
-                            const dayExpenses = (gapExpenses || []).filter((e: any) => {
-                                const ed = parseDate(e.date);
-                                return ed && format(ed, 'yyyy-MM-dd') === dateStr;
-                            });
+                            // 해당 날짜의 Cash Flow 계산 (Map에서 즉시 가져오기 - 성능 비약적 향상)
+                            const dayOrders = ordersByDate.get(dateStr) || [];
+                            const dayExpenses = expensesByDate.get(dateStr) || [];
 
                             // Calculate
                             let cashSales = 0;
@@ -230,16 +246,16 @@ export default function DailySettlementPage() {
 
     const loading = ordersLoading || branchesLoading || productsLoading || expensesLoading || settlementLoading;
 
-    // 정산 데이터 계산
+    // 정산 데이터 계산 (로컬 상태인 settlementOrders 사용)
     const stats = useMemo(() => {
-        if (!orders.length) return null;
+        if (!settlementOrders.length) return null;
 
         // 날짜 필터 생성 (YYYY-MM-DDT00:00:00 형식을 사용하여 로컬 시간 보장)
         const from = new Date(reportDate + 'T00:00:00');
         const to = new Date(reportDate + 'T23:59:59.999');
 
-        // 해당 일자의 주문 필터링
-        const dailyOrders = orders.filter(order => {
+        // 해당 일자의 주문 필터링 (로컬 상태 settlementOrders 사용)
+        const dailyOrders = settlementOrders.filter(order => {
             const orderDate = parseDate(order.orderDate);
             if (!orderDate) return false;
             const isInDate = orderDate >= from && orderDate <= to;
@@ -265,8 +281,8 @@ export default function DailySettlementPage() {
             return dateB.getTime() - dateA.getTime();
         });
 
-        // 2-1. 이월 주문 결제 필터링 (주문은 예전인데 오늘 결제 완료된 건)
-        const previousOrderPayments = orders.filter(order => {
+        // 2-1. 이월 주문 결제 필터링 (로컬 상태 settlementOrders 사용)
+        const previousOrderPayments = settlementOrders.filter(order => {
             const orderDate = parseDate(order.orderDate);
             if (!orderDate) return false;
             const isBeforeToday = orderDate < from;
@@ -325,8 +341,8 @@ export default function DailySettlementPage() {
         };
 
         // 배송비 현금 지급액 합산 (사용자 요청: 배송일 기준)
-        // 주문의 배송날짜(deliveryInfo.date)가 정산일과 일치하는 건 기준
-        orders.forEach(order => {
+        // 배송비 현금 지급액 합산 (로컬 상태 settlementOrders 사용)
+        settlementOrders.forEach(order => {
             if (!order.actualDeliveryCostCash) return;
 
             const deliveryDate = order.deliveryInfo?.date || order.pickupInfo?.date;
@@ -519,7 +535,7 @@ export default function DailySettlementPage() {
             from,
             to
         };
-    }, [orders, reportDate, currentTargetBranch, ordersLoading]);
+    }, [settlementOrders, reportDate, currentTargetBranch, ordersLoading]);
 
     // 지출 요약 (매입)
     const summaryExpense = useMemo(() => {
@@ -565,7 +581,7 @@ export default function DailySettlementPage() {
         const cashSales = stats?.paymentStats.cash.amount || 0;
 
         // 배송비 현금 지급액 집계: 주문 데이터 기반 + 간편지출(현금) 데이터 기반 통합
-        // 지출 내역 중 '운송비'이면서 '현금' 결제인 항목들 합산
+        // 지출 내역 중 '운송비'이면서 '현금' 결제인 항목들 합산 (settlementOrders 기반)
         const transportCashExpenses = expenses.filter(e => {
             const expenseDate = parseDate(e.date);
             if (!expenseDate) return false;

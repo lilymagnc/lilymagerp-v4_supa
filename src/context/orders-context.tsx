@@ -210,7 +210,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
                 query = query.or(`branch_name.eq.${myBranch},transfer_info->>processBranchName.eq.${myBranch}`);
             }
 
-            const { data, error } = await query.order('order_date', { ascending: false }).limit(2000);
+            const { data, error } = await query.order('order_date', { ascending: false }).limit(200);
 
             if (error) throw error;
             const ordersData = (data || []).map(mapRowToOrder);
@@ -396,11 +396,9 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
             if (error) throw error;
             const ordersData = (data || []).map(mapRowToOrder);
 
-            setOrders(prev => {
-                const existingIds = new Set(ordersData.map(o => o.id));
-                const filteredPrev = prev.filter(o => !existingIds.has(o.id));
-                return [...ordersData, ...filteredPrev];
-            });
+            // [핵심 최적화] 정산용 데이터는 글로벌 orders 상태를 업데이트하지 않습니다.
+            // 대신 결과만 반환하여 정산 페이지에서 로컬로 사용하게 합니다.
+            // setOrders(prev => { ... }) 제거됨
 
             return ordersData;
         } catch (error) {

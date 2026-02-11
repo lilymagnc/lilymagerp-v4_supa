@@ -624,18 +624,8 @@ export default function DashboardPage() {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // orders 상태 변화 시 대시보드 통계도 갱신 (5초 디바운싱으로 과도한 호출 방지)
-  const ordersLengthRef = useRef(orders.length);
-  useEffect(() => {
-    // 최초 렌더 시에는 스킵
-    if (ordersLengthRef.current === orders.length) return;
-    ordersLengthRef.current = orders.length;
-
-    const timer = setTimeout(() => {
-      fetchDashboardData();
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [orders.length, fetchDashboardData]);
+  // orders 상태 변화 시 대시보드 통계도 갱신하는 로직 제거 (부하 주범)
+  // 대신 실시간 DB 구독(daily_stats)을 통해서만 업데이트되도록 유지하여 성능 최적화
 
   // 실시간 동기화 (Debounced) - orders 테이블은 use-orders.ts 에서 이미 구독 중이므로 제외
   // daily_stats 변경만 감지하되 3초 디바운싱으로 연쇄 호출 방지
