@@ -527,18 +527,11 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
 
             if (newStatus === 'completed') {
                 const now = new Date().toISOString();
+                // 주문 완료 = 주문 상태만 변경 (결제 상태는 별도)
                 await supabase.from('orders').update({
-                    'payment': { ...order.payment, status: 'paid', completedAt: now },
                     completed_at: now,
                     completed_by: user?.email || 'system'
                 }).eq('id', orderId);
-
-                if (!isSettled(order)) {
-                    await updateDailyStats(new Date(order.order_date), order.branch_name, {
-                        revenueDelta: 0, orderCountDelta: 0,
-                        settledAmountDelta: order.summary?.total || 0
-                    });
-                }
             }
 
             // Atomic update in memory
