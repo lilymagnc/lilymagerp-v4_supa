@@ -84,25 +84,12 @@ export function ExpenseList({
   const isHeadquartersAdmin = user?.role === '본사 관리자';
 
   // 데이터 로드
-  useEffect(() => {
-    loadExpenses();
-  }, [refreshTrigger, selectedBranchId, displayLimit, dateRange.start, dateRange.end]);
-
-  // 초기 로딩 시 전체 데이터 미리 로드 (관리자만)
-  useEffect(() => {
-    if (isHeadquartersAdmin && branches.length > 0 && expenses.length === 0) {
-      // 본사 관리자이고 아직 데이터가 없으면 전체 데이터 미리 로드
-      loadExpenses();
-    }
-  }, [isHeadquartersAdmin, branches.length, expenses.length]);
-
-  // 데이터 로드
   const loadExpenses = async (isLoadMore = false) => {
     if (isLoading) return;
     setIsLoading(true);
 
     try {
-      // 본사 관리 탭이거나 '전체' 선택 시 분기 처리
+      // 본사 관리 관리 탭이거나 '전체' 선택 시 분기 처리
       const targetBranchId = (isHeadquarters || !selectedBranchId || selectedBranchId === 'all')
         ? undefined
         : selectedBranchId;
@@ -153,20 +140,15 @@ export function ExpenseList({
     }
   };
 
-
   // 필터링된 결과 중 화면에 보여줄 갯수 조절 (무한 스크롤)
-  // 서버 페이지네이션을 하므로 여기서는 전체를 보여주되, 
-  // loadExpenses가 append 방식으로 동작함.
   const displayedExpenses = filteredExpenses;
-
-  // hasMoreToShow -> hasMore (서버 상태)
   const hasMoreToShow = hasMore;
 
-  // 지출 데이터 로드 (조건 변경 시 리셋 및 재로딩)
+  // 데이터 로드 (종합된 필터 조건에 따라 리셋 및 재로딩)
   useEffect(() => {
+    // 필터 변경 시 목록 초기화
     setExpenses([]);
     setFilteredExpenses([]);
-
     setHasMore(true);
 
     // 상태 업데이트 후 로딩 호출 (setTimeout으로 상태 반영 보장)
@@ -174,7 +156,7 @@ export function ExpenseList({
       loadExpenses(false);
     }, 0);
     return () => clearTimeout(timer);
-  }, [refreshTrigger, selectedBranchId, dateRange.start, dateRange.end, categoryFilter]);
+  }, [refreshTrigger, selectedBranchId, dateRange.start, dateRange.end, categoryFilter, displayLimit]);
 
   // 클라이언트 사이드 검색 (이미 불러온 데이터 내에서 검색)
   useEffect(() => {

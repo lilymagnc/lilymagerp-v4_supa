@@ -68,8 +68,15 @@ export default function DailySettlementPage() {
         const loadData = async () => {
 
             if (currentTargetBranch === 'all') {
-                const res = await fetchOrdersForSettlement(reportDate);
+                const [res, expRes] = await Promise.all([
+                    fetchOrdersForSettlement(reportDate),
+                    fetchExpenses({
+                        dateFrom: new Date(reportDate + 'T00:00:00'),
+                        dateTo: new Date(reportDate + 'T23:59:59')
+                    })
+                ]);
                 setSettlementOrders(res || []);
+                setDailyExpenses(expRes.expenses || []);
                 setSettlementRecord(null);
                 setVaultDeposit(0);
                 setManualPreviousBalance(0);
@@ -100,6 +107,7 @@ export default function DailySettlementPage() {
 
             setSettlementOrders(ordersResult || []);
             setSettlementRecord(settlementResult);
+            setDailyExpenses(_expensesToday.expenses || []); // 오늘 지출 데이터 저장
             setVaultDeposit(settlementResult?.vaultDeposit || 0);
             setManualPreviousBalance(settlementResult?.previousVaultBalance || 0);
 
@@ -386,6 +394,9 @@ export default function DailySettlementPage() {
         };
 
         dailyOrders.forEach(order => {
+            const orderDate = parseDate(order.orderDate);
+            if (!orderDate) return;
+
             const total = order.summary.total;
             const isTransferred = order.transferInfo?.isTransferred;
             const transferStatus = order.transferInfo?.status;
@@ -408,7 +419,8 @@ export default function DailySettlementPage() {
                     isPaidEffective = secondPaymentDate <= to;
                 } else {
                     // Timestamp 정보가 없는 경우 (구 데이터 또는 즉시완료 건)
-                    isPaidEffective = true;
+                    // 주문 시점과 정산 시점이 같은 날인 경우에만 당일 매출로 인정
+                    isPaidEffective = orderDate >= from && orderDate <= to;
                 }
             }
 
@@ -539,14 +551,47 @@ export default function DailySettlementPage() {
 
     // 지출 요약 (매입)
     const summaryExpense = useMemo(() => {
-        // useSimpleExpenses에서 fetch한 expenses 필터링
-        const filtered = expenses.filter(e => {
+        // fetch한 dailyExpenses 필터링
+        const filtered = dailyExpenses.filter(e => {
             const expenseDate = parseDate(e.date);
             if (!expenseDate) return false;
             return format(expenseDate, 'yyyy-MM-dd') === reportDate;
         });
 
-        const transport = filtered.filter(e => e.category === SimpleExpenseCategory.TRANSPORT);
+        const transportRaw = filtered.filter(e => e.category === SimpleExpenseCategory.TRANSPORT);
+
+        // 동일 주문의 배송비 합치기 로직
+        const groupedTransportMap = new Map<string, any>();
+        const nonOrderTransport: any[] = [];
+
+        transportRaw.forEach(e => {
+            if (e.relatedOrderId) {
+                if (!groupedTransportMap.has(e.relatedOrderId)) {
+                    groupedTransportMap.set(e.relatedOrderId, {
+                        ...e,
+                        originalItems: [e],
+                        hasCash: e.paymentMethod === 'cash' || e.description.includes('현금')
+                    });
+                } else {
+                    const existing = groupedTransportMap.get(e.relatedOrderId);
+                    existing.amount += e.amount;
+                    if (e.paymentMethod === 'cash' || e.description.includes('현금')) {
+                        existing.hasCash = true;
+                    }
+                    existing.originalItems.push(e);
+                }
+            } else {
+                nonOrderTransport.push(e);
+            }
+        });
+
+        const transport = [
+            ...Array.from(groupedTransportMap.values()).map(e => ({
+                ...e,
+                displayDescription: e.description.replace('실제배송료-', '배송비-').replace('배송비현금지급-', '배송비-') + (e.hasCash ? ' (현금포함)' : '')
+            })),
+            ...nonOrderTransport.map(e => ({ ...e, displayDescription: e.description }))
+        ];
 
         // 외부발주 분리 (설명에 '외부발주'가 포함된 자재비)
         const outsource = filtered.filter(e =>
@@ -563,8 +608,9 @@ export default function DailySettlementPage() {
         return {
             total: filtered.reduce((sum, e) => sum + e.amount, 0),
             transport: {
-                count: transport.reduce((sum, e) => sum + (e.quantity || 1), 0),
-                amount: transport.reduce((sum, e) => sum + e.amount, 0)
+                count: transport.length, // 합쳐진 건수로 카운트
+                amount: transportRaw.reduce((sum, e) => sum + e.amount, 0), // 금액은 전체 합산
+                items: transport
             },
             outsource: {
                 count: outsource.length,
@@ -574,7 +620,7 @@ export default function DailySettlementPage() {
             materialAmount: material.reduce((sum, e) => sum + e.amount, 0),
             otherAmount: other.reduce((sum, e) => sum + e.amount, 0)
         };
-    }, [expenses, reportDate]);
+    }, [dailyExpenses, reportDate]);
 
     // 금고 현금 계산
     const vaultCash = useMemo(() => {
@@ -582,7 +628,7 @@ export default function DailySettlementPage() {
 
         // 배송비 현금 지급액 집계: 주문 데이터 기반 + 간편지출(현금) 데이터 기반 통합
         // 지출 내역 중 '운송비'이면서 '현금' 결제인 항목들 합산 (settlementOrders 기반)
-        const transportCashExpenses = expenses.filter(e => {
+        const transportCashExpenses = dailyExpenses.filter(e => {
             const expenseDate = parseDate(e.date);
             if (!expenseDate) return false;
             const isInDate = format(expenseDate, 'yyyy-MM-dd') === reportDate;
@@ -598,7 +644,7 @@ export default function DailySettlementPage() {
 
         // 기타 현금 지출 (운송비 제외, 순수 현금/계좌이체 아닌 현금) 집계
         // 조건: 날짜 일치 AND 운송비 아님 AND (결제수단이 'cash' OR 설명에 '현금' 포함)
-        const otherCashExpensesList = expenses.filter(e => {
+        const otherCashExpensesList = dailyExpenses.filter(e => {
             const expenseDate = parseDate(e.date);
             if (!expenseDate) return false;
             const isInDate = format(expenseDate, 'yyyy-MM-dd') === reportDate;
@@ -630,7 +676,7 @@ export default function DailySettlementPage() {
             vaultDeposit,
             remaining
         };
-    }, [stats, manualPreviousBalance, prevSettlementRecord, vaultDeposit, expenses, reportDate]);
+    }, [stats, manualPreviousBalance, prevSettlementRecord, vaultDeposit, dailyExpenses, reportDate]);
 
     // 정산 저장 핸들러
     const handleSaveSettlement = async () => {
@@ -811,9 +857,19 @@ export default function DailySettlementPage() {
                                     <span className="text-xl font-black text-gray-900">₩{summaryExpense.total.toLocaleString()}</span>
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                    <div className="flex flex-col p-2 bg-blue-50 rounded border border-blue-100 italic">
+                                    <div className="flex flex-col p-2 bg-blue-50 rounded border border-blue-100">
                                         <span className="text-[10px] text-blue-600 font-bold">운송비 ({summaryExpense.transport.count}건)</span>
                                         <span className="text-sm font-bold text-blue-800">₩{summaryExpense.transport.amount.toLocaleString()}</span>
+                                        {summaryExpense.transport.items.length > 0 && (
+                                            <div className="mt-1 flex flex-col gap-0.5 max-h-[150px] overflow-y-auto scrollbar-thin">
+                                                {summaryExpense.transport.items.map((item, idx) => (
+                                                    <span key={item.id || idx} className="text-[9px] text-blue-700 flex justify-between gap-2 border-b border-blue-100/50 pb-0.5 last:border-0">
+                                                        <span className="truncate flex-1" title={item.displayDescription || item.description}>{item.displayDescription || item.description}</span>
+                                                        <span className="font-medium whitespace-nowrap">{item.amount.toLocaleString()}</span>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* 외부발주 섹션 (내역이 있으면 파트너별 표시) */}

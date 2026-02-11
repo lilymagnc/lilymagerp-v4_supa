@@ -294,7 +294,15 @@ function useOrdersLocal(initialFetch = true) {
       const startStr = startOfDay(startDate).toISOString().split('T')[0];
       const endStr = endOfDay(endDate).toISOString().split('T')[0];
 
-      // Fetch pickup orders in range
+      // 1. Fetch pending/processing orders from any date
+      const { data: pendingData, error: pendingError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('status', 'processing');
+
+      if (pendingError) throw pendingError;
+
+      // 2. Fetch pickup orders in range
       const { data: pickupData, error: pickupError } = await supabase
         .from('orders')
         .select('*')
@@ -303,7 +311,7 @@ function useOrdersLocal(initialFetch = true) {
 
       if (pickupError) throw pickupError;
 
-      // Fetch delivery orders in range
+      // 3. Fetch delivery orders in range
       const { data: deliveryData, error: deliveryError } = await supabase
         .from('orders')
         .select('*')
@@ -313,7 +321,11 @@ function useOrdersLocal(initialFetch = true) {
       if (deliveryError) throw deliveryError;
 
       // Merge and deduplicate
-      const allOrders = [...(pickupData || []), ...(deliveryData || [])];
+      const allOrders = [
+        ...(pendingData || []),
+        ...(pickupData || []),
+        ...(deliveryData || [])
+      ];
       const uniqueOrdersMap = new Map();
       allOrders.forEach(o => uniqueOrdersMap.set(o.id, o));
       const uniqueOrders = Array.from(uniqueOrdersMap.values());
@@ -999,31 +1011,26 @@ function useOrdersLocal(initialFetch = true) {
       // --- [End Date Migration] ---
 
       // --- [Auto-Sync Logic] Sync Delivery Cost (Standard & Cash) to Simple Expenses ---
-      // 동기화 로직: 
-      // 1. 실제 배송료(Standard): 주문 수정 시 입력한 '실제 배송비(actualDeliveryCost)'를 지출로 기록 (전산 배송비 아님, 사용자가 직접 입력한 값)
-      // 2. 추가 현금 배송비(Cash): 기사님께 별도로 드리는 현금(actualDeliveryCostCash)을 지출로 기록 (현금출납장에 반영됨)
-
       const newDeliveryCost = data.actualDeliveryCost !== undefined ? data.actualDeliveryCost : oldOrder.actual_delivery_cost;
       const newDeliveryCash = data.actualDeliveryCostCash !== undefined ? data.actualDeliveryCostCash : oldOrder.actual_delivery_cost_cash;
 
-      const supplierName = data.deliveryInfo?.driverName || oldOrder.delivery_info?.driverName || '배송기사';
+      // Use driverAffiliation as supplier for expenses
+      const supplierName = data.deliveryInfo?.driverAffiliation || oldOrder.delivery_info?.driverAffiliation || '운송업체';
+      const driverName = data.deliveryInfo?.driverName || oldOrder.delivery_info?.driverName || '';
+      const driverInfo = driverName ? ` (${driverName})` : '';
       const expenseDate = data.deliveryInfo?.date || oldOrder.delivery_info?.date || new Date().toISOString();
-      const recipientName = oldOrder.delivery_info?.recipientName || oldOrder.orderer?.name || '미지정';
+      const recipientName = data.deliveryInfo?.recipientName || oldOrder.delivery_info?.recipientName || oldOrder.orderer?.name || '미지정';
 
       if (data.actualDeliveryCost !== undefined || data.actualDeliveryCostCash !== undefined || data.deliveryInfo !== undefined) {
-
-        // Determine which branch pays for the expense
         let expenseBranchId = oldOrder.branch_id;
         let expenseBranchName = oldOrder.branch_name;
 
-        // If transferred and accepted/completed, the processing branch pays
         const tInfo = oldOrder.transfer_info || oldOrder.extra_data?.transfer_info;
         if (tInfo?.isTransferred && tInfo.processBranchId && ['accepted', 'completed'].includes(tInfo.status)) {
           expenseBranchId = tInfo.processBranchId;
           expenseBranchName = tInfo.processBranchName;
         }
 
-        // 1. 기존 지출 내역 모두 조회 (relatedOrderId 이용)
         const { data: existingExpenses } = await supabase
           .from('simple_expenses')
           .select('id, extra_data, description')
@@ -1032,7 +1039,7 @@ function useOrdersLocal(initialFetch = true) {
         // --- A. 실제 배송비 (Standard) 처리 ---
         const standardExpense = existingExpenses?.find(e =>
           e.extra_data?.type === 'standard_delivery_fee' ||
-          (!e.extra_data?.type && e.description.includes('실제 배송료')) // 하위 호환성
+          (!e.extra_data?.type && e.description.includes('실제 배송료'))
         );
 
         if (newDeliveryCost && newDeliveryCost > 0) {
@@ -1041,14 +1048,15 @@ function useOrdersLocal(initialFetch = true) {
             amount: newDeliveryCost,
             category: 'transport',
             sub_category: 'DELIVERY',
-            description: `실제 배송료 - ${recipientName}`,
+            description: `실제배송료-${recipientName}${driverInfo}`,
             supplier: supplierName,
             branch_id: expenseBranchId,
             branch_name: expenseBranchName,
             updated_at: new Date().toISOString(),
+            is_auto_generated: true,
             extra_data: {
               ...(standardExpense?.extra_data as object || {}),
-              relatedOrderId: orderId,
+              related_order_id: orderId,
               type: 'standard_delivery_fee'
             }
           };
@@ -1063,32 +1071,32 @@ function useOrdersLocal(initialFetch = true) {
             }]);
           }
         } else if (standardExpense) {
-          // 금액이 0원이거나 없는데 기존 내역이 있으면 삭제
           await supabase.from('simple_expenses').delete().eq('id', standardExpense.id);
         }
 
         // --- B. 기사님 현금 지급 (Cash) 처리 ---
         const cashExpense = existingExpenses?.find(e =>
           e.extra_data?.type === 'driver_cash_payment' ||
-          (!e.extra_data?.type && (e.description.includes('추가현금') || e.description.includes('현금지급') || e.description.includes('배송비 현금지급'))) // 하위 호환성
+          (!e.extra_data?.type && (e.description.includes('추가현금') || e.description.includes('현금지급') || e.description.includes('배송비 현금지급')))
         );
 
         if (newDeliveryCash && newDeliveryCash > 0) {
           const cashPayload = {
             expense_date: expenseDate,
             amount: newDeliveryCash,
-            category: 'transport', // 운송비
+            category: 'transport',
             sub_category: 'DELIVERY',
-            description: `추가현금배송비 - ${recipientName}`,
+            description: `배송비현금지급-${recipientName}${driverInfo}`,
             supplier: supplierName,
             branch_id: expenseBranchId,
             branch_name: expenseBranchName,
             updated_at: new Date().toISOString(),
+            is_auto_generated: true,
             extra_data: {
               ...(cashExpense?.extra_data as object || {}),
-              relatedOrderId: orderId,
+              related_order_id: orderId,
               type: 'driver_cash_payment',
-              payment_method: 'cash' // 현금 지급 명시
+              payment_method: 'cash'
             }
           };
 
@@ -1102,7 +1110,6 @@ function useOrdersLocal(initialFetch = true) {
             }]);
           }
         } else if (cashExpense) {
-          // 금액이 0원이거나 없는데 기존 내역이 있으면 삭제
           await supabase.from('simple_expenses').delete().eq('id', cashExpense.id);
         }
       }

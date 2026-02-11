@@ -250,19 +250,26 @@ export default function SimpleExpensesPage() {
       // 일반 사용자는 자신의 지점만
       const userBranch = branches.find(b => b.name === user.franchise);
       if (userBranch) {
-        setSelectedBranchId(userBranch.id);
-        fetchExpenses({ branchId: userBranch.id });
+        // 이미 선택된 상태라면 중복 fetch 방지 (선택적)
+        if (selectedBranchId !== userBranch.id) {
+          setSelectedBranchId(userBranch.id);
+          fetchExpenses({ branchId: userBranch.id });
+        }
       }
     } else if (isAdmin && branches.length > 0) {
       // 관리자는 전체 데이터 로드
-      fetchExpenses();
-      // 본사 관리자인 경우 빈 branchId 데이터 자동 업데이트
-      // updateEmptyBranchIds(); // Firebase function disabled after Supabase migration
+      // 이미 로드된 데이터가 있거나, 특정 지점이 선택된 상태가 아니라면 전체 로드
+      if (selectedBranchId === 'all') {
+        fetchExpenses();
+      }
     } else {
       // 기본적으로 전체 데이터 로드
-      fetchExpenses();
+      if (selectedBranchId === 'all') {
+        fetchExpenses();
+      }
     }
-  }, [user, branches, isAdmin, fetchExpenses, isMounted]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branches, isAdmin, fetchExpenses, isMounted, user?.role, user?.franchise]);
 
   return (
     <div className="container mx-auto p-6 space-y-6">
