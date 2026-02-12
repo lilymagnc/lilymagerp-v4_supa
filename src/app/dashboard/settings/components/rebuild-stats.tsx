@@ -93,7 +93,7 @@ export default function RebuildStats() {
                     const orderDateStr = format(parsedOrderDate, 'yyyy-MM-dd');
 
                     const payment = order.payment || {};
-                    const parsedPaymentDate = parseDate(payment.completedAt || (order as any).completed_at || order.order_date);
+                    const parsedPaymentDate = parseDate(payment.completedAt || payment.secondPaymentDate || order.order_date);
                     const settlementDateStr = parsedPaymentDate ? format(parsedPaymentDate, 'yyyy-MM-dd') : orderDateStr;
 
                     const branchName = order.branch_name || (order as any).branchName || "Unknown";
