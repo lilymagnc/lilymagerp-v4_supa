@@ -385,7 +385,7 @@ function useOrdersLocal(initialFetch = true) {
         let query = supabase
           .from('orders')
           .select('*')
-          .or(`order_date.gte.${startDate},payment->>completedAt.gte.${startDate},transfer_info->>acceptedAt.gte.${startDate}`);
+          .or(`order_date.gte.${startDate},payment->>completedAt.gte.${startDate},payment->>secondPaymentDate.gte.${startDate},transfer_info->>acceptedAt.gte.${startDate},payment->>status.eq.pending`);
 
         // Server-side branch filter
         if (!isAdmin && myBranch && myBranch !== '미정') {
@@ -452,11 +452,12 @@ function useOrdersLocal(initialFetch = true) {
         const from = page * pageSize;
         const to = from + pageSize - 1;
 
+        // 기간 내에 '주문'되었거나, '결제'되었거나, '분할결제 완료'되었거나, '이관수락'된 모든 항목 검색
+        // 또한 미결 주문(pending)은 기간에 관계없이 모두 불러옴 (ERP 정합성 유지)
         let query = supabase
           .from('orders')
           .select('*')
-          .gte('order_date', rangeStart)
-          .lte('order_date', rangeEnd);
+          .or(`order_date.gte.${rangeStart},payment->>completedAt.gte.${rangeStart},payment->>secondPaymentDate.gte.${rangeStart},transfer_info->>acceptedAt.gte.${rangeStart},payment->>status.eq.pending`);
 
         // Server-side branch filter
         if (!isAdmin && myBranch && myBranch !== '미정') {
@@ -584,7 +585,7 @@ function useOrdersLocal(initialFetch = true) {
       let query = supabase
         .from('orders')
         .select('*')
-        .or(`order_date.gte.${effectiveStart},payment->>completedAt.gte.${effectiveStart},transfer_info->>acceptedAt.gte.${effectiveStart}`)
+        .or(`order_date.gte.${effectiveStart},payment->>completedAt.gte.${effectiveStart},payment->>secondPaymentDate.gte.${effectiveStart},transfer_info->>acceptedAt.gte.${effectiveStart},payment->>status.eq.pending`)
         .filter('order_date', 'lte', end);
 
       const u = userRef.current;

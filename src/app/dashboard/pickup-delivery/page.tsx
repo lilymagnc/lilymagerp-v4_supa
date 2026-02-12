@@ -643,7 +643,7 @@ export default function PickupDeliveryPage() {
           </TabsContent>
 
           <TabsContent value="stats" className="mt-6">
-            <DeliveryStatsChart orders={orders} />
+            <DeliveryStatsChart orders={deliveryOrders} />
           </TabsContent>
         </Tabs>
       )}

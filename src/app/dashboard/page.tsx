@@ -569,7 +569,7 @@ export default function DashboardPage() {
 
           while (currentD <= endD) {
             const dateStr = format(currentD, 'yyyy-MM-dd');
-            const day = statsMap.get(dateStr) || { date: dateStr, totalSettledAmount: 0, branches: {} };
+            const day = statsMap.get(dateStr) || { date: dateStr, totalRevenue: 0, totalOrderCount: 0, totalSettledAmount: 0, branches: {} };
             const weekday = koreanWeekdays[currentD.getDay()];
             const label = `${format(currentD, 'M/d')} (${weekday})`;
             const result: any = { date: label, totalSales: day.totalSettledAmount || 0 };
