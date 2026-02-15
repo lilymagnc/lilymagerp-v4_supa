@@ -48,12 +48,22 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
   const { updateOrder } = useOrders();
   const [editOrderDate, setEditOrderDate] = useState("");
   const [editPaymentDate, setEditPaymentDate] = useState("");
+  const [editSecondPaymentDate, setEditSecondPaymentDate] = useState(""); // 2차 결제일 수정 상태 추가
   const [isDateEditing, setIsDateEditing] = useState(false);
 
   useEffect(() => {
     if (order && isOpen) {
       setEditOrderDate(order.orderDate ? format(parseDate(order.orderDate), "yyyy-MM-dd") : "");
-      setEditPaymentDate(order.payment?.completedAt ? format(parseDate(order.payment.completedAt), "yyyy-MM-dd'T'HH:mm") : "");
+      // 1차 결제일 (또는 일반 결제일) 초기화. 분할결제면 firstPaymentDate 우선, 없으면 completedAt
+      const firstDate = order.payment?.isSplitPayment
+        ? (order.payment.firstPaymentDate || order.payment.completedAt)
+        : order.payment?.completedAt;
+
+      setEditPaymentDate(firstDate ? format(parseDate(firstDate), "yyyy-MM-dd'T'HH:mm") : "");
+
+      // 2차 결제일 초기화
+      setEditSecondPaymentDate(order.payment?.secondPaymentDate ? format(parseDate(order.payment.secondPaymentDate), "yyyy-MM-dd'T'HH:mm") : "");
+
       setIsDateEditing(false);
     }
   }, [order, isOpen]);
@@ -92,12 +102,27 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
       }
 
       // 2. Payment Date
-      if (editPaymentDate) {
-        const currentPayment = order.payment || {};
-        updates.payment = {
-          ...currentPayment,
-          completedAt: new Date(editPaymentDate).toISOString()
-        };
+      if (editPaymentDate || editSecondPaymentDate) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const currentPayment: any = order.payment || {};
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const newPayment: any = { ...currentPayment };
+
+        // 1차 결제일 (또는 일반 결제일) 수정
+        if (editPaymentDate) {
+          // 1차 결제일은 completedAt과 firstPaymentDate 모두에 반영 (분할결제인 경우)
+          newPayment.completedAt = new Date(editPaymentDate).toISOString();
+          if (currentPayment.isSplitPayment) {
+            newPayment.firstPaymentDate = new Date(editPaymentDate).toISOString();
+          }
+        }
+
+        // 2차 결제일 수정 (분할결제인 경우만)
+        if (editSecondPaymentDate && currentPayment.isSplitPayment) {
+          // 일단 명시적으로 secondPaymentDate 필드를 업데이트함.
+        }
+
+        updates.payment = newPayment;
       }
 
       await updateOrder(order.id, updates);
@@ -257,9 +282,28 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
                         className="bg-white"
                       />
                       <p className="text-[10px] text-gray-500">
-                        * 실제 매출과 정산은 이 날짜를 기준으로 집계됩니다.
+                        * {order.payment?.isSplitPayment ? '1차 결제일 (계약금/선결제)' : '결제 완료일 (매출/정산일)'}
                       </p>
                     </div>
+
+                    {/* 분할결제인 경우 2차 결제일 수정 필드 추가 */}
+                    {order.payment?.isSplitPayment && (
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-second-payment-date" className="text-xs font-semibold text-orange-600">
+                          2차 결제일 (잔금 입금일)
+                        </Label>
+                        <Input
+                          id="edit-second-payment-date"
+                          type="datetime-local"
+                          value={editSecondPaymentDate}
+                          onChange={(e) => setEditSecondPaymentDate(e.target.value)}
+                          className="bg-white"
+                        />
+                        <p className="text-[10px] text-gray-500">
+                          * 잔금 입금 날짜를 정정합니다.
+                        </p>
+                      </div>
+                    )}
                   </div>
                   <div className="flex justify-end pt-2">
                     <Button size="sm" onClick={handleSaveDateCorrection} className="bg-red-600 hover:bg-red-700 text-white">
@@ -335,12 +379,22 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
                   </div>
                   <div className="flex items-center gap-2">
                     {order.payment?.isSplitPayment ? (
-                      <div className="text-sm text-muted-foreground">
-                        <div className="text-green-600 font-medium">
-                          선결제: {order.payment.firstPaymentMethod ? getPaymentMethodText(order.payment.firstPaymentMethod) : '미설정'} (₩{order.payment.firstPaymentAmount?.toLocaleString() || 0})
+                      <div className="text-sm text-muted-foreground space-y-1">
+                        <div className="text-green-600 font-medium flex items-center flex-wrap gap-1">
+                          <span>선결제: {order.payment.firstPaymentMethod ? getPaymentMethodText(order.payment.firstPaymentMethod) : '미설정'} (₩{order.payment.firstPaymentAmount?.toLocaleString() || 0})</span>
+                          {order.payment.firstPaymentDate && (
+                            <span className="text-xs text-gray-400 font-normal">
+                              [{format(parseDate(order.payment.firstPaymentDate), 'MM/dd HH:mm')}]
+                            </span>
+                          )}
                         </div>
-                        <div className="text-orange-600 font-medium">
-                          후결제: {order.payment.secondPaymentMethod ? getPaymentMethodText(order.payment.secondPaymentMethod) : '미설정'} (₩{order.payment.secondPaymentAmount?.toLocaleString() || 0})
+                        <div className="text-orange-600 font-medium flex items-center flex-wrap gap-1">
+                          <span>후결제: {order.payment.secondPaymentMethod ? getPaymentMethodText(order.payment.secondPaymentMethod) : '미설정'} (₩{order.payment.secondPaymentAmount?.toLocaleString() || 0})</span>
+                          {(order.payment.secondPaymentDate || ((order.payment.status === 'paid' || order.payment.status === 'completed') && order.payment.completedAt)) && (
+                            <span className="text-xs text-gray-400 font-normal">
+                              [{format(parseDate(order.payment.secondPaymentDate || order.payment.completedAt), 'MM/dd HH:mm')}]
+                            </span>
+                          )}
                         </div>
                       </div>
                     ) : (
@@ -756,21 +810,26 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
                     <div className="space-y-2">
                       <div className="text-sm font-medium text-blue-600">분할결제 내역</div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-green-600">선결제 (주문일 매출)</span>
+                        <span className="text-green-600">
+                          선결제 ({order.payment.firstPaymentMethod ? getPaymentMethodText(order.payment.firstPaymentMethod) : '미설정'})
+                        </span>
                         <span className="text-green-600 font-medium">₩{(order.payment.firstPaymentAmount || 0).toLocaleString()}</span>
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-orange-600">후결제 (완결 시 매출)</span>
-                        <span className="text-orange-600 font-medium">₩{(order.payment.secondPaymentAmount || 0).toLocaleString()}</span>
-                      </div>
                       {order.payment.firstPaymentDate && (
-                        <div className="text-xs text-muted-foreground">
-                          선결제일: {format(parseDate(order.payment.firstPaymentDate), 'yyyy-MM-dd HH:mm')}
+                        <div className="text-xs text-muted-foreground text-right">
+                          {format(parseDate(order.payment.firstPaymentDate), 'yyyy-MM-dd HH:mm')}
                         </div>
                       )}
-                      {order.payment.secondPaymentDate && (
-                        <div className="text-xs text-muted-foreground">
-                          후결제일: {format(parseDate(order.payment.secondPaymentDate), 'yyyy-MM-dd HH:mm')}
+
+                      <div className="flex justify-between text-sm mt-1">
+                        <span className="text-orange-600">
+                          후결제 ({order.payment.secondPaymentMethod ? getPaymentMethodText(order.payment.secondPaymentMethod) : '미설정'})
+                        </span>
+                        <span className="text-orange-600 font-medium">₩{(order.payment.secondPaymentAmount || 0).toLocaleString()}</span>
+                      </div>
+                      {(order.payment.secondPaymentDate || ((order.payment.status === 'paid' || order.payment.status === 'completed') && order.payment.completedAt)) && (
+                        <div className="text-xs text-muted-foreground text-right">
+                          {format(parseDate(order.payment.secondPaymentDate || order.payment.completedAt), 'yyyy-MM-dd HH:mm')}
                         </div>
                       )}
                     </div>

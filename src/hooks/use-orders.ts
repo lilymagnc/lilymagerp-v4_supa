@@ -841,43 +841,93 @@ function useOrdersLocal(initialFetch = true) {
 
       const payment = { ...order.payment, status: newStatus };
       if (newStatus === 'paid' || newStatus === 'completed') {
+        const now = new Date().toISOString();
         // forceUpdateDate=true: 사용자가 확인 다이얼로그에서 오늘날짜로 업데이트를 선택한 경우
         // forceUpdateDate=false/undefined: 기존 completedAt이 없을 때만 설정
         if (forceUpdateDate) {
-          payment.completedAt = new Date().toISOString();
+          payment.completedAt = now;
         } else if (!payment.completedAt) {
-          payment.completedAt = new Date().toISOString();
+          payment.completedAt = now;
         }
+
+        // 분할결제의 경우 후결제 완료 시간도 지금으로 설정 (완료 처리 시점 = 후결제 입금 시점)
         if (payment.isSplitPayment || payment.status === 'split_payment') {
           if (forceUpdateDate) {
-            payment.secondPaymentDate = new Date().toISOString();
+            payment.secondPaymentDate = now;
           } else if (!payment.secondPaymentDate) {
-            payment.secondPaymentDate = new Date().toISOString();
+            payment.secondPaymentDate = now;
           }
         }
       } else {
+        // 미결(pending/processing)로 되돌리는 경우
+
+        // 1. 전체 완료일 초기화
         payment.completedAt = null;
+
+        // 2. 분할결제인 경우
+        if (payment.isSplitPayment) {
+          // 2차 결제일(잔금) 초기화
+          payment.secondPaymentDate = null;
+          // 1차 결제일(선금)은 유지해야 함 (이미 받은 돈이므로)
+        } else {
+          // 분할결제가 아니면 모든 결제일 초기화 (혹시 모르니)
+          // 단, 기존 로직상 completedAt만 날리면 됨
+        }
       }
 
       const { error } = await supabase.from('orders').update({ payment, updated_at: new Date().toISOString() }).eq('id', orderId);
       if (error) throw error;
 
-      const isNewSettled = isSettled({ status: order.status, payment });
-      const wasSettled = isSettled(order);
+      // Calculate daily stats updates based on payment diff
+      const getSettledMap = (p: any, total: number) => {
+        const map = new Map<string, number>();
+        if (!p) return map;
 
-      if (isNewSettled && !wasSettled) {
-        await updateDailyStats(new Date(), order.branch_name, {
-          revenueDelta: 0,
-          orderCountDelta: 0,
-          settledAmountDelta: order.summary?.total || 0
-        });
-      } else if (!isNewSettled && wasSettled) {
-        const settleDate = order.payment?.completedAt ? new Date(order.payment.completedAt) : new Date();
-        await updateDailyStats(settleDate, order.branch_name, {
-          revenueDelta: 0,
-          orderCountDelta: 0,
-          settledAmountDelta: -(order.summary?.total || 0)
-        });
+        const add = (dateStr: string | undefined | null, amount: number) => {
+          if (!dateStr || !amount) return;
+          const d = dateStr.split('T')[0];
+          map.set(d, (map.get(d) || 0) + amount);
+        };
+
+        if (p.isSplitPayment) {
+          add(p.firstPaymentDate, p.firstPaymentAmount || 0);
+
+          let secondDate = p.secondPaymentDate;
+          if (!secondDate && (p.status === 'paid' || p.status === 'completed' || p.completedAt)) {
+            secondDate = p.completedAt;
+          }
+          if (secondDate) {
+            const secondAmt = (p.secondPaymentAmount) ? p.secondPaymentAmount : (total - (p.firstPaymentAmount || 0));
+            add(secondDate, secondAmt);
+          }
+        } else {
+          if (p.completedAt) {
+            add(p.completedAt, total);
+          }
+        }
+        return map;
+      };
+
+      const oldMap = getSettledMap(order.payment, order.summary?.total || 0);
+      const newMap = getSettledMap(payment, order.summary?.total || 0);
+
+      // 날짜별 차이 계산 및 업데이트
+      // Use Array.from for iteration compatibility
+      const allDates = new Set([...Array.from(oldMap.keys()), ...Array.from(newMap.keys())]);
+
+      // Need to iterate sequentially possibly? No, parallel is fine but loop is simpler.
+      for (const d of Array.from(allDates)) {
+        const oldAmt = oldMap.get(d) || 0;
+        const newAmt = newMap.get(d) || 0;
+        const delta = newAmt - oldAmt;
+
+        if (delta !== 0) {
+          await updateDailyStats(new Date(d), order.branch_name, {
+            revenueDelta: 0,
+            orderCountDelta: 0,
+            settledAmountDelta: delta
+          });
+        }
       }
 
       toast({ title: '결제 상태 변경 성공', description: `결제 상태가 변경되었습니다.` });
@@ -899,24 +949,32 @@ function useOrdersLocal(initialFetch = true) {
       const oldStatus = oldOrder.status;
       const newStatus = data.status || oldStatus;
 
+      // [Modified] 강제 날짜 정합성 보정 (미결로 돌아가면 날짜 삭제)
+      let mergedPayment = { ...oldOrder.payment, ...(data.payment || {}) };
+      const isNewPaidStatus = newStatus === 'paid' || newStatus === 'completed';
+
+      if (!isNewPaidStatus && newStatus !== 'canceled') {
+        mergedPayment.completedAt = null;
+        if (mergedPayment.isSplitPayment) {
+          mergedPayment.secondPaymentDate = null;
+        }
+      } else if (isNewPaidStatus) {
+        if (!mergedPayment.completedAt && !oldOrder.payment?.completedAt) mergedPayment.completedAt = new Date().toISOString();
+        if (mergedPayment.isSplitPayment && !mergedPayment.secondPaymentDate && !oldOrder.payment?.secondPaymentDate) {
+          mergedPayment.secondPaymentDate = new Date().toISOString();
+        }
+      }
+
       let revenueDelta = 0;
       if (oldStatus !== 'canceled' && newStatus === 'canceled') revenueDelta = -oldTotal;
       else if (oldStatus === 'canceled' && newStatus !== 'canceled') revenueDelta = newTotal;
       else if (oldStatus !== 'canceled' && newStatus !== 'canceled') revenueDelta = newTotal - oldTotal;
 
-      const oldSettled = isSettled(oldOrder) && !isCanceled(oldOrder);
-      const newSettled = isSettled({ status: newStatus, payment: data.payment || oldOrder.payment }) && !isCanceled({ status: newStatus });
-
-      let settledDelta = 0;
-      if (!oldSettled && newSettled) settledDelta = newTotal;
-      else if (oldSettled && !newSettled) settledDelta = -oldTotal;
-      else if (oldSettled && newSettled) settledDelta = newTotal - oldTotal;
-
       // Transform data to snake_case for PostgreSQL
       const updatePayload: any = { updated_at: new Date().toISOString() };
       if (data.status) updatePayload.status = data.status;
       if (data.summary) updatePayload.summary = data.summary;
-      if (data.payment) updatePayload.payment = data.payment;
+      updatePayload.payment = mergedPayment;
       if (data.orderer) updatePayload.orderer = data.orderer;
       if (data.items) updatePayload.items = data.items;
       if (data.deliveryInfo) updatePayload.delivery_info = data.deliveryInfo;
@@ -1126,12 +1184,62 @@ function useOrdersLocal(initialFetch = true) {
       }
       // -----------------------------------------------------------
 
-      if (revenueDelta !== 0 || settledDelta !== 0) {
+      // 1. 매출/주문수 업데이트 (주문일 기준)
+      if (revenueDelta !== 0 || (oldStatus !== newStatus && (newStatus === 'canceled' || oldStatus === 'canceled'))) {
+        let countDelta = 0;
+        if (oldStatus !== 'canceled' && newStatus === 'canceled') countDelta = -1;
+        else if (oldStatus === 'canceled' && newStatus !== 'canceled') countDelta = 1;
+
         await updateDailyStats(new Date(oldOrder.order_date), oldOrder.branch_name, {
           revenueDelta,
-          orderCountDelta: 0,
-          settledAmountDelta: settledDelta
+          orderCountDelta: countDelta,
+          settledAmountDelta: 0
         });
+      }
+
+      // 2. 수금액 업데이트 (결제일 기준 - 분할결제 포함 정밀 계산)
+      const getSettledMapOrder = (p: any, total: number) => {
+        const map = new Map<string, number>();
+        if (!p) return map;
+
+        const add = (dateStr: string | undefined | null, amount: number) => {
+          if (!dateStr || !amount) return;
+          const d = dateStr.split('T')[0];
+          map.set(d, (map.get(d) || 0) + amount);
+        };
+
+        if (p.isSplitPayment) {
+          add(p.firstPaymentDate, p.firstPaymentAmount || 0);
+
+          let secondDate = p.secondPaymentDate;
+          if (!secondDate && (p.status === 'paid' || p.status === 'completed' || p.completedAt)) {
+            secondDate = p.completedAt;
+          }
+          if (secondDate) {
+            const secondAmt = (p.secondPaymentAmount) ? p.secondPaymentAmount : (total - (p.firstPaymentAmount || 0));
+            add(secondDate, secondAmt);
+          }
+        } else {
+          if (p.completedAt) {
+            add(p.completedAt, total);
+          }
+        }
+        return map;
+      };
+
+      const oldMap = (oldStatus === 'canceled') ? new Map() : getSettledMapOrder(oldOrder.payment, oldTotal);
+      const newMap = (newStatus === 'canceled') ? new Map() : getSettledMapOrder(mergedPayment, newTotal);
+
+      const allDates = new Set([...Array.from(oldMap.keys()), ...Array.from(newMap.keys())]);
+      for (const d of Array.from(allDates)) {
+        const delta = (newMap.get(d) || 0) - (oldMap.get(d) || 0);
+        if (delta !== 0) {
+          await updateDailyStats(new Date(d), oldOrder.branch_name, {
+            revenueDelta: 0,
+            orderCountDelta: 0,
+            settledAmountDelta: delta
+          });
+        }
       }
 
       toast({ title: "성공", description: "주문 정보가 수정되었습니다." });

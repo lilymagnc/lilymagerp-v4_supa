@@ -263,77 +263,86 @@ export default function DailySettlementPage() {
         const to = new Date(reportDate + 'T23:59:59.999');
 
         // 해당 일자의 주문 필터링 (로컬 상태 settlementOrders 사용)
-        const dailyOrders = settlementOrders.filter(order => {
+        const dailyOrders: Order[] = [];
+        const pendingList: Order[] = [];
+
+        settlementOrders.forEach(order => {
             const orderDate = parseDate(order.orderDate);
-            if (!orderDate) return false;
-            const isInDate = orderDate >= from && orderDate <= to;
-            const isCanceled = order.status === 'canceled';
+            if (!orderDate) return;
+            if (order.status === 'canceled') return;
 
-            if (!isInDate || isCanceled) return false;
+            // 지분 필터 확인
+            let isMyOrder = false;
+            if (currentTargetBranch === 'all') {
+                isMyOrder = true;
+            } else {
+                const isOriginalBranch = order.branchName === currentTargetBranch;
+                const isProcessBranch = order.transferInfo?.isTransferred &&
+                    (order.transferInfo?.status === 'accepted' || order.transferInfo?.status === 'completed') &&
+                    order.transferInfo?.processBranchName === currentTargetBranch;
+                isMyOrder = isOriginalBranch || isProcessBranch;
+            }
+            if (!isMyOrder) return;
 
-            // 전체 보기거나, 내가 관여한 주문인 경우
-            if (currentTargetBranch === 'all') return true;
+            // [정산 로직 핵심]
+            // 리포트 날짜 (from ~ to)에 해당하는 결제 내역이 있는지 확인
+            const p = order.payment;
+            const firstDate = parseDate(p?.firstPaymentDate);
+            const secondDate = parseDate(p?.secondPaymentDate);
+            const completedAt = parseDate(p?.completedAt); // 일반 결제 또는 잔금/완납일
 
-            const isOriginalBranch = order.branchName === currentTargetBranch;
-            const isProcessBranch = order.transferInfo?.isTransferred &&
-                (order.transferInfo?.status === 'accepted' || order.transferInfo?.status === 'completed') &&
-                order.transferInfo?.processBranchName === currentTargetBranch;
+            let hasPaymentToday = false;
 
-            return isOriginalBranch || isProcessBranch;
+            // 1. 분할 결제인 경우
+            if (p?.isSplitPayment) {
+                // 1차 결제가 오늘인가?
+                if (firstDate && firstDate >= from && firstDate <= to) {
+                    hasPaymentToday = true; // 선금은 무조건 수금 처리
+                }
+
+                // 2차 결제가 오늘인가? (단, 결제 완료 상태여야 함)
+                const isPaid = p.status === 'paid' || p.status === 'completed' || order.status === 'completed';
+                let isSecondToday = false;
+
+                if (isPaid) {
+                    if (secondDate && secondDate >= from && secondDate <= to) {
+                        isSecondToday = true;
+                    } else if (!secondDate && completedAt && completedAt >= from && completedAt <= to) {
+                        // 2차 결제일이 없는데 완료일이 오늘이면 2차 결제로 간주
+                        isSecondToday = true;
+                    }
+                }
+                if (isSecondToday) hasPaymentToday = true;
+
+                // 미결(잔금) 확인
+                // 주문일이 오늘인데, 아직 완납(=isPaid)이 아니면 미결 리스트에 추가
+                if (orderDate && orderDate >= from && orderDate <= to) {
+                    if (!isPaid) {
+                        pendingList.push(order);
+                    }
+                }
+
+            } else {
+                // 일반 결제인 경우
+                if (completedAt && completedAt >= from && completedAt <= to) {
+                    hasPaymentToday = true;
+                } else {
+                    // 미결제 상태이고, 주문일이 오늘이면 미결 리스트 추가
+                    if (orderDate && orderDate >= from && orderDate <= to) {
+                        const isPaid = p?.status === 'paid' || p?.status === 'completed';
+                        if (!isPaid) {
+                            pendingList.push(order);
+                        }
+                    }
+                }
+            }
+
+            if (hasPaymentToday) {
+                dailyOrders.push(order);
+            }
         });
 
-        // 시간 내림차순 정렬
-        dailyOrders.sort((a, b) => {
-            const dateA = parseDate(a.orderDate) || new Date(0);
-            const dateB = parseDate(b.orderDate) || new Date(0);
-            return dateB.getTime() - dateA.getTime();
-        });
-
-        // 2-1. 이월 주문 결제 필터링 (로컬 상태 settlementOrders 사용)
-        const previousOrderPayments = settlementOrders.filter(order => {
-            const orderDate = parseDate(order.orderDate);
-            if (!orderDate) return false;
-            const isBeforeToday = orderDate < from;
-            const isCanceled = order.status === 'canceled';
-            const isPending = order.payment?.status === 'pending';
-
-            if (!isBeforeToday || isCanceled || isPending) return false;
-
-            // 결제 완료일 확인 (payment.completedAt 또는 payment.secondPaymentDate)
-            const completedAt = parseDate((order.payment as any).completedAt);
-            const secondPaymentDate = parseDate((order.payment as any).secondPaymentDate);
-
-            const isCompletedToday = completedAt && completedAt >= from && completedAt <= to;
-            const isSecondPaidToday = secondPaymentDate && secondPaymentDate >= from && secondPaymentDate <= to;
-
-            if (!isCompletedToday && !isSecondPaidToday) return false;
-
-            // 지분 확인
-            if (currentTargetBranch === 'all') return true;
-            const isOriginalBranch = order.branchName === currentTargetBranch;
-            const isProcessBranch = order.transferInfo?.isTransferred && order.transferInfo?.processBranchName === currentTargetBranch;
-
-            return isOriginalBranch || isProcessBranch;
-        });
-
-        let totalPayment = 0;   // 기준 지점의 당일 주문 총 결제액
-        let outgoingSettle = 0; // 발주 정산액 (내 지분)
-        let incomingSettle = 0; // 수주 정산액 (내 지분)
-        let netSales = 0;       // 실질 매출 합계
-        let prevOrderPaymentTotal = 0; // 이월 주문 수금액
-
-        let pendingAmountToday = 0;
-        const pendingOrdersToday: Order[] = [];
-        const paidOrdersToday: Order[] = [];
-
-        // 결제수단별 집계
-        const paymentStats = {
-            card: { count: 0, amount: 0 },
-            cash: { count: 0, amount: 0 },
-            transfer: { count: 0, amount: 0 },
-            others: { count: 0, amount: 0 }
-        };
-
+        // 배송비 현금 지급액 합산 변수 초기화
         let deliveryCostCashToday = 0;
         const processedCashOrderIds = new Set<string>();
 
@@ -341,30 +350,29 @@ export default function DailySettlementPage() {
         const isTargetBranchOrder = (order: Order) => {
             if (currentTargetBranch === 'all') return true;
             const target = currentTargetBranch.trim().replace(/\s/g, '');
-            const isOriginal = order.branchName?.trim().replace(/\s/g, '') === target;
+            const branchName = order.branchName?.trim().replace(/\s/g, '') || '';
+            const processName = order.transferInfo?.processBranchName?.trim().replace(/\s/g, '') || '';
+
+            const isOriginal = branchName === target;
             const isProcess = order.transferInfo?.isTransferred &&
                 (order.transferInfo?.status === 'accepted' || order.transferInfo?.status === 'completed') &&
-                order.transferInfo?.processBranchName?.trim().replace(/\s/g, '') === target;
+                processName === target;
             return isOriginal || isProcess;
         };
 
         // 배송비 현금 지급액 합산 (사용자 요청: 배송일 기준)
-        // 배송비 현금 지급액 합산 (로컬 상태 settlementOrders 사용)
         settlementOrders.forEach(order => {
             if (!order.actualDeliveryCostCash) return;
 
             const deliveryDate = order.deliveryInfo?.date || order.pickupInfo?.date;
             if (!deliveryDate) return;
 
-            // 문자열 날짜(YYYY-MM-DD)를 비교하기 위해 파싱 또는 직접 비교
-            // deliveryDate는 보통 '2026-01-25' 형식임
             if (deliveryDate === reportDate) {
                 if (isTargetBranchOrder(order)) {
                     deliveryCostCashToday += Number(order.actualDeliveryCostCash);
                     processedCashOrderIds.add(order.id);
                 }
             } else {
-                // 혹시 모르니 parseDate로도 확인 (Timestamp 등 대비)
                 const parsedDeliveryDate = parseDate(deliveryDate);
                 if (parsedDeliveryDate && format(parsedDeliveryDate, 'yyyy-MM-dd') === reportDate) {
                     if (isTargetBranchOrder(order) && !processedCashOrderIds.has(order.id)) {
@@ -375,175 +383,203 @@ export default function DailySettlementPage() {
             }
         });
 
-        const updatePaymentStats = (order: Order, amount: number) => {
-            // 호출 시점에서 이미 '유효한 결제'임이 확인되었다고 가정함
-            const method = order.payment.method;
-            if (method === 'card') {
-                paymentStats.card.count++;
-                paymentStats.card.amount += amount;
-            } else if (method === 'cash') {
-                paymentStats.cash.count++;
-                paymentStats.cash.amount += amount;
-            } else if (method === 'transfer') {
-                paymentStats.transfer.count++;
-                paymentStats.transfer.amount += amount;
+        // 시간 내림차순 정렬
+        dailyOrders.sort((a, b) => {
+            const dateA = parseDate(a.orderDate) || new Date(0);
+            const dateB = parseDate(b.orderDate) || new Date(0);
+            return dateB.getTime() - dateA.getTime();
+        });
+
+        let totalPayment = 0;   // 당일 결제된 총 금액 (부분결제 포함 - 내 지분에 상관 없이 전체? -> 아님, 내 지분만큼만? 보통 Total은 전체를 보여주고 Net Sales가 내꺼. 하지만 여기선 totalPayment가 '수금액'으로 쓰임)
+        // -> 수정: totalPayment는 '내가 수금한 또는 내 매출로 잡힌' 금액이어야 함. 일단 Net Sales와 동일하게 감.
+
+        let outgoingSettle = 0;
+        let incomingSettle = 0;
+        let netSales = 0;
+        let prevOrderPaymentTotal = 0;
+        let pendingAmountToday = 0;
+
+        const pendingOrdersToday: Order[] = [];
+        const paidOrdersToday: Order[] = [];
+        const previousOrderPayments: Order[] = [];
+
+        // 결제수단별 집계
+        const paymentStats = {
+            card: { count: 0, amount: 0 },
+            cash: { count: 0, amount: 0 },
+            transfer: { count: 0, amount: 0 },
+            others: { count: 0, amount: 0 }
+        };
+
+        // 주문의 '오늘 결제된 금액'을 계산하고 통계에 반영하는 함수
+        // ratio: 내 지분율 (0~1)
+        const updatePaymentStats = (order: Order, ratio: number) => {
+            const p = order.payment;
+            if (!p) return 0;
+            const firstDate = parseDate(p.firstPaymentDate);
+            const secondDate = parseDate(p.secondPaymentDate);
+            const completedAt = parseDate(p.completedAt);
+
+            let amountAddedThisOrder = 0;
+
+            // 통계 업데이트 헬퍼 (지분율 적용)
+            const updateStat = (m: string | undefined, fullAmt: number) => {
+                if (!fullAmt) return;
+
+                // 지분율 적용
+                const myShare = Math.round(fullAmt * ratio);
+                if (myShare <= 0) return;
+
+                amountAddedThisOrder += myShare;
+
+                if (!m) { m = 'others'; }
+                const method = m as keyof typeof paymentStats;
+                if (paymentStats[method]) {
+                    paymentStats[method].count++; // 건수는 지분과 무관하게 1건? 아니면 지분 있을 때만? -> 여기선 함수 호출 자체가 지분 있을 때만 됨
+                    paymentStats[method].amount += myShare;
+                } else {
+                    paymentStats.others.count++;
+                    paymentStats.others.amount += myShare;
+                }
+            };
+
+            if (p.isSplitPayment) {
+                // 1차 결제 확인
+                if (firstDate && firstDate >= from && firstDate <= to) {
+                    updateStat(p.firstPaymentMethod, p.firstPaymentAmount || 0);
+                }
+                // 2차 결제 확인 (완료 상태여야 함)
+                const isPaid = p.status === 'paid' || p.status === 'completed' || order.status === 'completed';
+
+                if (isPaid) {
+                    let isSecondToday = false;
+                    if (secondDate && secondDate >= from && secondDate <= to) {
+                        isSecondToday = true;
+                    } else if (!secondDate && completedAt && completedAt >= from && completedAt <= to) {
+                        isSecondToday = true;
+                    }
+
+                    if (isSecondToday) {
+                        const secondAmt = p.secondPaymentAmount ? p.secondPaymentAmount : (order.summary.total - (p.firstPaymentAmount || 0));
+                        updateStat(p.secondPaymentMethod, secondAmt);
+                    }
+                }
             } else {
-                paymentStats.others.count++;
-                paymentStats.others.amount += amount;
+                // 일반 결제
+                if (completedAt && completedAt >= from && completedAt <= to) {
+                    updateStat(p.method, order.summary.total);
+                }
             }
+
+            return amountAddedThisOrder;
         };
 
         dailyOrders.forEach(order => {
-            const orderDate = parseDate(order.orderDate);
-            if (!orderDate) return;
+            // 지분율 계산
+            let ratio = 1.0;
+            if (currentTargetBranch !== 'all') {
+                const target = currentTargetBranch.trim().replace(/\s/g, '');
+                const branchName = order.branchName?.trim().replace(/\s/g, '') || '';
+                const processName = order.transferInfo?.processBranchName?.trim().replace(/\s/g, '') || '';
 
-            const total = order.summary.total;
-            const isTransferred = order.transferInfo?.isTransferred;
-            const transferStatus = order.transferInfo?.status;
-            const isValidTransfer = isTransferred && (transferStatus === 'accepted' || transferStatus === 'completed');
-
-            // 실제 결제 상태 확인 (pending/split_payment 등은 미결건)
-            const paymentStatus = order.payment?.status;
-            const isPaidGlobal = paymentStatus === 'paid' || paymentStatus === 'completed';
-
-            // 결제 시점 확인
-            const completedAt = parseDate((order.payment as any).completedAt);
-            const secondPaymentDate = parseDate((order.payment as any).secondPaymentDate);
-
-            // 유효 결제일: to (오늘의 마감시간)보다 작거나 같아야 함
-            let isPaidEffective = false;
-            if (isPaidGlobal) {
-                if (completedAt) {
-                    isPaidEffective = completedAt <= to;
-                } else if (secondPaymentDate) {
-                    isPaidEffective = secondPaymentDate <= to;
-                } else {
-                    // Timestamp 정보가 없는 경우 (구 데이터 또는 즉시완료 건)
-                    // 주문 시점과 정산 시점이 같은 날인 경우에만 당일 매출로 인정
-                    isPaidEffective = orderDate >= from && orderDate <= to;
-                }
-            }
-
-            const split = order.transferInfo?.amountSplit || { orderBranch: 100, processBranch: 0 };
-
-            if (currentTargetBranch === 'all') {
-                totalPayment += total;
-                if (isPaidEffective) {
-                    netSales += total;
-                    outgoingSettle += total;
-                    updatePaymentStats(order, total);
-                    paidOrdersToday.push(order);
-                } else {
-                    pendingOrdersToday.push(order);
-                    pendingAmountToday += total;
-                }
-            } else {
-                const isOriginal = order.branchName === currentTargetBranch;
-                const isProcess = isValidTransfer && order.transferInfo?.processBranchName === currentTargetBranch;
-
-                if (isOriginal) {
-                    totalPayment += total;
-                    if (isPaidEffective) {
-                        const share = isValidTransfer ? Math.round(total * (split.orderBranch / 100)) : total;
-                        outgoingSettle += share;
-                        netSales += share;
-                        updatePaymentStats(order, share);
-                        paidOrdersToday.push(order);
-                    } else {
-                        pendingOrdersToday.push(order);
-                        const share = isValidTransfer ? Math.round(total * (split.orderBranch / 100)) : total;
-                        pendingAmountToday += share;
-                    }
-                }
-
-                if (isProcess) {
-                    if (isPaidEffective) {
-                        const share = Math.round(total * (split.processBranch / 100));
-                        incomingSettle += share;
-                        netSales += share;
-                        if (!paidOrdersToday.includes(order)) paidOrdersToday.push(order);
-                        // 수주 지점의 결제 수단 집계 반영
-                        updatePaymentStats(order, share);
-                    }
-                    // 수주 지점은 미결 금액 집계 제외 (기존 로직 유지)
-                }
-            }
-
-            // 배송비 현금 지급액 합산 로직은 위에서 전체 orders 대상으로 통합 처리함
-        });
-
-        // 이월 주문 결제 처리
-        previousOrderPayments.forEach(order => {
-            const total = order.summary.total;
-            const isOriginal = order.branchName === currentTargetBranch;
-            const isProcess = order.transferInfo?.isTransferred && order.transferInfo?.processBranchName === currentTargetBranch;
-            const split = order.transferInfo?.amountSplit || { orderBranch: 100, processBranch: 0 };
-
-            let share = 0;
-            if (currentTargetBranch === 'all') {
-                share = total;
-            } else {
-                if (isOriginal) {
-                    share = order.transferInfo?.isTransferred ? Math.round(total * (split.orderBranch / 100)) : total;
-                } else if (isProcess) {
-                    share = Math.round(total * (split.processBranch / 100));
-                }
-            }
-
-            updatePaymentStats(order, share);
-
-            if (currentTargetBranch === 'all') {
-                prevOrderPaymentTotal += total;
-                netSales += total;
-            } else {
-                const isOriginal = order.branchName === currentTargetBranch;
-                const isProcess = order.transferInfo?.isTransferred && order.transferInfo?.processBranchName === currentTargetBranch;
+                const isOriginal = branchName === target;
+                const isProcess = order.transferInfo?.isTransferred &&
+                    (order.transferInfo?.status === 'accepted' || order.transferInfo?.status === 'completed') &&
+                    processName === target;
 
                 const split = order.transferInfo?.amountSplit || { orderBranch: 100, processBranch: 0 };
 
                 if (isOriginal) {
-                    const share = order.transferInfo?.isTransferred ? Math.round(total * (split.orderBranch / 100)) : total;
-                    prevOrderPaymentTotal += share;
-                    netSales += share;
+                    ratio = order.transferInfo?.isTransferred ? (split.orderBranch / 100) : 1.0;
+                } else if (isProcess) {
+                    ratio = split.processBranch / 100;
+                } else {
+                    ratio = 0; // 내 주문 아님 (필터링에서 걸러졌겠지만 안전장치)
                 }
-                if (isProcess) {
-                    const share = Math.round(total * (split.processBranch / 100));
-                    prevOrderPaymentTotal += share;
-                    netSales += share;
+            }
+
+            // 결제 상태 업데이트 & 오늘 내 지분만큼 결제된 금액 받기
+            const mySettledAmount = updatePaymentStats(order, ratio);
+
+            if (mySettledAmount > 0) {
+                totalPayment += mySettledAmount;
+                netSales += mySettledAmount;
+
+                if (!paidOrdersToday.includes(order)) paidOrdersToday.push(order);
+
+                // 이월 주문 수금액 (주문일이 오늘 이전)
+                const oDate = parseDate(order.orderDate);
+                if (oDate && oDate < from) {
+                    prevOrderPaymentTotal += mySettledAmount;
+                    if (!previousOrderPayments.includes(order)) previousOrderPayments.push(order);
                 }
             }
         });
 
-        // 지출(비용) 집계
-        // useSimpleExpenses에서 fetch한 expenses 필터링 (currentTargetBranchId 기준)
-        // fetchExpenses가 이미 지점/날짜 필터를 적용했다면 그대로 사용 가능
-        const expenseSummary = {
-            total: 0,
-            transport: { count: 0, amount: 0 },
-            material: { amount: 0 },
-            others: { amount: 0 }
-        };
+        // Pending List (From filter step)
+        pendingList.forEach(o => {
+            // [Modified] Calculate pending amount FIRST, then decide to add to list
+            let pendingShare = o.summary.total || 0;
+            const p = o.payment;
 
-        // filters가 적용된 상태라면 fetch한 expenses가 이미 정확함
-        // 하지만 currentTargetBranch가 'all'인 경우 useSimpleExpenses의 expenses는 전체일 수 있음
-        const targetExpenses = currentTargetBranch === 'all'
-            ? [] // 전체 보기 시에는 개별 지점 시재 파악이 어려우므로 제외하거나 별도 처리
-            : ordersLoading ? [] : []; // 실제 값은 아래에서 계산 (훅에서 가져온 expenses 사용)
+            // 분할 결제인 경우 잔금 계산
+            if (p?.isSplitPayment) {
+                const firstAmt = typeof p.firstPaymentAmount === 'string' ? Number(p.firstPaymentAmount) : (p.firstPaymentAmount || 0);
+                const secondAmt = typeof p.secondPaymentAmount === 'string' ? Number(p.secondPaymentAmount) : (p.secondPaymentAmount || 0);
+
+                if (secondAmt > 0) {
+                    pendingShare = secondAmt;
+                } else {
+                    // 2차 금액이 명시되지 않았으면 (전체 - 1차)
+                    pendingShare = (o.summary.total || 0) - firstAmt;
+                }
+            }
+
+            if (currentTargetBranch !== 'all') {
+                const target = currentTargetBranch.trim().replace(/\s/g, '');
+                const branchName = o.branchName?.trim().replace(/\s/g, '') || '';
+                const processName = o.transferInfo?.processBranchName?.trim().replace(/\s/g, '') || '';
+                const isOriginal = branchName === target;
+                const isProcess = o.transferInfo?.isTransferred &&
+                    (o.transferInfo?.status === 'accepted' || o.transferInfo?.status === 'completed') &&
+                    processName === target;
+
+                // pendingShare 재조정 (지분율 적용)
+                const split = o.transferInfo?.amountSplit || { orderBranch: 100, processBranch: 0 };
+
+                if (isOriginal) {
+                    // 발주 지점: 내 지분만큼만 미수금으로 잡음 (또는 전체 책임질 수도 있지만 여기선 지분대로)
+                    pendingShare = o.transferInfo?.isTransferred ? Math.round(pendingShare * (split.orderBranch / 100)) : pendingShare;
+                } else if (isProcess) {
+                    // 수주 지점: 미수금 책임 없음 (이미 발주처에서 정산해줌? 아니면 직접 받아야 함?)
+                    // 현재 로직상 수주 지점은 미수금 0 처리 (pendingShare = 0)
+                    pendingShare = 0;
+                } else {
+                    pendingShare = 0;
+                }
+            }
+
+            // [Important] 미수금이 0보다 클 때만 리스트에 추가
+            if (pendingShare > 0) {
+                pendingOrdersToday.push(o);
+                pendingAmountToday += pendingShare;
+            }
+        });
 
         return {
             dailyOrders,
-            paidOrdersToday,
-            previousOrderPayments,
-            pendingOrdersToday,
             totalPayment,
             outgoingSettle,
             incomingSettle,
             netSales,
             prevOrderPaymentTotal,
-            pendingAmountToday,
-            orderCount: dailyOrders.length,
             paymentStats,
+            paidOrdersToday,
+            previousOrderPayments,
+            pendingOrdersToday,
+            pendingAmountToday,
             deliveryCostCashToday,
+            orderCount: dailyOrders.length,
             from,
             to
         };
@@ -1046,36 +1082,127 @@ export default function DailySettlementPage() {
                                     const isProcess = order.transferInfo?.isTransferred && order.transferInfo?.processBranchName === currentTargetBranch;
 
                                     if (currentTargetBranch === 'all') {
-                                        myShare = order.summary.total;
+                                        // 전체 지점 보기일 때는 수금된 금액 전체를 표시
+                                        // (아래 로직에서 settleAmount 계산 후 할당하기 위해 이 블록에서는 초기화만)
+                                        // myShare = order.summary.total; // [Deleted] 아래 로직으로 통합
                                         if (order.transferInfo?.isTransferred) {
                                             info = `이관 (${order.branchName} → ${order.transferInfo.processBranchName})`;
                                         }
                                     } else {
-                                        if (order.transferInfo?.isTransferred) {
-                                            if (isOriginal) {
-                                                myShare = Math.round(order.summary.total * (split.orderBranch / 100));
-                                            }
-                                            if (isProcess) {
-                                                myShare += Math.round(order.summary.total * (split.processBranch / 100));
+                                        // Empty block to match structure, logic continues below
+                                    }
+                                    // [Modified] 실제 오늘 결제된 금액(myShare) 계산 로직 수정
+                                    let settleAmount = 0;
+                                    const p = order.payment;
+                                    const todayFrom = stats?.from;
+                                    const todayTo = stats?.to;
+
+                                    // 오늘 날짜 범위 내에서 발생한 결제만 합산
+                                    if (todayFrom && todayTo) {
+                                        if (p?.isSplitPayment) {
+                                            const firstDate = parseDate(p.firstPaymentDate);
+                                            const secondDate = parseDate(p.secondPaymentDate);
+                                            const completedAt = parseDate(p.completedAt);
+
+                                            // 1차 결제가 오늘인지 확인
+                                            if (firstDate && firstDate >= todayFrom && firstDate <= todayTo) {
+                                                settleAmount += (typeof p.firstPaymentAmount === 'string' ? Number(p.firstPaymentAmount) : (p.firstPaymentAmount || 0));
                                             }
 
-                                            // 실제 지분으로 발주/수주 판단
-                                            if (myShare > 0) {
-                                                if (isOriginal && split.orderBranch > 0) {
-                                                    info = `📤 발주 (${split.orderBranch}%)`;
-                                                } else if (isProcess && split.processBranch > 0) {
-                                                    info = `📥 수주 (${split.processBranch}%)`;
+                                            // 2차 결제가 오늘인지 확인
+                                            // (완납 상태거나 완료 상태일 때)
+                                            const isPaid = p.status === 'paid' || p.status === 'completed' || order.status === 'completed';
+                                            if (isPaid) {
+                                                let isSecondToday = false;
+                                                if (secondDate && secondDate >= todayFrom && secondDate <= todayTo) {
+                                                    isSecondToday = true;
+                                                } else if (!secondDate && completedAt && completedAt >= todayFrom && completedAt <= todayTo) {
+                                                    isSecondToday = true;
                                                 }
-                                            } else {
-                                                // 지분이 0이면 수주로 표시 (전액 다른 지점으로 넘김)
-                                                info = `📥 수주 (0%)`;
+
+                                                if (isSecondToday) {
+                                                    const firstAmt = typeof p.firstPaymentAmount === 'string' ? Number(p.firstPaymentAmount) : (p.firstPaymentAmount || 0);
+                                                    const secondAmt = typeof p.secondPaymentAmount === 'string' ? Number(p.secondPaymentAmount) : (p.secondPaymentAmount || 0);
+
+                                                    if (secondAmt > 0) settleAmount += secondAmt;
+                                                    else settleAmount += ((order.summary.total || 0) - firstAmt);
+                                                }
                                             }
                                         } else {
-                                            myShare = order.summary.total;
+                                            // 일반 결제 (completedAt 기준)
+                                            // 단, dailyOrders에 들어왔다는 건 이미 날짜 체크가 된 것이므로 전체 금액 합산
+                                            // 하지만 방어적으로 날짜 체크
+                                            const completedAt = parseDate(p?.completedAt);
+                                            if (completedAt && completedAt >= todayFrom && completedAt <= todayTo) {
+                                                settleAmount = order.summary.total;
+                                            }
                                         }
+                                    } else {
+                                        // Fallback (should not happen given stats logic)
+                                        settleAmount = order.summary.total;
+                                    }
+
+                                    if (currentTargetBranch === 'all') {
+                                        myShare = settleAmount;
+                                    } else if (order.transferInfo?.isTransferred) {
+                                        if (isOriginal) {
+                                            myShare = Math.round(settleAmount * (split.orderBranch / 100));
+                                        }
+                                        if (isProcess) {
+                                            myShare += Math.round(settleAmount * (split.processBranch / 100));
+                                        }
+
+                                        // 실제 지분으로 발주/수주 판단
+                                        if (myShare > 0) {
+                                            if (isOriginal && split.orderBranch > 0) {
+                                                info = `📤 발주 (${split.orderBranch}%)`;
+                                            } else if (isProcess && split.processBranch > 0) {
+                                                info = `📥 수주 (${split.processBranch}%)`;
+                                            }
+                                        } else {
+                                            // 지분이 0이면 수주로 표시 (전액 다른 지점으로 넘김)
+                                            info = `📥 수주 (0%)`;
+                                        }
+                                    } else {
+                                        myShare = settleAmount;
                                     }
 
                                     const orderDate = parseDate(order.orderDate) || new Date();
+
+                                    // [Modified] 결제 수단 표시 로직 (오늘 결제된 건에 맞춰서)
+                                    let displayMethod: string = order.payment.method;
+                                    if (order.payment.isSplitPayment) {
+                                        const methods = [];
+                                        const p = order.payment;
+                                        const todayFrom = stats?.from;
+                                        const todayTo = stats?.to;
+
+                                        if (todayFrom && todayTo) {
+                                            const firstDate = parseDate(p.firstPaymentDate);
+                                            const secondDate = parseDate(p.secondPaymentDate);
+                                            const completedAt = parseDate(p.completedAt);
+
+                                            // 1차 결제 확인
+                                            if (firstDate && firstDate >= todayFrom && firstDate <= todayTo) {
+                                                methods.push(`1차:${p.firstPaymentMethod}`);
+                                            }
+
+                                            // 2차 결제 확인
+                                            const isPaid = p.status === 'paid' || p.status === 'completed' || order.status === 'completed';
+                                            if (isPaid) {
+                                                let isSecondToday = false;
+                                                if (secondDate && secondDate >= todayFrom && secondDate <= todayTo) {
+                                                    isSecondToday = true;
+                                                } else if (!secondDate && completedAt && completedAt >= todayFrom && completedAt <= todayTo) {
+                                                    isSecondToday = true;
+                                                }
+                                                if (isSecondToday) {
+                                                    methods.push(`2차:${p.secondPaymentMethod || p.method}`);
+                                                }
+                                            }
+                                        }
+                                        if (methods.length > 0) displayMethod = methods.join(', ');
+                                    }
 
                                     return (
                                         <TableRow
@@ -1094,8 +1221,8 @@ export default function DailySettlementPage() {
                                                 </div>
                                             </TableCell>
                                             <TableCell>{order.orderer.name}</TableCell>
-                                            <TableCell className="text-xs">{order.payment.method}</TableCell>
-                                            <TableCell className="text-muted-foreground line-through text-[11px]">₩{order.summary.total.toLocaleString()}</TableCell>
+                                            <TableCell className="text-xs">{displayMethod}</TableCell>
+                                            <TableCell className="text-muted-foreground text-[11px]">₩{order.summary.total.toLocaleString()}</TableCell>
                                             <TableCell className="font-bold text-blue-600">₩{myShare.toLocaleString()}</TableCell>
                                             <TableCell>
                                                 <div className="flex flex-col gap-1">
@@ -1259,11 +1386,22 @@ export default function DailySettlementPage() {
                                     const isOriginal = order.branchName === currentTargetBranch;
                                     const isValidTransfer = order.transferInfo?.isTransferred && (order.transferInfo?.status === 'accepted' || order.transferInfo?.status === 'completed');
 
+                                    // [Modified] 미결 금액 정밀 계산 (분할결제 반영)
+                                    let pendingAmount = order.summary.total;
+                                    const p = order.payment;
+                                    if (p?.isSplitPayment) {
+                                        const firstAmt = typeof p.firstPaymentAmount === 'string' ? Number(p.firstPaymentAmount) : (p.firstPaymentAmount || 0);
+                                        const secondAmt = typeof p.secondPaymentAmount === 'string' ? Number(p.secondPaymentAmount) : (p.secondPaymentAmount || 0);
+
+                                        if (secondAmt > 0) pendingAmount = secondAmt;
+                                        else pendingAmount = (order.summary.total || 0) - firstAmt;
+                                    }
+
                                     if (currentTargetBranch === 'all') {
-                                        myShare = order.summary.total;
+                                        myShare = pendingAmount;
                                     } else {
                                         if (isOriginal) {
-                                            myShare = isValidTransfer ? Math.round(order.summary.total * (split.orderBranch / 100)) : order.summary.total;
+                                            myShare = isValidTransfer ? Math.round(pendingAmount * (split.orderBranch / 100)) : pendingAmount;
                                         }
                                     }
 

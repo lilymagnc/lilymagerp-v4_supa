@@ -524,9 +524,39 @@ export default function OrdersPage() {
         );
       case 'split_payment':
         return (
-          <div className="flex flex-col gap-1">
-            <Badge className="bg-orange-500 text-white font-semibold">분할결제</Badge>
-            <span className="text-xs text-gray-500">후결제 대기</span>
+          <div className="flex flex-col gap-1 text-xs">
+            <div className="flex items-center gap-1">
+              <Badge className="bg-orange-500 text-white font-semibold whitespace-nowrap">분할</Badge>
+              <span className="text-gray-600 font-medium">
+                총 {order.summary.total.toLocaleString()}
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-0.5 mt-0.5 pl-1 border-l-2 border-orange-200">
+              {/* 선결제 정보 */}
+              <div className="flex items-center gap-1 text-green-700">
+                <span className="w-8 text-[10px] text-gray-500">선결제</span>
+                <span>{order.payment.firstPaymentAmount?.toLocaleString()}</span>
+                <span className="text-[10px] text-gray-400">
+                  ({getPaymentMethodText(order.payment.firstPaymentMethod || '')})
+                  {order.payment.firstPaymentDate && ` ${format(parseDate(order.payment.firstPaymentDate), 'MM/dd')}`}
+                </span>
+              </div>
+
+              {/* 후결제 정보 */}
+              <div className="flex items-center gap-1 text-orange-700">
+                <span className="w-8 text-[10px] text-gray-500">후결제</span>
+                <span>{order.payment.secondPaymentAmount?.toLocaleString()}</span>
+                {order.payment.secondPaymentDate ? (
+                  <span className="text-[10px] text-gray-400">
+                    ({getPaymentMethodText(order.payment.secondPaymentMethod || '')})
+                    {` ${format(parseDate(order.payment.secondPaymentDate), 'MM/dd')}`}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-red-400 font-medium">(미납)</span>
+                )}
+              </div>
+            </div>
           </div>
         );
       case 'pending':

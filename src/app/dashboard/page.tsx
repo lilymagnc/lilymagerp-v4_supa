@@ -467,7 +467,7 @@ export default function DashboardPage() {
 
         let pendingPaymentQuery = supabase
           .from('orders')
-          .select('summary')
+          .select('summary, payment') // Need payment info for split logic
           .in('payment->>status', ['pending', '미결', '대기'])
           .not('status', 'eq', 'canceled');
 
@@ -482,7 +482,20 @@ export default function DashboardPage() {
 
         const pOrders = pendingCountRes.count || 0;
         const pPaymentCount = paymentRes.data?.length || 0;
-        const pPaymentAmount = paymentRes.data?.reduce((acc: number, curr: any) => acc + (Number(curr.summary?.total) || 0), 0) || 0;
+
+        const pPaymentAmount = paymentRes.data?.reduce((acc: number, curr: any) => {
+          const total = Number(curr.summary?.total) || 0;
+          const p = curr.payment;
+
+          if (p?.isSplitPayment) {
+            if (p.secondPaymentAmount) {
+              return acc + Number(p.secondPaymentAmount);
+            }
+            return acc + (total - (Number(p.firstPaymentAmount) || 0));
+          }
+
+          return acc + total;
+        }, 0) || 0;
 
         return { pOrders, pPaymentCount, pPaymentAmount };
       };
