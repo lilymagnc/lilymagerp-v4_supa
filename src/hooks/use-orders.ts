@@ -834,16 +834,26 @@ function useOrdersLocal(initialFetch = true) {
     }
   };
 
-  const updatePaymentStatus = async (orderId: string, newStatus: 'pending' | 'paid' | 'completed') => {
+  const updatePaymentStatus = async (orderId: string, newStatus: 'pending' | 'paid' | 'completed', forceUpdateDate?: boolean) => {
     try {
       const { data: order } = await supabase.from('orders').select('*').eq('id', orderId).single();
       if (!order) return;
 
       const payment = { ...order.payment, status: newStatus };
       if (newStatus === 'paid' || newStatus === 'completed') {
-        payment.completedAt = new Date().toISOString();
+        // forceUpdateDate=true: 사용자가 확인 다이얼로그에서 오늘날짜로 업데이트를 선택한 경우
+        // forceUpdateDate=false/undefined: 기존 completedAt이 없을 때만 설정
+        if (forceUpdateDate) {
+          payment.completedAt = new Date().toISOString();
+        } else if (!payment.completedAt) {
+          payment.completedAt = new Date().toISOString();
+        }
         if (payment.isSplitPayment || payment.status === 'split_payment') {
-          payment.secondPaymentDate = new Date().toISOString();
+          if (forceUpdateDate) {
+            payment.secondPaymentDate = new Date().toISOString();
+          } else if (!payment.secondPaymentDate) {
+            payment.secondPaymentDate = new Date().toISOString();
+          }
         }
       } else {
         payment.completedAt = null;

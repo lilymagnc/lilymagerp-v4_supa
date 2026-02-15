@@ -24,7 +24,7 @@ interface OrdersContextType {
     fetchOrdersForSettlement: (targetDateStr: string, startDateStr?: string) => Promise<Order[]>;
     addOrder: (orderData: OrderData) => Promise<string | null>;
     updateOrderStatus: (orderId: string, newStatus: 'processing' | 'completed' | 'canceled') => Promise<void>;
-    updatePaymentStatus: (orderId: string, newStatus: PaymentStatus, splitData?: any) => Promise<void>;
+    updatePaymentStatus: (orderId: string, newStatus: PaymentStatus, splitData?: any, forceUpdateDate?: boolean) => Promise<void>;
     updateOrder: (orderId: string, updates: Partial<OrderData>) => Promise<void>;
     cancelOrder: (orderId: string) => Promise<void>;
     deleteOrder: (orderId: string) => Promise<void>;
@@ -547,14 +547,21 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
         }
     }, [user, toast]);
 
-    const updatePaymentStatus = useCallback(async (orderId: string, newStatus: PaymentStatus, splitData?: any) => {
+    const updatePaymentStatus = useCallback(async (orderId: string, newStatus: PaymentStatus, splitData?: any, forceUpdateDate?: boolean) => {
         try {
             const { data: order } = await supabase.from('orders').select('*').eq('id', orderId).single();
             if (!order) return;
 
             const now = new Date().toISOString();
             const updatedPayment = { ...order.payment, status: newStatus };
-            if (newStatus === 'paid' || newStatus === 'completed') updatedPayment.completedAt = now;
+            if (newStatus === 'paid' || newStatus === 'completed') {
+                // forceUpdateDate=true: 사용자가 확인 다이얼로그에서 오늘날짜로 업데이트를 선택한 경우
+                if (forceUpdateDate) {
+                    updatedPayment.completedAt = now;
+                } else if (!updatedPayment.completedAt) {
+                    updatedPayment.completedAt = now;
+                }
+            }
             if (splitData) Object.assign(updatedPayment, splitData);
 
             const { error } = await supabase.from('orders').update({ payment: updatedPayment, updated_at: now }).eq('id', orderId);

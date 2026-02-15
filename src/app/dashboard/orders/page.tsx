@@ -83,6 +83,10 @@ export default function OrdersPage() {
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  // 결제완료 확인 다이얼로그 상태
+  const [isPaymentConfirmDialogOpen, setIsPaymentConfirmDialogOpen] = useState(false);
+  const [paymentConfirmOrder, setPaymentConfirmOrder] = useState<Order | null>(null);
   // 사용자 권한에 따른 지점 필터링
   const isAdmin = useMemo(() => {
     const email = user?.email?.toLowerCase().trim();
@@ -1946,7 +1950,13 @@ export default function OrdersPage() {
                               <DropdownMenuSubContent>
                                 <DropdownMenuItem onClick={(e) => {
                                   e.stopPropagation();
-                                  updatePaymentStatus(order.id, 'paid');
+                                  // 이미 결제완료(completedAt)가 있으면 확인 다이얼로그 표시
+                                  if (order.payment?.completedAt) {
+                                    setPaymentConfirmOrder(order);
+                                    setIsPaymentConfirmDialogOpen(true);
+                                  } else {
+                                    updatePaymentStatus(order.id, 'paid');
+                                  }
                                 }}>
                                   완결
                                 </DropdownMenuItem>
@@ -2171,6 +2181,61 @@ export default function OrdersPage() {
         order={selectedOrderForOutsource}
         onSuccess={() => fetchOrders()}
       />
+
+      {/* 결제완료 확인 다이얼로그 - 이미 결제완료 처리된 주문의 결제일 변경 여부 확인 */}
+      <AlertDialog open={isPaymentConfirmDialogOpen} onOpenChange={setIsPaymentConfirmDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>결제 완료일 확인</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                이 주문은 <strong className="text-blue-600">
+                  {paymentConfirmOrder?.payment?.completedAt
+                    ? format(parseDate(paymentConfirmOrder.payment.completedAt), 'yyyy-MM-dd HH:mm')
+                    : ''}
+                </strong>에 결제완료 처리되었습니다.
+              </span>
+              <span className="block font-medium text-orange-600">
+                오늘 날짜({format(new Date(), 'yyyy-MM-dd')})로 결제일을 변경하시겠습니까?
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                * "기존 날짜 유지"를 선택하면 결제 상태만 변경되고 결제일은 그대로 유지됩니다.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex gap-2 sm:justify-between">
+            <AlertDialogCancel onClick={() => setPaymentConfirmOrder(null)}>
+              취소
+            </AlertDialogCancel>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (paymentConfirmOrder) {
+                    updatePaymentStatus(paymentConfirmOrder.id, 'paid', undefined, false);
+                  }
+                  setIsPaymentConfirmDialogOpen(false);
+                  setPaymentConfirmOrder(null);
+                }}
+              >
+                기존 날짜 유지
+              </Button>
+              <Button
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={() => {
+                  if (paymentConfirmOrder) {
+                    updatePaymentStatus(paymentConfirmOrder.id, 'paid', undefined, true);
+                  }
+                  setIsPaymentConfirmDialogOpen(false);
+                  setPaymentConfirmOrder(null);
+                }}
+              >
+                오늘 날짜로 변경
+              </Button>
+            </div>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
