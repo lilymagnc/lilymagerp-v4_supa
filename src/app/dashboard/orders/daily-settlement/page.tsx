@@ -258,13 +258,13 @@ export default function DailySettlementPage() {
     const stats = useMemo(() => {
         if (!settlementOrders.length) return null;
 
-        // 날짜 필터 생성 (YYYY-MM-DDT00:00:00 형식을 사용하여 로컬 시간 보장)
-        const from = new Date(reportDate + 'T00:00:00');
-        const to = new Date(reportDate + 'T23:59:59.999');
-
         // 해당 일자의 주문 필터링 (로컬 상태 settlementOrders 사용)
         const dailyOrders: Order[] = [];
         const pendingList: Order[] = [];
+
+        // 날짜 필터 생성 (YYYY-MM-DDT00:00:00 형식을 사용하여 로컬 시간 보장)
+        const from = new Date(reportDate + 'T00:00:00');
+        const to = new Date(reportDate + 'T23:59:59.999');
 
         settlementOrders.forEach(order => {
             const orderDate = parseDate(order.orderDate);
@@ -291,6 +291,10 @@ export default function DailySettlementPage() {
             const secondDate = parseDate(p?.secondPaymentDate);
             const completedAt = parseDate(p?.completedAt); // 일반 결제 또는 잔금/완납일
 
+            // 주문일자 스트링 비교 (YYYY-MM-DD) - 날짜 객체 비교보다 정확함
+            const orderDateStr = orderDate ? format(orderDate, 'yyyy-MM-dd') : '';
+            const isOrderDateToday = orderDateStr === reportDate;
+
             let hasPaymentToday = false;
 
             // 1. 분할 결제인 경우
@@ -301,23 +305,27 @@ export default function DailySettlementPage() {
                 }
 
                 // 2차 결제가 오늘인가? (단, 결제 완료 상태여야 함)
-                const isPaid = p.status === 'paid' || p.status === 'completed' || order.status === 'completed';
-                let isSecondToday = false;
-
-                if (isPaid) {
-                    if (secondDate && secondDate >= from && secondDate <= to) {
-                        isSecondToday = true;
-                    } else if (!secondDate && completedAt && completedAt >= from && completedAt <= to) {
-                        // 2차 결제일이 없는데 완료일이 오늘이면 2차 결제로 간주
-                        isSecondToday = true;
-                    }
+                // [Modified] Fix: Check status *at that time*. If paid *after* today, it was pending today.
+                // 1. Determine if it was paid BY today (inclusive)
+                let paidDate: Date | null = null;
+                if (p.status === 'paid' || p.status === 'completed' || order.status === 'completed') {
+                    if (secondDate) paidDate = secondDate;
+                    else if (completedAt) paidDate = completedAt;
                 }
+
+                const isPaidByToday = paidDate && paidDate <= to; // Paid on or before report date
+
+                let isSecondToday = false;
+                if (paidDate && paidDate >= from && paidDate <= to) {
+                    isSecondToday = true;
+                }
+
                 if (isSecondToday) hasPaymentToday = true;
 
                 // 미결(잔금) 확인
-                // 주문일이 오늘인데, 아직 완납(=isPaid)이 아니면 미결 리스트에 추가
-                if (orderDate && orderDate >= from && orderDate <= to) {
-                    if (!isPaid) {
+                // 주문일이 오늘인데, 오늘까지 완납이 안되었으면 미결 리스트에 추가
+                if (isOrderDateToday) {
+                    if (!isPaidByToday) {
                         pendingList.push(order);
                     }
                 }
@@ -328,8 +336,11 @@ export default function DailySettlementPage() {
                     hasPaymentToday = true;
                 } else {
                     // 미결제 상태이고, 주문일이 오늘이면 미결 리스트 추가
-                    if (orderDate && orderDate >= from && orderDate <= to) {
-                        const isPaid = p?.status === 'paid' || p?.status === 'completed';
+                    if (isOrderDateToday) {
+                        // [Modified] Check if paid BY today
+                        let paidDate: Date | null = completedAt || null;
+                        const isPaid = (p?.status === 'paid' || p?.status === 'completed') && paidDate && paidDate <= to;
+
                         if (!isPaid) {
                             pendingList.push(order);
                         }
@@ -505,11 +516,17 @@ export default function DailySettlementPage() {
                 totalPayment += mySettledAmount;
                 netSales += mySettledAmount;
 
-                if (!paidOrdersToday.includes(order)) paidOrdersToday.push(order);
+                // [Modified] paidOrdersToday에는 '오늘 주문'인 것만 추가 (과거 주문은 아래 previousOrderPayments로)
+                const oDate = parseDate(order.orderDate);
+                const orderDateStr = oDate ? format(oDate, 'yyyy-MM-dd') : '';
+                const isTodayOrder = orderDateStr === reportDate;
+
+                if (isTodayOrder) {
+                    if (!paidOrdersToday.includes(order)) paidOrdersToday.push(order);
+                }
 
                 // 이월 주문 수금액 (주문일이 오늘 이전)
-                const oDate = parseDate(order.orderDate);
-                if (oDate && oDate < from) {
+                if (oDate && orderDateStr < reportDate) {
                     prevOrderPaymentTotal += mySettledAmount;
                     if (!previousOrderPayments.includes(order)) previousOrderPayments.push(order);
                 }
@@ -1283,13 +1300,43 @@ export default function DailySettlementPage() {
                                     const isOriginal = order.branchName === currentTargetBranch;
                                     const isProcess = order.transferInfo?.isTransferred && order.transferInfo?.processBranchName === currentTargetBranch;
 
+                                    // [Modified] Accurate Settlement Amount for Today
+                                    let settledAmount = order.summary.total;
+
+                                    if (order.payment?.isSplitPayment) {
+                                        const p = order.payment;
+                                        const firstDate = parseDate(p.firstPaymentDate);
+                                        const secondDate = parseDate(p.secondPaymentDate);
+                                        const completedAt = parseDate(p.completedAt);
+                                        const from = stats?.from;
+                                        const to = stats?.to;
+
+                                        let amountToday = 0;
+                                        if (from && to) {
+                                            // 1st Payment
+                                            if (firstDate && firstDate >= from && firstDate <= to) {
+                                                amountToday += (p.firstPaymentAmount || 0);
+                                            }
+                                            // 2nd Payment
+                                            let secondTime = secondDate || completedAt;
+                                            // Only count 2nd payment if status is paid/completed
+                                            const isPaid = p.status === 'paid' || p.status === 'completed' || order.status === 'completed';
+                                            if (isPaid && secondTime && secondTime >= from && secondTime <= to) {
+                                                const secondAmt = p.secondPaymentAmount ? p.secondPaymentAmount : (order.summary.total - (p.firstPaymentAmount || 0));
+                                                amountToday += secondAmt;
+                                            }
+                                        }
+                                        // If we found specific payments for today, use that sum. Otherwise fallback (though usually wouldn't be in this list if 0)
+                                        if (amountToday > 0) settledAmount = amountToday;
+                                    }
+
                                     if (currentTargetBranch === 'all') {
-                                        myShare = order.summary.total;
+                                        myShare = settledAmount;
                                     } else {
                                         if (isOriginal) {
-                                            myShare = order.transferInfo?.isTransferred ? Math.round(order.summary.total * (split.orderBranch / 100)) : order.summary.total;
+                                            myShare = order.transferInfo?.isTransferred ? Math.round(settledAmount * (split.orderBranch / 100)) : settledAmount;
                                         } else if (isProcess) {
-                                            myShare = Math.round(order.summary.total * (split.processBranch / 100));
+                                            myShare = Math.round(settledAmount * (split.processBranch / 100));
                                         }
                                     }
 
@@ -1305,6 +1352,40 @@ export default function DailySettlementPage() {
                                     if (todayFrom && todayTo) {
                                         if (completedAt && completedAt >= todayFrom && completedAt <= todayTo) collectionTime = completedAt;
                                         else if (secondPaymentDate && secondPaymentDate >= todayFrom && secondPaymentDate <= todayTo) collectionTime = secondPaymentDate;
+                                    }
+
+                                    // [Added] Display Method Logic for Settlement Table
+                                    let displayMethod: string = order.payment.method;
+                                    if (order.payment.isSplitPayment) {
+                                        const methods: string[] = [];
+                                        const p = order.payment;
+                                        const from = stats?.from;
+                                        const to = stats?.to;
+
+                                        if (from && to) {
+                                            const firstDate = parseDate(p.firstPaymentDate);
+                                            const secondDate = parseDate(p.secondPaymentDate);
+                                            const completedAt = parseDate(p.completedAt);
+
+                                            // 1차 결제 확인
+                                            if (firstDate && firstDate >= from && firstDate <= to) {
+                                                methods.push(`1차:${p.firstPaymentMethod}`);
+                                            }
+
+                                            // 2차 결제 확인
+                                            const isPaid = p.status === 'paid' || p.status === 'completed' || order.status === 'completed';
+                                            if (isPaid) {
+                                                let isSecondToday = false;
+                                                const secondTime = secondDate || completedAt;
+                                                if (secondTime && secondTime >= from && secondTime <= to) {
+                                                    isSecondToday = true;
+                                                }
+                                                if (isSecondToday) {
+                                                    methods.push(`2차:${p.secondPaymentMethod || p.method}`);
+                                                }
+                                            }
+                                        }
+                                        if (methods.length > 0) displayMethod = methods.join(', ');
                                     }
 
                                     return (
@@ -1324,7 +1405,7 @@ export default function DailySettlementPage() {
                                                 </div>
                                             </TableCell>
                                             <TableCell>{order.orderer.name}</TableCell>
-                                            <TableCell className="text-xs">{order.payment.method}</TableCell>
+                                            <TableCell className="text-xs">{displayMethod}</TableCell>
                                             <TableCell className="text-muted-foreground line-through text-[11px]">₩{order.summary.total.toLocaleString()}</TableCell>
                                             <TableCell>
                                                 <div className="flex flex-col">

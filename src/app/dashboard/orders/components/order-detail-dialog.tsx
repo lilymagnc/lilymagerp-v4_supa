@@ -2,6 +2,13 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -49,6 +56,11 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
   const [editOrderDate, setEditOrderDate] = useState("");
   const [editPaymentDate, setEditPaymentDate] = useState("");
   const [editSecondPaymentDate, setEditSecondPaymentDate] = useState(""); // 2차 결제일 수정 상태 추가
+
+  const [editPaymentMethod, setEditPaymentMethod] = useState("");
+  const [editFirstPaymentMethod, setEditFirstPaymentMethod] = useState("");
+  const [editSecondPaymentMethod, setEditSecondPaymentMethod] = useState("");
+
   const [isDateEditing, setIsDateEditing] = useState(false);
 
   useEffect(() => {
@@ -61,8 +73,15 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
 
       setEditPaymentDate(firstDate ? format(parseDate(firstDate), "yyyy-MM-dd'T'HH:mm") : "");
 
-      // 2차 결제일 초기화
-      setEditSecondPaymentDate(order.payment?.secondPaymentDate ? format(parseDate(order.payment.secondPaymentDate), "yyyy-MM-dd'T'HH:mm") : "");
+      // 2차 결제일 초기화 (없으면 completedAt으로 폴백)
+      const secDate = order.payment?.secondPaymentDate || (order.payment?.isSplitPayment ? order.payment?.completedAt : null);
+      setEditSecondPaymentDate(secDate ? format(parseDate(secDate), "yyyy-MM-dd'T'HH:mm") : "");
+
+      // Payment Methods Logic
+      const p: any = order.payment || {};
+      setEditPaymentMethod(p.method || 'card');
+      setEditFirstPaymentMethod(p.firstPaymentMethod || p.method || 'card');
+      setEditSecondPaymentMethod(p.secondPaymentMethod || p.method || 'card');
 
       setIsDateEditing(false);
     }
@@ -87,42 +106,83 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
     if (!order) return;
     try {
       const updates: any = {};
+      const original = new Date(order.orderDate);
 
       // 1. Order Date
       if (editOrderDate) {
-        // Keep the original time if possible, or sets to 00:00?
-        // Usually date correction implies moving the revenue day.
-        // Let's assume user picks a date, we preserve original time or set to start of day?
-        // NewOrderPage uses ISO string.
-        // Let's preserve time part of original orderDate if possible, but input is date only.
-        const original = new Date(order.orderDate);
         const newDate = new Date(editOrderDate);
+        // Preserve time from original
         newDate.setHours(original.getHours(), original.getMinutes(), original.getSeconds());
         updates.orderDate = newDate.toISOString();
       }
 
-      // 2. Payment Date
-      if (editPaymentDate || editSecondPaymentDate) {
+      // 2. Payment Date & Method
+      if (editPaymentDate || editSecondPaymentDate || editPaymentMethod || editFirstPaymentMethod || editSecondPaymentMethod) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const currentPayment: any = order.payment || {};
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const newPayment: any = { ...currentPayment };
 
+        if (currentPayment.isSplitPayment) {
+          newPayment.firstPaymentMethod = editFirstPaymentMethod;
+          newPayment.secondPaymentMethod = editSecondPaymentMethod;
+        } else {
+          newPayment.method = editPaymentMethod;
+        }
+
         // 1차 결제일 (또는 일반 결제일) 수정
         if (editPaymentDate) {
-          // 1차 결제일은 completedAt과 firstPaymentDate 모두에 반영 (분할결제인 경우)
-          newPayment.completedAt = new Date(editPaymentDate).toISOString();
+          const d = new Date(editPaymentDate).toISOString();
           if (currentPayment.isSplitPayment) {
-            newPayment.firstPaymentDate = new Date(editPaymentDate).toISOString();
+            // 분할결제: 1차 결제일만 수정 (완료일 건드리지 않음)
+            newPayment.firstPaymentDate = d;
+          } else {
+            // 일반결제: 완료일 = 1차 결제일
+            newPayment.completedAt = d;
+            newPayment.firstPaymentDate = d;
           }
         }
 
         // 2차 결제일 수정 (분할결제인 경우만)
         if (editSecondPaymentDate && currentPayment.isSplitPayment) {
-          // 일단 명시적으로 secondPaymentDate 필드를 업데이트함.
+          const d = new Date(editSecondPaymentDate).toISOString();
+          // 2차 결제일 필드 업데이트 및 완료일 동기화
+          newPayment.secondPaymentDate = d;
+          newPayment.completedAt = d;
         }
 
         updates.payment = newPayment;
+      }
+
+      // Force update if methods changed even if dates didn't (ensure updates object is populated)
+      if (Object.keys(updates).length === 0) {
+        // Check if only methods changed
+        const currentMethod = order.payment?.method;
+        const currentFirst = order.payment?.firstPaymentMethod;
+        const currentSecond = order.payment?.secondPaymentMethod;
+
+        let changed = false;
+        const newPayment: any = { ...order.payment };
+
+        if (order.payment?.isSplitPayment) {
+          if (editFirstPaymentMethod !== currentFirst) {
+            newPayment.firstPaymentMethod = editFirstPaymentMethod;
+            changed = true;
+          }
+          if (editSecondPaymentMethod !== currentSecond) {
+            newPayment.secondPaymentMethod = editSecondPaymentMethod;
+            changed = true;
+          }
+        } else {
+          if (editPaymentMethod !== currentMethod) {
+            newPayment.method = editPaymentMethod;
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          updates.payment = newPayment;
+        }
       }
 
       await updateOrder(order.id, updates);
@@ -281,6 +341,29 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
                         onChange={(e) => setEditPaymentDate(e.target.value)}
                         className="bg-white"
                       />
+                      <div className="mt-2">
+                        <Label className="text-xs font-semibold text-red-600 mb-1 block">
+                          {order.payment?.isSplitPayment ? '1차 결제 수단' : '결제 수단'}
+                        </Label>
+                        <Select
+                          value={order.payment?.isSplitPayment ? editFirstPaymentMethod : editPaymentMethod}
+                          onValueChange={order.payment?.isSplitPayment ? setEditFirstPaymentMethod : setEditPaymentMethod}
+                        >
+                          <SelectTrigger className="bg-white h-8 text-xs">
+                            <SelectValue placeholder="결제 수단 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="card">카드</SelectItem>
+                            <SelectItem value="cash">현금</SelectItem>
+                            <SelectItem value="transfer">계좌이체</SelectItem>
+                            <SelectItem value="mainpay">메인페이</SelectItem>
+                            <SelectItem value="kakao">카카오페이</SelectItem>
+                            <SelectItem value="naver">네이버페이</SelectItem>
+                            <SelectItem value="zero">제로페이</SelectItem>
+                            <SelectItem value="shopping_mall">쇼핑몰</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <p className="text-[10px] text-gray-500">
                         * {order.payment?.isSplitPayment ? '1차 결제일 (계약금/선결제)' : '결제 완료일 (매출/정산일)'}
                       </p>
@@ -299,6 +382,24 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order, onPrintMessage 
                           onChange={(e) => setEditSecondPaymentDate(e.target.value)}
                           className="bg-white"
                         />
+                        <div className="mt-2">
+                          <Label className="text-xs font-semibold text-orange-600 mb-1 block">2차 결제 수단</Label>
+                          <Select value={editSecondPaymentMethod} onValueChange={setEditSecondPaymentMethod}>
+                            <SelectTrigger className="bg-white h-8 text-xs">
+                              <SelectValue placeholder="결제 수단 선택" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="card">카드</SelectItem>
+                              <SelectItem value="cash">현금</SelectItem>
+                              <SelectItem value="transfer">계좌이체</SelectItem>
+                              <SelectItem value="mainpay">메인페이</SelectItem>
+                              <SelectItem value="kakao">카카오페이</SelectItem>
+                              <SelectItem value="naver">네이버페이</SelectItem>
+                              <SelectItem value="zero">제로페이</SelectItem>
+                              <SelectItem value="shopping_mall">쇼핑몰</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <p className="text-[10px] text-gray-500">
                           * 잔금 입금 날짜를 정정합니다.
                         </p>

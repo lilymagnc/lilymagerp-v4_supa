@@ -839,12 +839,15 @@ function useOrdersLocal(initialFetch = true) {
       const { data: order } = await supabase.from('orders').select('*').eq('id', orderId).single();
       if (!order) return;
 
+      const oldStatus = order.payment?.status;
+      const isStatusChangedToPaid = (newStatus === 'paid' || newStatus === 'completed') && (oldStatus !== 'paid' && oldStatus !== 'completed');
+
       const payment = { ...order.payment, status: newStatus };
       if (newStatus === 'paid' || newStatus === 'completed') {
         const now = new Date().toISOString();
         // forceUpdateDate=true: 사용자가 확인 다이얼로그에서 오늘날짜로 업데이트를 선택한 경우
-        // forceUpdateDate=false/undefined: 기존 completedAt이 없을 때만 설정
-        if (forceUpdateDate) {
+        // isStatusChangedToPaid=true: 미결 -> 완결로 상태가 변경되는 시점이면 현재 시간으로 갱신 (기존 예정일 덮어쓰기)
+        if (forceUpdateDate || isStatusChangedToPaid) {
           payment.completedAt = now;
         } else if (!payment.completedAt) {
           payment.completedAt = now;
@@ -852,7 +855,7 @@ function useOrdersLocal(initialFetch = true) {
 
         // 분할결제의 경우 후결제 완료 시간도 지금으로 설정 (완료 처리 시점 = 후결제 입금 시점)
         if (payment.isSplitPayment || payment.status === 'split_payment') {
-          if (forceUpdateDate) {
+          if (forceUpdateDate || isStatusChangedToPaid) {
             payment.secondPaymentDate = now;
           } else if (!payment.secondPaymentDate) {
             payment.secondPaymentDate = now;
@@ -950,18 +953,54 @@ function useOrdersLocal(initialFetch = true) {
       const newStatus = data.status || oldStatus;
 
       // [Modified] 강제 날짜 정합성 보정 (미결로 돌아가면 날짜 삭제)
+      // 배송완료(completed)는 결제완료와 무관하므로, 결제 상태(paid/completed)를 기준으로 판단
       let mergedPayment = { ...oldOrder.payment, ...(data.payment || {}) };
-      const isNewPaidStatus = newStatus === 'paid' || newStatus === 'completed';
+      const isNewPaidStatus = mergedPayment.status === 'paid' || mergedPayment.status === 'completed' || newStatus === 'paid';
+      const isOldPaidStatus = oldOrder.payment?.status === 'paid' || oldOrder.payment?.status === 'completed' || oldStatus === 'paid';
+      const isStatusChangingToPaid = isNewPaidStatus && !isOldPaidStatus;
 
       if (!isNewPaidStatus && newStatus !== 'canceled') {
-        mergedPayment.completedAt = null;
-        if (mergedPayment.isSplitPayment) {
-          mergedPayment.secondPaymentDate = null;
+        // [Modified] Safety Check: Only wipe dates if specifically reverting from PAID -> UNPAID.
+        // Preserves scheduled dates when editing pending orders or marking delivery (completed).
+        if (isOldPaidStatus) {
+          mergedPayment.completedAt = null;
+          if (mergedPayment.isSplitPayment) {
+            mergedPayment.secondPaymentDate = null;
+          }
         }
       } else if (isNewPaidStatus) {
-        if (!mergedPayment.completedAt && !oldOrder.payment?.completedAt) mergedPayment.completedAt = new Date().toISOString();
-        if (mergedPayment.isSplitPayment && !mergedPayment.secondPaymentDate && !oldOrder.payment?.secondPaymentDate) {
-          mergedPayment.secondPaymentDate = new Date().toISOString();
+        const now = new Date().toISOString();
+
+        // 1. 상태가 '완료'로 변경되면 완료일시를 '지금'으로 설정 (단, 입력 데이터에 날짜가 명시된 경우는 제외)
+        if ((isStatusChangingToPaid && !data.payment?.completedAt) || !mergedPayment.completedAt) {
+          mergedPayment.completedAt = now;
+        }
+
+        // 2. 분할결제 잔금일도 동일하게 처리
+        if (mergedPayment.isSplitPayment) {
+          const incomingSecondDate = data.payment?.secondPaymentDate;
+          const oldSecondDate = oldOrder.payment?.secondPaymentDate;
+          // [Modified] Stale Date Detection: If incoming date matches old date during status change, 
+          // treat it as 'not updated' and force update to 'now'.
+          const isStaleDate = incomingSecondDate && incomingSecondDate === oldSecondDate;
+
+
+          if ((isStatusChangingToPaid && (!incomingSecondDate || isStaleDate)) || !mergedPayment.secondPaymentDate) {
+            mergedPayment.secondPaymentDate = now;
+          }
+
+          // [Added] Auto-Calculate Balance Due (2nd Payment Amount)
+          // To prevent errors where 2nd amount is entered incorrectly or defaults to wrong booking value.
+          // Rule: 2nd Amount = Total - 1st Amount.
+          // We apply this correction when status changes to paid/completed OR if currently 0/undefined.
+          const totalAmount = newTotal;
+          const firstAmount = mergedPayment.firstPaymentAmount || 0;
+          const calculatedBalance = totalAmount - firstAmount;
+
+          // Force update if it mismatch, especially on completion
+          if (isStatusChangingToPaid || !mergedPayment.secondPaymentAmount || mergedPayment.secondPaymentAmount !== calculatedBalance) {
+            mergedPayment.secondPaymentAmount = calculatedBalance;
+          }
         }
       }
 
@@ -1043,36 +1082,9 @@ function useOrdersLocal(initialFetch = true) {
           });
         }
 
-        // 2. Revenue & Settlement Migration (Based on Payment Date)
-        // Only if payment date actually changed
-        if (isPaymentDateChanged) {
-          const wasSettled = isSettled(oldOrder);
-          // Check new settled status (using new payment data if available, else old)
-          const newPaymentObj = data.payment || oldOrder.payment;
-          const isNowSettled = isSettled({ status: newStatus, payment: newPaymentObj });
-
-          // Remove from Old Payment Date (Both Revenue & Settlement)
-          if (wasSettled && oldPaymentDate) {
-            await updateDailyStats(oldPaymentDate, oldOrder.branch_name, {
-              revenueDelta: -oldTotal, // Revenue is recognized on payment date
-              orderCountDelta: 0,
-              settledAmountDelta: -oldTotal // Settlement is also on payment date
-            });
-          }
-
-          // Add to New Payment Date (Both Revenue & Settlement)
-          if (isNowSettled && newPaymentDate) {
-            await updateDailyStats(newPaymentDate, oldOrder.branch_name, {
-              revenueDelta: newTotal,
-              orderCountDelta: 0,
-              settledAmountDelta: newTotal
-            });
-          }
-
-          // Disable standard deltas since we handled it here manually
-          revenueDelta = 0;
-          settledDelta = 0;
-        }
+        // 2. Legacy revenue/settlement migration logic removed to prevent double-counting and lint errors.
+        // Settlement is handled by the map comparison logic below.
+        // Revenue follows Order Date logic above.
 
       } catch (statError) {
         console.error("통계 이동 중 오류 (비치명적):", statError);
