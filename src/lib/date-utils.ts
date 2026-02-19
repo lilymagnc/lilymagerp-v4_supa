@@ -43,6 +43,11 @@ export function parseDate(date: any): Date | null {
         return isNaN(parsed.getTime()) ? null : parsed;
     }
 
+    // Firebase Timestamp (object with toDate function)
+    if (typeof date === 'object' && date !== null && typeof date.toDate === 'function') {
+        return date.toDate();
+    }
+
     return null;
 }
 

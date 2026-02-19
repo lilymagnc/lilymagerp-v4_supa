@@ -147,7 +147,6 @@ export const useChecklist = () => {
     templateId: string,
     date: string,
     category: 'daily' | 'weekly' | 'monthly',
-    workerInfo: { openWorker: string; closeWorker: string; responsiblePerson: string; },
     metaInfo?: { notes?: string; weather?: string; specialEvents?: string; }
   ): Promise<string> => {
     try {
@@ -175,9 +174,9 @@ export const useChecklist = () => {
         week,
         month,
         category,
-        open_worker: workerInfo.openWorker,
-        close_worker: workerInfo.closeWorker,
-        responsible_person: workerInfo.responsiblePerson,
+        open_worker: '',
+        close_worker: '',
+        responsible_person: '',
         items,
         completed_by: user?.id || (user as any).uid || '',
         completed_at: new Date().toISOString(),
@@ -236,7 +235,7 @@ export const useChecklist = () => {
   const updateChecklist = useCallback(async (id: string, updates: Partial<ChecklistRecord>): Promise<void> => {
     try {
       const payload: any = {
-        updated_at: new Date().toISOString()
+        // updated_at: new Date().toISOString() // Column missing in DB
       };
 
       if (updates.status) payload.status = updates.status;
@@ -268,7 +267,7 @@ export const useChecklist = () => {
             ...item,
             checked,
             checkedAt: checked ? new Date().toISOString() : undefined,
-            checkedBy: checked ? workerName || user?.displayName || 'Unknown' : undefined,
+            checkedBy: checked ? workerName || user?.email?.split('@')[0] || 'Unknown' : undefined,
             notes: notes || item.notes,
           };
         }

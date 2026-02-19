@@ -9,18 +9,19 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { 
-  CheckSquare, 
-  Calendar, 
-  CalendarDays, 
-  Building, 
-  Plus, 
-  Clock, 
+import {
+  CheckSquare,
+  Calendar,
+  CalendarDays,
+  Building,
+  Plus,
+  Clock,
   AlertTriangle,
   CheckCircle,
   XCircle,
   TrendingUp,
-  GripVertical
+  GripVertical,
+  Trash2
 } from "lucide-react";
 import { useChecklist } from "@/hooks/use-checklist";
 import { useAuth } from "@/hooks/use-auth";
@@ -35,8 +36,8 @@ export default function ChecklistPage() {
   const { user } = useAuth();
   const { userRole, isHQManager } = useUserRole();
   const { branches } = useBranches();
-  const { getChecklists, getStats, getWorkers, getTemplate } = useChecklist();
-  
+  const { getChecklists, getStats, getWorkers, getTemplate, deleteChecklist } = useChecklist();
+
   const [recentChecklists, setRecentChecklists] = useState<ChecklistRecord[]>([]);
   const [stats, setStats] = useState<{
     daily: ChecklistStats[];
@@ -51,16 +52,16 @@ export default function ChecklistPage() {
   useEffect(() => {
     const loadData = async () => {
       if (!user) return;
-      
+
       try {
         setLoading(true);
-        
+
         // 필터 설정
         const filter: any = {};
         if (selectedBranchId && selectedBranchId !== 'all' && isHQManager()) {
           filter.branchId = selectedBranchId;
         }
-        
+
         // 모든 데이터를 병렬로 로드
         const [recent, dailyStats, weeklyStats, monthlyStats, workersList] = await Promise.all([
           getChecklists(filter),
@@ -82,7 +83,7 @@ export default function ChecklistPage() {
         // 각 체크리스트의 지점별로 템플릿 로드
         const uniqueBranchIds = [...new Set(recent.map(checklist => checklist.branchId))];
         const templatesData: Record<string, ChecklistTemplate> = {};
-        
+
         for (const branchId of uniqueBranchIds) {
           try {
             const templateData = await getTemplate(branchId);
@@ -93,7 +94,7 @@ export default function ChecklistPage() {
             console.error('Failed to load template for branch:', branchId, error);
           }
         }
-        
+
         setTemplates(templatesData);
 
       } catch (error) {
@@ -175,23 +176,23 @@ export default function ChecklistPage() {
   const calculateCompletionRate = useCallback((checklist: ChecklistRecord) => {
     // 해당 체크리스트의 지점 템플릿 가져오기
     const branchTemplate = templates[checklist.branchId];
-    
+
     if (!branchTemplate) {
       // 템플릿이 없으면 모든 항목을 기준으로 계산
       const totalItems = checklist.items.length;
       const completedItems = checklist.items.filter(item => item.checked).length;
       return totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
     }
-    
+
     // 템플릿이 있으면 필수 항목만 계산
     const estimatedCategory = checklist.category || 'daily'; // 기본값은 daily
     const requiredItems = branchTemplate.items.filter(item => item.required && item.category === estimatedCategory);
     const requiredItemIds = requiredItems.map(item => item.id);
-    
-    const completedRequiredItems = checklist.items.filter(item => 
+
+    const completedRequiredItems = checklist.items.filter(item =>
       item.checked && requiredItemIds.includes(item.itemId)
     ).length;
-    
+
     const totalRequiredItems = requiredItemIds.length;
     return totalRequiredItems > 0 ? (completedRequiredItems / totalRequiredItems) * 100 : 0;
   }, []); // templates 의존성 제거하여 안정성 확보
@@ -205,11 +206,26 @@ export default function ChecklistPage() {
   // 체크리스트 상태를 올바르게 계산하는 함수
   const getCorrectStatus = useCallback((checklist: ChecklistRecord) => {
     const completionRate = calculateCompletionRate(checklist);
-    
+
     if (completionRate === 100) return 'completed';
     else if (completionRate > 0) return 'partial';
     else return 'pending';
-  }, []); // calculateCompletionRate 의존성 제거하여 안정성 확보
+  }, []);
+
+  const handleDeleteChecklist = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
+    if (!confirm('정말로 이 체크리스트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+
+    try {
+      await deleteChecklist(id);
+      // 목록 갱신
+      setRecentChecklists(prev => prev.filter(item => item.id !== id));
+      // 통계 갱신은 복잡하므로 페이지 새로고침을 유도하거나 간단히 무시 (사용성에 큰 지장 없음)
+    } catch (error) {
+      console.error('Failed to delete checklist:', error);
+      alert('체크리스트 삭제 중 오류가 발생했습니다.');
+    }
+  };
 
   // 로딩 상태를 더 부드럽게 처리
   const renderContent = useCallback(() => {
@@ -313,28 +329,28 @@ export default function ChecklistPage() {
           </CardHeader>
           <CardContent>
             <div className="flex gap-2">
-              <Button 
+              <Button
                 onClick={() => router.push('/dashboard/checklist/daily/new')}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <Plus className="h-4 w-4 mr-2" />
                 일일 체크리스트
               </Button>
-              <Button 
+              <Button
                 onClick={() => router.push('/dashboard/checklist/weekly/new')}
                 variant="outline"
               >
                 <Plus className="h-4 w-4 mr-2" />
                 주간 체크리스트
               </Button>
-              <Button 
+              <Button
                 onClick={() => router.push('/dashboard/checklist/monthly/new')}
                 variant="outline"
               >
                 <Plus className="h-4 w-4 mr-2" />
                 월간 체크리스트
               </Button>
-              <Button 
+              <Button
                 onClick={() => router.push('/dashboard/checklist/template')}
                 variant="outline"
                 className="border-orange-200 text-orange-700 hover:bg-orange-50"
@@ -342,7 +358,7 @@ export default function ChecklistPage() {
                 <GripVertical className="h-4 w-4 mr-2" />
                 템플릿 편집
               </Button>
-              <Button 
+              <Button
                 variant="outline"
                 onClick={() => router.push('/dashboard/checklist/history')}
               >
@@ -363,22 +379,19 @@ export default function ChecklistPage() {
             {recentChecklists.length > 0 ? (
               <div className="space-y-4">
                 {recentChecklists.map((checklist) => (
-                  <div 
-                    key={checklist.id} 
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
+                  <div
+                    key={checklist.id}
+                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 cursor-pointer relative group"
                     onClick={() => router.push(`/dashboard/checklist/${checklist.id}`)}
                   >
                     <div className="flex items-center gap-4">
-                      {getCategoryIcon('daily')}
+                      {getCategoryIcon(checklist.category || 'daily')}
                       <div>
                         <p className="font-medium">
                           {format(new Date(checklist.date), 'yyyy년 M월 d일 (E)', { locale: ko })} 체크리스트
                         </p>
                         <p className="text-sm text-gray-600">
-                          지점: {checklist.branchName || '지점명 없음'} | 
-                          담당자: {checklist.responsiblePerson} | 
-                          오픈: {checklist.openWorker} | 
-                          마감: {checklist.closeWorker}
+                          지점: {checklist.branchName || '지점명 없음'}
                         </p>
                       </div>
                     </div>
@@ -387,15 +400,22 @@ export default function ChecklistPage() {
                         <p className="text-sm font-medium">
                           {calculateCompletionRate(checklist).toFixed(1)}%
                         </p>
-                        <Progress 
-                          value={calculateCompletionRate(checklist)} 
-                          className="w-20 h-2"
-                        />
                       </div>
                       <Badge className={getStatusColor(getCorrectStatus(checklist))}>
                         {getStatusIcon(getCorrectStatus(checklist))}
                         <span className="ml-1">{getStatusText(getCorrectStatus(checklist))}</span>
                       </Badge>
+                      {isHQManager() && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50 ml-2"
+                          onClick={(e) => handleDeleteChecklist(checklist.id, e)}
+                          title="체크리스트 삭제"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -404,7 +424,7 @@ export default function ChecklistPage() {
               <div className="text-center py-8">
                 <CheckSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-500">아직 작성된 체크리스트가 없습니다.</p>
-                <Button 
+                <Button
                   className="mt-4"
                   onClick={() => router.push('/dashboard/checklist/daily/new')}
                 >
@@ -422,7 +442,7 @@ export default function ChecklistPage() {
   // 지점 필터 렌더링을 메모이제이션
   const branchFilter = useMemo(() => {
     if (!isHQManager() || branches.length === 0) return null;
-    
+
     return (
       <Card>
         <CardHeader>
@@ -447,8 +467,8 @@ export default function ChecklistPage() {
               </Select>
             </div>
             {selectedBranchId && selectedBranchId !== 'all' && (
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setSelectedBranchId('all')}
               >
                 필터 초기화
@@ -462,14 +482,14 @@ export default function ChecklistPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader 
-        title="체크리스트 관리" 
-        description="매장 업무 체크리스트를 관리하세요." 
+      <PageHeader
+        title="체크리스트 관리"
+        description="매장 업무 체크리스트를 관리하세요."
       />
-      
+
       {/* 본사 관리자를 위한 지점 필터 */}
       {branchFilter}
-      
+
       {renderContent()}
     </div>
   );

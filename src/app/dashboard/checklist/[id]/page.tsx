@@ -57,9 +57,6 @@ export default function ChecklistDetailPage() {
   const [loading, setLoading] = useState(true);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState({
-    openWorker: '',
-    closeWorker: '',
-    responsiblePerson: '',
     notes: '',
     weather: '',
     specialEvents: ''
@@ -250,9 +247,6 @@ export default function ChecklistDetailPage() {
     if (!checklist) return;
 
     setEditForm({
-      openWorker: checklist.openWorker || '',
-      closeWorker: checklist.closeWorker || '',
-      responsiblePerson: checklist.responsiblePerson || '',
       notes: checklist.notes || '',
       weather: checklist.weather || '',
       specialEvents: checklist.specialEvents || ''
@@ -265,9 +259,6 @@ export default function ChecklistDetailPage() {
 
     try {
       await updateChecklist(checklist.id, {
-        openWorker: editForm.openWorker,
-        closeWorker: editForm.closeWorker,
-        responsiblePerson: editForm.responsiblePerson,
         notes: editForm.notes,
         weather: editForm.weather,
         specialEvents: editForm.specialEvents
@@ -278,9 +269,6 @@ export default function ChecklistDetailPage() {
         if (!prev) return null;
         return {
           ...prev,
-          openWorker: editForm.openWorker,
-          closeWorker: editForm.closeWorker,
-          responsiblePerson: editForm.responsiblePerson,
           notes: editForm.notes,
           weather: editForm.weather,
           specialEvents: editForm.specialEvents
@@ -376,7 +364,7 @@ export default function ChecklistDetailPage() {
                 </div>
                 <p className="text-sm text-gray-600">
                   지점: {checklist.branchName || '지점명 없음'} |
-                  작성일: {format(checklist.completedAt.toDate(), 'yyyy년 M월 d일 HH:mm', { locale: ko })}
+                  작성일: {format(new Date(checklist.completedAt), 'yyyy년 M월 d일 HH:mm', { locale: ko })}
                 </p>
               </div>
             </div>
@@ -395,31 +383,7 @@ export default function ChecklistDetailPage() {
         </CardHeader>
       </Card>
 
-      {/* 담당자 정보 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            담당자 정보
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <p className="text-sm font-medium text-gray-500">오픈 근무자</p>
-              <p className="font-medium">{checklist.openWorker || '-'}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500">마감 근무자</p>
-              <p className="font-medium">{checklist.closeWorker || '-'}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500">담당자</p>
-              <p className="font-medium">{checklist.responsiblePerson || '-'}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+
 
       {/* 메타 정보 */}
       {(checklist.notes || checklist.weather || checklist.specialEvents) && (
@@ -508,7 +472,7 @@ export default function ChecklistDetailPage() {
                     )}
                     {record.checked && record.checkedBy && (
                       <p className="text-xs text-gray-500 mt-1">
-                        체크: {record.checkedBy} | {record.checkedAt && format(record.checkedAt.toDate(), 'MM/dd HH:mm')}
+                        체크 시간: {record.checkedAt && format(new Date(record.checkedAt), 'HH:mm')}
                       </p>
                     )}
                   </div>
@@ -569,36 +533,7 @@ export default function ChecklistDetailPage() {
           </DialogHeader>
 
           <div className="grid gap-6 py-4">
-            {/* 담당자 정보 */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="openWorker">오픈 근무자</Label>
-                <Input
-                  id="openWorker"
-                  value={editForm.openWorker}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, openWorker: e.target.value }))}
-                  placeholder="오픈 근무자명"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="closeWorker">마감 근무자</Label>
-                <Input
-                  id="closeWorker"
-                  value={editForm.closeWorker}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, closeWorker: e.target.value }))}
-                  placeholder="마감 근무자명"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="responsiblePerson">담당자</Label>
-                <Input
-                  id="responsiblePerson"
-                  value={editForm.responsiblePerson}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, responsiblePerson: e.target.value }))}
-                  placeholder="담당자명"
-                />
-              </div>
-            </div>
+
 
             {/* 날씨 및 특별 이벤트 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
