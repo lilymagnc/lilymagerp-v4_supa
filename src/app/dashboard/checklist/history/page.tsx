@@ -34,6 +34,7 @@ import { ChecklistRecord, ChecklistTemplate } from "@/types/checklist";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { exportSingleChecklist, exportMultipleChecklists, exportChecklistSummary } from "@/lib/excel-export";
+import { parseDate } from "@/lib/date-utils";
 
 
 export default function ChecklistHistoryPage() {
@@ -632,7 +633,7 @@ export default function ChecklistHistoryPage() {
                         마감: {checklist.closeWorker || '미입력'}
                       </p>
                       <p className="text-sm text-gray-500">
-                        생성일: {checklist.completedAt && format(checklist.completedAt.toDate(), 'yyyy년 M월 d일 HH:mm', { locale: ko })}
+                        생성일: {checklist.completedAt && format(parseDate(checklist.completedAt) || new Date(), 'yyyy년 M월 d일 HH:mm', { locale: ko })}
                       </p>
                       {checklist.notes && (
                         <p className="text-sm text-gray-500 mt-1">

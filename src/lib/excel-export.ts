@@ -61,7 +61,7 @@ export const exportSingleChecklist = (
       String(index + 1),
       templateItem?.title || `항목 ${item.itemId}`,
       item.checked ? '완료' : '미완료',
-      item.checkedAt ? format(item.checkedAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '',
+      item.checkedAt ? format(parseDate(item.checkedAt) || new Date(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '',
       templateItem?.required ? '필수' : '선택'
     ]);
   });
@@ -88,7 +88,7 @@ export const exportSingleChecklist = (
     ['총 항목 수', checklist.items.length],
     ['완료 항목 수', checklist.items.filter(item => item.checked).length],
     ['완료율', `${completionRate.toFixed(1)}%`],
-    ['생성일', checklist.completedAt ? format(checklist.completedAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '']
+    ['생성일', checklist.completedAt ? format(parseDate(checklist.completedAt) || new Date(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '']
   ];
 
   // 모든 데이터를 하나의 배열로 합치기
@@ -160,7 +160,7 @@ export const exportMultipleChecklists = (
         String(itemIndex + 1),
         templateItem?.title || `항목 ${item.itemId}`,
         item.checked ? '완료' : '미완료',
-        item.checkedAt ? format(item.checkedAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '',
+        item.checkedAt ? format(parseDate(item.checkedAt) || new Date(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '',
         templateItem?.required ? '필수' : '선택'
       ]);
     });
@@ -187,7 +187,7 @@ export const exportMultipleChecklists = (
       ['총 항목 수', checklist.items.length],
       ['완료 항목 수', checklist.items.filter(item => item.checked).length],
       ['완료율', `${completionRate.toFixed(1)}%`],
-      ['생성일', checklist.completedAt ? format(checklist.completedAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '']
+      ['생성일', checklist.completedAt ? format(parseDate(checklist.completedAt) || new Date(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '']
     ];
 
     // 모든 데이터를 하나의 배열로 합치기
@@ -248,7 +248,7 @@ export const exportChecklistSummary = (checklists: ChecklistRecord[]) => {
       checklist.responsiblePerson || '미입력',
       `${completionRate.toFixed(1)}%`,
       checklist.status === 'completed' ? '완료' : checklist.status === 'partial' ? '진행중' : '대기',
-      checklist.completedAt ? format(checklist.completedAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : ''
+      checklist.completedAt ? format(parseDate(checklist.completedAt) || new Date(), 'yyyy-MM-dd HH:mm', { locale: ko }) : ''
     ]);
   });
 
