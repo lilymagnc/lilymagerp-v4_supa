@@ -3,6 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Form,
   FormControl,
@@ -28,6 +29,7 @@ import type { Partner } from "@/hooks/use-partners"
 const partnerSchema = z.object({
   name: z.string().min(1, "거래처명을 입력해주세요."),
   type: z.string().optional(),
+  category: z.string().optional(),
   contactPerson: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().email("유효한 이메일을 입력해주세요.").optional().or(z.literal('')),
@@ -49,6 +51,7 @@ interface PartnerFormProps {
 const defaultValues: PartnerFormValues = {
   name: "",
   type: "",
+  category: "",
   contactPerson: "",
   phone: "",
   email: "",
@@ -105,8 +108,30 @@ export function PartnerForm({ isOpen, onOpenChange, onSubmit, partner }: Partner
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>거래 유형</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="유형 선택" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {['생화', '분화', '난', '분재', '자재', '화환', '식당', '사무문구', '기타'].map((t) => (
+                          <SelectItem key={t} value={t}>{t}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="category"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>추가 구분</FormLabel>
                     <FormControl>
-                      <Input placeholder="자재, 생화, 운송 등" {...field} />
+                      <Input placeholder="상세 분류 (예: 수입장미 전문)" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

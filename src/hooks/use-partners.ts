@@ -7,7 +7,7 @@ export interface Partner {
   id: string;
   name: string;
   type?: string;
-  category?: 'wholesale' | 'florist';
+  category?: string;
   contactPerson?: string;
   phone?: string;
   email?: string;

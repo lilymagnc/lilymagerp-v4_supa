@@ -33,7 +33,10 @@ export function PartnerTable({ partners, onEdit, onDelete }: PartnerTableProps) 
                 <TableRow key={partner.id}>
                   <TableCell className="font-medium">{partner.name}</TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{partner.type}</Badge>
+                    <div className="flex flex-col gap-1 items-start">
+                      <Badge variant="secondary">{partner.type}</Badge>
+                      {partner.category && <span className="text-xs text-muted-foreground">{partner.category}</span>}
+                    </div>
                   </TableCell>
                   <TableCell>{partner.contactPerson || '-'}</TableCell>
                   <TableCell>{partner.phone}</TableCell>
@@ -41,7 +44,7 @@ export function PartnerTable({ partners, onEdit, onDelete }: PartnerTableProps) 
                     <p className="truncate max-w-xs">{partner.items || '-'}</p>
                   </TableCell>
                   <TableCell className="text-right">
-                     <AlertDialog>
+                    <AlertDialog>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button aria-haspopup="true" size="icon" variant="ghost">
@@ -53,7 +56,7 @@ export function PartnerTable({ partners, onEdit, onDelete }: PartnerTableProps) 
                           <DropdownMenuLabel>작업</DropdownMenuLabel>
                           <DropdownMenuItem onClick={() => onEdit(partner)}>수정</DropdownMenuItem>
                           <DropdownMenuSeparator />
-                           <AlertDialogTrigger asChild>
+                          <AlertDialogTrigger asChild>
                             <DropdownMenuItem className="text-destructive" onSelect={(e) => e.preventDefault()}>삭제</DropdownMenuItem>
                           </AlertDialogTrigger>
                         </DropdownMenuContent>
@@ -62,12 +65,12 @@ export function PartnerTable({ partners, onEdit, onDelete }: PartnerTableProps) 
                         <AlertDialogHeader>
                           <AlertDialogTitle>정말로 삭제하시겠습니까?</AlertDialogTitle>
                           <AlertDialogDescription>
-                           이 작업은 되돌릴 수 없습니다. '{partner.name}' 거래처 데이터가 서버에서 영구적으로 삭제됩니다.
+                            이 작업은 되돌릴 수 없습니다. '{partner.name}' 거래처 데이터가 서버에서 영구적으로 삭제됩니다.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>취소</AlertDialogCancel>
-                          <AlertDialogAction 
+                          <AlertDialogAction
                             className="bg-destructive hover:bg-destructive/90"
                             onClick={() => onDelete(partner.id)}
                           >
