@@ -62,22 +62,59 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
   const { branches } = useBranches();
   const { categories } = useCategories();
   const availableBranches = propBranches || branches;
-  // 카테고리 목록 생성
-  const mainCategories = useMemo(() => {
-    const mainCats = categories.filter(cat => cat.type === 'main').map(cat => cat.name);
-    return mainCats.length > 0 ? mainCats : ['생화', '조화', '화분', '기타자재'];
-  }, [categories]);
-  const midCategories = useMemo(() => {
-    const midCats = categories.filter(cat => cat.type === 'mid').map(cat => cat.name);
-    return midCats.length > 0 ? midCats : ['장미', '카네이션', '관엽식물', '난', '기타'];
-  }, [categories]);
+  const PREDEFINED_CATEGORIES = {
+    '생화': [
+      '장미류', '카네이션류', '리시안서스류', '국화/소국류', '거베라류', '매스플라워', '폼플라워', '라인플라워', '필러플라워', '소재(그린)'
+    ],
+    '식물': [
+      '관엽 대형', '관엽 중형', '관엽 소형', '다육 중형', '다육 소형', '선인장 대형', '선인장 중형', '선인장 소형', '동양란', '서양란', '기타 식물'
+    ],
+    '바구니 / 화기': [
+      '바구니', '도자기', '테라코타(토분)', '유리', '플라스틱'
+    ],
+    '소모품 및 부자재': [
+      '포장재', '리본/텍', '제작도구', '원예자재'
+    ]
+  };
+  type PREDEFINED_CATEGORIES_KEYS = keyof typeof PREDEFINED_CATEGORIES;
+
+  const mainCategories = Object.keys(PREDEFINED_CATEGORIES);
   const form = useForm<MaterialFormValues>({
     resolver: zodResolver(materialSchema),
     defaultValues,
   })
+  const selectedMainCategory = form.watch('mainCategory');
+  const midCategories = selectedMainCategory && PREDEFINED_CATEGORIES[selectedMainCategory as PREDEFINED_CATEGORIES_KEYS]
+    ? PREDEFINED_CATEGORIES[selectedMainCategory as PREDEFINED_CATEGORIES_KEYS]
+    : [];
+
   useEffect(() => {
-    if(isOpen) {
-      form.reset(material || defaultValues);
+    if (isOpen) {
+      if (material) {
+        let updated = { ...material };
+        const name = updated.name || '';
+
+        // Auto categorize based on names
+        if (name.includes('장미')) {
+          updated.mainCategory = '생화';
+          updated.midCategory = '장미류';
+        } else if (name.includes('카네이션')) {
+          updated.mainCategory = '생화';
+          updated.midCategory = '카네이션류';
+        } else if (name.includes('리시안') || name.includes('리시안서스')) {
+          updated.mainCategory = '생화';
+          updated.midCategory = '리시안서스류';
+        } else if (name.includes('국화') || name.includes('소국') || name.includes('대국')) {
+          updated.mainCategory = '생화';
+          updated.midCategory = '국화/소국류';
+        } else if (name.includes('거베라')) {
+          updated.mainCategory = '생화';
+          updated.midCategory = '거베라류';
+        }
+        form.reset(updated);
+      } else {
+        form.reset(defaultValues);
+      }
     }
   }, [isOpen, material, form]);
   const handleFormSubmit = (data: MaterialFormValues) => {
@@ -92,7 +129,7 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 py-4">
-             <FormField
+            <FormField
               control={form.control}
               name="name"
               render={({ field }) => (
@@ -128,13 +165,13 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
                   </FormItem>
                 )}
               />
-               <FormField
+              <FormField
                 control={form.control}
                 name="midCategory"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>중분류</FormLabel>
-                     <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger><SelectValue placeholder="중분류 선택" /></SelectTrigger>
                       </FormControl>
@@ -151,7 +188,7 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
                 )}
               />
             </div>
-             <FormField
+            <FormField
               control={form.control}
               name="price"
               render={({ field }) => (
@@ -165,32 +202,32 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
               )}
             />
             <div className="grid grid-cols-2 gap-4">
-                <FormField
-                    control={form.control}
-                    name="size"
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>규격</FormLabel>
-                        <FormControl>
-                        <Input placeholder="1단" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="color"
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>색상</FormLabel>
-                        <FormControl>
-                        <Input placeholder="Pink" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                />
+              <FormField
+                control={form.control}
+                name="size"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>규격</FormLabel>
+                    <FormControl>
+                      <Input placeholder="1단" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="color"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>색상</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Pink" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
             <FormField
               control={form.control}
@@ -212,7 +249,7 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
                 </FormItem>
               )}
             />
-             <FormField
+            <FormField
               control={form.control}
               name="branch"
               render={({ field }) => (
@@ -232,7 +269,7 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
                 </FormItem>
               )}
             />
-             {material && (
+            {material && (
               <FormField
                 control={form.control}
                 name="stock"
@@ -248,10 +285,10 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
               />
             )}
             <DialogFooter className="pt-4">
-                <DialogClose asChild>
-                    <Button type="button" variant="secondary">취소</Button>
-                </DialogClose>
-                <Button type="submit">저장</Button>
+              <DialogClose asChild>
+                <Button type="button" variant="secondary">취소</Button>
+              </DialogClose>
+              <Button type="submit">저장</Button>
             </DialogFooter>
           </form>
         </Form>
