@@ -2,17 +2,17 @@
 
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
-  PieChart, 
-  Pie, 
-  Cell, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
+import {
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
   ResponsiveContainer,
   LineChart,
   Line
@@ -36,21 +36,20 @@ const CHART_COLORS = [
 export function ExpenseCharts({ expenses, currentBranchName, selectedBranchId, selectedMonth }: ExpenseChartsProps) {
   const { isHQManager, isHeadOfficeAdmin } = useUserRole();
   const userRole = isHeadOfficeAdmin() ? 'head_office_admin' : isHQManager() ? 'hq_manager' : 'branch_user';
-  
+
   // 선택된 지점과 월의 데이터만 필터링 (민감한 데이터 제어 포함)
   const filteredExpenses = React.useMemo(() => {
     let filtered = expenses;
-    
+
     // 지점 필터링
     if (selectedBranchId) {
       filtered = filtered.filter(expense => expense.branchId === selectedBranchId);
     }
-    
+
     // 월 필터링
     if (selectedMonth) {
       filtered = filtered.filter(expense => {
-        if (!expense.date) return false;
-        const expenseDate = expense.date.toDate();
+        const expenseDate = typeof expense.date.toDate === 'function' ? expense.date.toDate() : new Date(expense.date);
         // 한국 시간 기준으로 월 비교
         const expenseYear = expenseDate.getFullYear();
         const expenseMonth = expenseDate.getMonth() + 1; // getMonth()는 0부터 시작하므로 +1
@@ -58,7 +57,7 @@ export function ExpenseCharts({ expenses, currentBranchName, selectedBranchId, s
         return expenseMonthKey === selectedMonth;
       });
     }
-    
+
     // 민감한 데이터 필터링 (본사 관리자가 아닌 경우)
     if (!isHeadOfficeAdmin() && !isHQManager()) {
       filtered = filtered.filter(expense => {
@@ -66,7 +65,7 @@ export function ExpenseCharts({ expenses, currentBranchName, selectedBranchId, s
         return canViewSubCategory(expense.category, expense.subCategory, userRole);
       });
     }
-    
+
     return filtered;
   }, [expenses, selectedBranchId, selectedMonth]);
 
@@ -82,14 +81,14 @@ export function ExpenseCharts({ expenses, currentBranchName, selectedBranchId, s
 
     expenses.forEach(expense => {
       if (!expense.branchId || !expense.amount) return;
-      
+
       // 민감한 데이터 필터링 (본사 관리자가 아닌 경우)
       if (!isHeadOfficeAdmin() && !isHQManager()) {
         if (expense.subCategory && !canViewSubCategory(expense.category, expense.subCategory, userRole)) {
           return;
         }
       }
-      
+
       const currentAmount = branchMap.get(expense.branchId) || 0;
       branchMap.set(expense.branchId, currentAmount + expense.amount);
 
@@ -116,7 +115,7 @@ export function ExpenseCharts({ expenses, currentBranchName, selectedBranchId, s
 
     expenses.forEach(expense => {
       if (!expense.branchId || !expense.category || !expense.amount) return;
-      
+
       // 민감한 데이터 필터링 (본사 관리자가 아닌 경우)
       if (!isHeadOfficeAdmin() && !isHQManager()) {
         if (expense.subCategory && !canViewSubCategory(expense.category, expense.subCategory, userRole)) {
@@ -206,12 +205,11 @@ export function ExpenseCharts({ expenses, currentBranchName, selectedBranchId, s
     const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
 
     dataToUse.forEach(expense => {
-      if (!expense.date || !expense.amount) return;
-      const expenseDate = expense.date.toDate();
-      
+      const expenseDate = typeof expense.date.toDate === 'function' ? expense.date.toDate() : new Date(expense.date);
+
       // 최근 6개월 데이터만 포함 (월 필터가 없을 때만)
       if (!selectedMonth && expenseDate < sixMonthsAgo) return;
-      
+
       const year = expenseDate.getFullYear();
       const month = expenseDate.getMonth() + 1; // getMonth()는 0부터 시작하므로 +1
       const monthKey = `${year}-${month.toString().padStart(2, '0')}`;
@@ -251,11 +249,11 @@ export function ExpenseCharts({ expenses, currentBranchName, selectedBranchId, s
       const currentAmount = supplierMap.get(supplierName) || 0;
       supplierMap.set(supplierName, currentAmount + amount);
 
-      });
+    });
 
     const result = Array.from(supplierMap.entries())
-      .map(([name, amount]) => ({ 
-        name, 
+      .map(([name, amount]) => ({
+        name,
         amount: Number(amount) // 확실히 숫자로 변환
       }))
       .filter(item => item.amount > 0) // 0보다 큰 값만 필터링
@@ -289,12 +287,11 @@ export function ExpenseCharts({ expenses, currentBranchName, selectedBranchId, s
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     dataToUse.forEach(expense => {
-      if (!expense.date || !expense.amount) return;
-      const expenseDate = expense.date.toDate();
-      
+      const expenseDate = typeof expense.date.toDate === 'function' ? expense.date.toDate() : new Date(expense.date);
+
       // 최근 30일 데이터만 포함 (월 필터가 없을 때만)
       if (!selectedMonth && expenseDate < thirtyDaysAgo) return;
-      
+
       const dayKey = expenseDate.toISOString().slice(0, 10);
       const currentAmount = dailyMap.get(dayKey) || 0;
       dailyMap.set(dayKey, currentAmount + expense.amount);
@@ -365,7 +362,7 @@ export function ExpenseCharts({ expenses, currentBranchName, selectedBranchId, s
                     <Tooltip content={<CustomTooltip />} />
                     <Legend />
                     {branchCategoryData.categories.map((category, index) => (
-                      <Bar 
+                      <Bar
                         key={category}
                         dataKey={category}
                         name={category}
@@ -436,10 +433,10 @@ export function ExpenseCharts({ expenses, currentBranchName, selectedBranchId, s
               <YAxis tickFormatter={(value) => formatCurrency(value)} />
               <Tooltip content={<CustomTooltip />} />
               <Legend />
-              <Line 
-                type="monotone" 
-                dataKey="amount" 
-                stroke="#8884d8" 
+              <Line
+                type="monotone"
+                dataKey="amount"
+                stroke="#8884d8"
                 strokeWidth={2}
                 name="지출액"
               />
