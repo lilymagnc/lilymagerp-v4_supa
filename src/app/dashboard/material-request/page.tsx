@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 
 export default function MaterialRequestPage() {
   const { user } = useAuth();
-  const { materials, loading: materialsLoading } = useMaterials();
+  const { materials, loading: materialsLoading, fetchMaterials } = useMaterials();
   const { branches, loading: branchesLoading } = useBranches();
   const { createRequest, loading: requestLoading } = useMaterialRequests();
   const { toast } = useToast();
@@ -37,16 +37,20 @@ export default function MaterialRequestPage() {
     if (user && branches.length > 0) {
       if (user.role === '본사 관리자' && !selectedBranch) {
         setSelectedBranch(branches[0].name);
-      } else if (user.franchise) {
+      } else if (user.franchise && !selectedBranch) {
         setSelectedBranch(user.franchise);
       }
     }
-  }, [user, branches]);
+  }, [user, branches, selectedBranch]);
+
+  useEffect(() => {
+    if (selectedBranch) {
+      fetchMaterials({ branch: selectedBranch, pageSize: 1000 });
+    }
+  }, [selectedBranch, fetchMaterials]);
 
   const availableMaterials = useMemo(() => {
-    return materials
-      .filter(m => m.branch === selectedBranch)
-      .filter(m => m.stock > 0);
+    return materials.filter(m => m.branch === selectedBranch);
   }, [materials, selectedBranch]);
 
   const categories = useMemo(() => {
