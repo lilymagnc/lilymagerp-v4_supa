@@ -25,6 +25,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useBranches } from "@/hooks/use-branches"
 import { useCategories } from "@/hooks/use-categories"
+import { usePartners } from "@/hooks/use-partners"
 import { useEffect, useMemo } from "react"
 const materialSchema = z.object({
   name: z.string().min(1, "자재명을 입력해주세요."),
@@ -61,6 +62,7 @@ const defaultValues: MaterialFormValues = {
 export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initialData, branches: propBranches, selectedBranch }: MaterialFormProps) {
   const { branches } = useBranches();
   const { categories } = useCategories();
+  const { partners } = usePartners();
   const availableBranches = propBranches || branches;
   const PREDEFINED_CATEGORIES = {
     '생화': [
@@ -84,9 +86,38 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
     defaultValues,
   })
   const selectedMainCategory = form.watch('mainCategory');
+  const selectedSupplier = form.watch('supplier');
   const midCategories = selectedMainCategory && PREDEFINED_CATEGORIES[selectedMainCategory as PREDEFINED_CATEGORIES_KEYS]
     ? PREDEFINED_CATEGORIES[selectedMainCategory as PREDEFINED_CATEGORIES_KEYS]
     : [];
+
+  const filteredSuppliers = useMemo(() => {
+    let result = partners || [];
+
+    // 선택된 대분류에 맞춰 파트너 필터링
+    if (selectedMainCategory) {
+      result = result.filter((partner) => {
+        const pType = partner.type || '';
+        if (selectedMainCategory === '생화') {
+          return pType === '생화';
+        } else if (selectedMainCategory === '식물') {
+          return pType === '분화' || pType === '난' || pType === '분재';
+        } else if (selectedMainCategory === '바구니 / 화기' || selectedMainCategory === '소모품 및 부자재') {
+          return pType === '자재';
+        }
+        return true;
+      });
+    }
+
+    const uniqueSupplierNames = new Set(result.map(p => p.name));
+
+    // 만약 기존에 설정된 구매처가 필터링된 목록에 없다면 화면에 보여주기 위해 임시로 추가
+    if (selectedSupplier && !uniqueSupplierNames.has(selectedSupplier)) {
+      uniqueSupplierNames.add(selectedSupplier);
+    }
+
+    return Array.from(uniqueSupplierNames).sort((a, b) => a.localeCompare(b));
+  }, [partners, selectedMainCategory, selectedSupplier]);
 
   useEffect(() => {
     if (isOpen) {
@@ -245,9 +276,9 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
                       <SelectTrigger><SelectValue placeholder="공급업체 선택" /></SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="경부선꽃시장">경부선꽃시장</SelectItem>
-                      <SelectItem value="플라워팜">플라워팜</SelectItem>
-                      <SelectItem value="자재월드">자재월드</SelectItem>
+                      {filteredSuppliers.map((supplierName) => (
+                        <SelectItem key={supplierName} value={supplierName}>{supplierName}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />
