@@ -53,8 +53,8 @@ const defaultValues: MaterialFormValues = {
   midCategory: "",
   price: 0,
   supplier: "",
-  size: "",
-  color: "",
+  size: "1단",
+  color: "기타",
   branch: "",
   stock: 0,
 }
@@ -111,6 +111,11 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
           updated.mainCategory = '생화';
           updated.midCategory = '거베라류';
         }
+
+        // Apply defaults for empty missing size/color
+        if (!updated.size) updated.size = "1단";
+        if (!updated.color) updated.color = "기타";
+
         form.reset(updated);
       } else {
         form.reset(defaultValues);
