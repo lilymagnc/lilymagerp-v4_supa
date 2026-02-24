@@ -1152,7 +1152,7 @@ export function ExpenseInputForm({
 
                 {/* 빠른 구매처 선택 버튼 (전체 너비 가로 배열) */}
                 <div className="flex flex-row gap-2 mt-4">
-                  {['월드플로라', '꽃동산', '일산플라워', '한성난원', '채아네가든'].map((name) => (
+                  {['월드플로라', '꽃동산', '일산플라워', '한성난원-양재', '채아네가든'].map((name) => (
                     <button
                       key={name}
                       type="button"
