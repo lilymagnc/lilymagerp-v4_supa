@@ -1089,18 +1089,18 @@ export function ExpenseInputForm({
                                 </FormControl>
                               </PopoverTrigger>
                               <PopoverContent className="w-[300px] p-0" align="start">
-                                <Command shouldFilter={false}>
+                                <div className="flex flex-col w-full">
                                   <div className="flex items-center border-b px-3 py-2">
                                     <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-                                    <CommandInput
+                                    <Input
                                       placeholder="구매처 검색..."
                                       value={supplierSearchValue}
-                                      onValueChange={handleSupplierSearch}
-                                      className="border-0 focus:ring-0 text-sm"
+                                      onChange={(e) => handleSupplierSearch(e.target.value)}
+                                      className="border-0 focus-visible:ring-0 shadow-none h-8 p-0 text-sm"
                                     />
                                   </div>
-                                  <CommandList>
-                                    <CommandEmpty>
+                                  <div className="max-h-[250px] overflow-y-auto overflow-x-hidden p-1">
+                                    {filteredPartners.length === 0 ? (
                                       <div className="p-4 text-center">
                                         <p className="text-xs text-muted-foreground mb-3">검색 결과가 없습니다.</p>
                                         <Button
@@ -1114,25 +1114,32 @@ export function ExpenseInputForm({
                                           직접 입력하기
                                         </Button>
                                       </div>
-                                    </CommandEmpty>
-                                    <CommandGroup className="max-h-[250px] overflow-auto overscroll-contain">
-                                      {filteredPartners.map((partner) => (
-                                        <CommandItem
-                                          key={partner.id}
-                                          value={partner.name}
-                                          onSelect={() => handleSupplierSelect(partner.name)}
-                                          className="cursor-pointer py-2 hover:bg-gray-50 pointer-events-auto"
-                                        >
-                                          <div className="flex flex-col">
-                                            <span className="font-medium text-sm">{partner.name}</span>
-                                            <span className="text-[10px] text-muted-foreground">{partner.type}</span>
+                                    ) : (
+                                      <div className="flex flex-col gap-1">
+                                        {filteredPartners.map((partner) => (
+                                          <div
+                                            key={partner.id}
+                                            onMouseDown={(e) => {
+                                              e.preventDefault(); // 입력창 포커스 유지
+                                            }}
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              handleSupplierSelect(partner.name);
+                                            }}
+                                            className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-2 text-sm outline-none hover:bg-gray-100 transition-colors"
+                                          >
+                                            <div className="flex flex-col">
+                                              <span className="font-medium text-sm">{partner.name}</span>
+                                              <span className="text-[10px] text-muted-foreground">{partner.type}</span>
+                                            </div>
+                                            {field.value === partner.name && <Check className="ml-auto h-4 w-4 text-primary" />}
                                           </div>
-                                          {field.value === partner.name && <Check className="ml-auto h-4 w-4 text-primary" />}
-                                        </CommandItem>
-                                      ))}
-                                    </CommandGroup>
-                                  </CommandList>
-                                </Command>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
                               </PopoverContent>
                             </Popover>
                           </div>
