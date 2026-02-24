@@ -1121,11 +1121,6 @@ export function ExpenseInputForm({
                                           key={partner.id}
                                           value={partner.name}
                                           onSelect={() => handleSupplierSelect(partner.name)}
-                                          onMouseDown={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            handleSupplierSelect(partner.name);
-                                          }}
                                           className="cursor-pointer py-2 hover:bg-gray-50 pointer-events-auto"
                                         >
                                           <div className="flex flex-col">
