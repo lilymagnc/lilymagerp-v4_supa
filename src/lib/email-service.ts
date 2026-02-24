@@ -57,7 +57,7 @@ export async function sendDeliveryCompleteEmail(
       }
     }
 
-    // 실제 이메일 발송 로직 (Firebase Functions 또는 외부 이메일 서비스 사용)
+    // 실제 이메일 발송 로직 (Serverless Functions 또는 외부 이메일 서비스 사용)
     await sendEmail(customerEmail, `${settings.siteName} - 배송완료 알림`, emailContent, isHtml(emailContent));
     return true;
   } catch (error) {
@@ -140,7 +140,7 @@ export async function sendBirthdayEmail(
     return false;
   }
 }
-// 실제 이메일 발송 함수 (Firebase Functions 또는 외부 서비스 연동)
+// 실제 이메일 발송 함수 (Serverless Functions 또는 외부 서비스 연동)
 async function sendEmail(to: string, subject: string, content: string, isHtmlContent: boolean = false): Promise<void> {
   // 개발환경에서는 콘솔에 이메일 내용 출력
   if (process.env.NODE_ENV === 'development') {

@@ -351,7 +351,7 @@ function useOrdersLocal(initialFetch = true) {
   }, []);
 
 
-  const fetchOrders = useCallback(async (days: number = 7) => {
+  const fetchOrders = useCallback(async (days: number = 60) => {
     // Abort previous request if exists
     const controller = new AbortController();
     const signal = controller.signal;
@@ -364,7 +364,15 @@ function useOrdersLocal(initialFetch = true) {
       if (orders.length === 0) setLoading(true);
       else setIsRefreshing(true);
 
-      const startDate = subDays(startOfDay(new Date()), days).toISOString();
+      let startDateStr: string;
+      if (days === 60) {
+        // 기본 2달 (전달 1일부터 현재까지)
+        const today = new Date();
+        const startOfPrevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        startDateStr = startOfPrevMonth.toISOString();
+      } else {
+        startDateStr = subDays(startOfDay(new Date()), days).toISOString();
+      }
 
       let allData: any[] = [];
       let page = 0;
@@ -385,7 +393,7 @@ function useOrdersLocal(initialFetch = true) {
         let query = supabase
           .from('orders')
           .select('*')
-          .or(`order_date.gte.${startDate},payment->>completedAt.gte.${startDate},payment->>secondPaymentDate.gte.${startDate},transfer_info->>acceptedAt.gte.${startDate},payment->>status.eq.pending`);
+          .or(`order_date.gte.${startDateStr},payment->>completedAt.gte.${startDateStr},payment->>secondPaymentDate.gte.${startDateStr},transfer_info->>acceptedAt.gte.${startDateStr},payment->>status.eq.pending`);
 
         // Server-side branch filter
         if (!isAdmin && myBranch && myBranch !== '미정') {
@@ -627,7 +635,7 @@ function useOrdersLocal(initialFetch = true) {
       fetchOrders();
     }
 
-    // --- [Real-time Subscription] Act like Firebase (Atomic Updates) ---
+    // --- [Real-time Subscription] Atomic Updates ---
     const channel = supabase
       .channel('orders-realtime-changes')
       .on(
@@ -653,7 +661,7 @@ function useOrdersLocal(initialFetch = true) {
           }
 
           // [핵심] 원자적 업데이트 (Atomic Update) - 전체 다시 불러오지 않고 메모리에서 교체
-          // Firebase의 onSnapshot과 동일한 방식: 변경된 것만 반영
+          // 원자적 업데이트 (Atomic Update) - 동일한 방식: 변경된 것만 반영
           if (payload.eventType === 'INSERT') {
             const mapped = mapRowToOrder(payload.new);
             setOrders(prev => [mapped, ...prev].slice(0, 5000));
@@ -663,7 +671,7 @@ function useOrdersLocal(initialFetch = true) {
           } else if (payload.eventType === 'DELETE') {
             setOrders(prev => prev.filter(o => o.id !== (payload.old as any).id));
           }
-          // triggerRefresh 제거: 원자적 업데이트만으로 충분 (Firebase와 동일 방식)
+          // triggerRefresh 제거: 원자적 업데이트만으로 충분
         }
       )
       .subscribe();
@@ -1004,10 +1012,7 @@ function useOrdersLocal(initialFetch = true) {
         }
       }
 
-      let revenueDelta = 0;
-      if (oldStatus !== 'canceled' && newStatus === 'canceled') revenueDelta = -oldTotal;
-      else if (oldStatus === 'canceled' && newStatus !== 'canceled') revenueDelta = newTotal;
-      else if (oldStatus !== 'canceled' && newStatus !== 'canceled') revenueDelta = newTotal - oldTotal;
+      // Unified Revenue calculation moved below 
 
       // Transform data to snake_case for PostgreSQL
       const updatePayload: any = { updated_at: new Date().toISOString() };
@@ -1048,48 +1053,8 @@ function useOrdersLocal(initialFetch = true) {
         throw error;
       }
 
-      // --- [Date Migration Logic] ---
-      try {
-        const oldOrderDate = new Date(oldOrder.order_date);
-        const newOrderDate = data.orderDate ? new Date(data.orderDate) : oldOrderDate;
-
-        // YYYY-MM-DD Comparison
-        const isOrderDateChanged = oldOrderDate.toISOString().split('T')[0] !== newOrderDate.toISOString().split('T')[0];
-
-        // Payment Date Data
-        const oldPaymentDate = oldOrder.payment?.completedAt ? new Date(oldOrder.payment.completedAt) : null;
-        let newPaymentDate = data.payment?.completedAt ? new Date(data.payment.completedAt) : oldPaymentDate;
-
-        // [User Requirement]: If Order Date changes, Payment Date should auto-sync if it was previously same as Order Date or if not explicitly set differently.
-        // Actually, the UI might send both. But if valid, we assume revenue moves if payment date moves.
-
-        const isPaymentDateChanged = (oldPaymentDate?.getTime() !== newPaymentDate?.getTime());
-
-        // 1. Order Count Migration (Based on Order Date)
-        if (isOrderDateChanged && !isCanceled(oldOrder)) {
-          // Remove Order Count from Old Date
-          await updateDailyStats(oldOrderDate, oldOrder.branch_name, {
-            revenueDelta: 0,
-            orderCountDelta: -1,
-            settledAmountDelta: 0
-          });
-
-          // Add Order Count to New Date
-          await updateDailyStats(newOrderDate, oldOrder.branch_name, {
-            revenueDelta: 0,
-            orderCountDelta: 1,
-            settledAmountDelta: 0
-          });
-        }
-
-        // 2. Legacy revenue/settlement migration logic removed to prevent double-counting and lint errors.
-        // Settlement is handled by the map comparison logic below.
-        // Revenue follows Order Date logic above.
-
-      } catch (statError) {
-        console.error("통계 이동 중 오류 (비치명적):", statError);
-      }
-      // --- [End Date Migration] ---
+      // Legacy split date migration removed to prevent order count syncing issues.
+      // Date tracking is completely handled by the unified section below.
 
       // --- [Auto-Sync Logic] Sync Delivery Cost (Standard & Cash) to Simple Expenses ---
       const newDeliveryCost = data.actualDeliveryCost !== undefined ? data.actualDeliveryCost : oldOrder.actual_delivery_cost;
@@ -1196,17 +1161,40 @@ function useOrdersLocal(initialFetch = true) {
       }
       // -----------------------------------------------------------
 
-      // 1. 매출/주문수 업데이트 (주문일 기준)
-      if (revenueDelta !== 0 || (oldStatus !== newStatus && (newStatus === 'canceled' || oldStatus === 'canceled'))) {
-        let countDelta = 0;
-        if (oldStatus !== 'canceled' && newStatus === 'canceled') countDelta = -1;
-        else if (oldStatus === 'canceled' && newStatus !== 'canceled') countDelta = 1;
+      // 1. 매출/주문수 업데이트 (주문일 기준) - 정밀 계산(날짜 변경, 금액 변경, 상태취소 동시 발생 고려)
+      const oldDateStr = new Date(oldOrder.order_date).toISOString().split('T')[0];
+      const newDateStr = new Date(data.orderDate ? data.orderDate : oldOrder.order_date).toISOString().split('T')[0];
 
-        await updateDailyStats(new Date(oldOrder.order_date), oldOrder.branch_name, {
-          revenueDelta,
-          orderCountDelta: countDelta,
-          settledAmountDelta: 0
-        });
+      const oldOrderCount = (oldStatus === 'canceled') ? 0 : 1;
+      const newOrderCount = (newStatus === 'canceled') ? 0 : 1;
+      const oldRevenue = (oldStatus === 'canceled') ? 0 : oldTotal;
+      const newRevenue = (newStatus === 'canceled') ? 0 : newTotal;
+
+      if (oldDateStr === newDateStr) {
+        const revDiff = newRevenue - oldRevenue;
+        const countDiff = newOrderCount - oldOrderCount;
+        if (revDiff !== 0 || countDiff !== 0) {
+          await updateDailyStats(new Date(oldDateStr), oldOrder.branch_name, {
+            revenueDelta: revDiff,
+            orderCountDelta: countDiff,
+            settledAmountDelta: 0
+          });
+        }
+      } else {
+        if (oldOrderCount > 0 || oldRevenue > 0) {
+          await updateDailyStats(new Date(oldDateStr), oldOrder.branch_name, {
+            revenueDelta: -oldRevenue,
+            orderCountDelta: -oldOrderCount,
+            settledAmountDelta: 0
+          });
+        }
+        if (newOrderCount > 0 || newRevenue > 0) {
+          await updateDailyStats(new Date(newDateStr), oldOrder.branch_name, {
+            revenueDelta: newRevenue,
+            orderCountDelta: newOrderCount,
+            settledAmountDelta: 0
+          });
+        }
       }
 
       // 2. 수금액 업데이트 (결제일 기준 - 분할결제 포함 정밀 계산)

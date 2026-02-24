@@ -8,7 +8,7 @@ import { Download, FileText } from 'lucide-react';
 interface HRDocument {
   documentType: string;
   userName: string;
-  submissionDate: { toDate: () => Date };
+  submissionDate: string | Date;
   contents?: {
     department?: string;
     position?: string;
@@ -32,7 +32,11 @@ export const HRFormDisplay: React.FC<HRFormDisplayProps> = ({ document }) => {
   if (!document) return null;
 
   const { documentType, userName, submissionDate, contents = {}, fileUrl } = document;
-  const today = submissionDate.toDate().toLocaleDateString('ko-KR');
+
+  const parsedDate = typeof submissionDate === 'string' ? new Date(submissionDate) : submissionDate;
+  const today = parsedDate && !Number.isNaN(parsedDate.getTime())
+    ? parsedDate.toLocaleDateString('ko-KR')
+    : '';
 
   const handleDownloadFile = () => {
     if (fileUrl) {

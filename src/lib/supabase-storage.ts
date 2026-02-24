@@ -40,7 +40,7 @@ export class SupabaseStorageService {
                 .getPublicUrl(path);
 
             // Supabase transformation (if available) or just same URL
-            // For now, mirroring Firebase logic where they are same
+            // For now, mirroring old logic where they are same
             const thumbnailUrl = originalUrl;
             const previewUrl = originalUrl;
 

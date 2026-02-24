@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-type DateLike = { toDate: () => Date } | Date | string | null | undefined;
+type DateLike = Date | string | null | undefined;
 
 interface HRDocument {
   documentType: string;
@@ -35,13 +35,6 @@ const formatDate = (value: DateLike) => {
 
   if (typeof value === 'string') {
     return value;
-  }
-
-  if (typeof value === 'object' && value !== null) {
-    const maybeDate = (value as { toDate?: () => Date }).toDate?.();
-    if (maybeDate instanceof Date && !Number.isNaN(maybeDate.getTime())) {
-      return maybeDate.toLocaleDateString('ko-KR');
-    }
   }
 
   return '-';

@@ -293,14 +293,13 @@ export default function OrdersPage() {
     if (startDate && endDate) {
       fetchOrdersByRange(startDate, endDate);
     } else if (!startDate && !endDate && !isFullDataLoaded) {
-      // 날짜 필터가 해제되면 기본 7일치 로드
-      fetchOrders(7);
+      // 날짜 필터가 해제되거나 초기 로딩일 경우 기본 2달치(전달 1일부터) 로드
+      fetchOrders();
     }
   }, [startDate, endDate, fetchOrdersByRange, fetchOrders, isFullDataLoaded]);
 
-  // 초기 로딩: 이번 달 데이터 로드 및 캘린더 일정(향후 예약) 데이터 로드
+  // 초기 로딩: 캘린더 일정(향후 예약) 데이터 로드 (주문 데이터는 위의 useEffect에서 fetchOrders()로 기본 2달 로드됨)
   useEffect(() => {
-    handleLoadMonth(0);
 
     // Fetch future schedule orders - start date = today
     // fetchCalendarOrders uses (baseDate - 35 days). 
@@ -1240,8 +1239,14 @@ export default function OrdersPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{orderStats.totalOrders.toLocaleString()}건</div>
-                <p className="text-xs text-muted-foreground">
-                  필터링된 주문 수
+                <p className="text-xs text-muted-foreground mt-1">
+                  {startDate && endDate
+                    ? `${format(startDate, 'yyyy.MM.dd')} ~ ${format(endDate, 'yyyy.MM.dd')}`
+                    : startDate
+                      ? `${format(startDate, 'yyyy.MM.dd')} ~`
+                      : endDate
+                        ? `~ ${format(endDate, 'yyyy.MM.dd')}`
+                        : "최근 60일 (기본)"}
                 </p>
               </CardContent>
             </Card>
@@ -1253,7 +1258,7 @@ export default function OrdersPage() {
               <CardContent>
                 <div className="text-2xl font-bold">₩{orderStats.totalAmount.toLocaleString()}</div>
                 <div className="space-y-1">
-                  <p className="text-xs text-green-600 font-medium">
+                  <p className="text-xs text-green-600 font-medium mt-1">
                     완결: ₩{orderStats.totalCompletedAmount.toLocaleString()}
                   </p>
                   {orderStats.todayPaymentCompletedAmountForRevenue > 0 && (

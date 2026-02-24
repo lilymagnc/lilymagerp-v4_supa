@@ -44,7 +44,7 @@ export default function DailySettlementPage() {
     const [dailyExpenses, setDailyExpenses] = useState<any[]>([]);
     const [settlementOrders, setSettlementOrders] = useState<Order[]>([]); // 로컬 주문 상태 추가
     const [vaultDeposit, setVaultDeposit] = useState<number>(0);
-    const [manualPreviousBalance, setManualPreviousBalance] = useState<number>(0);
+    const [manualPreviousBalance, setManualPreviousBalance] = useState<number | null>(null);
 
     const isAdmin = useMemo(() => {
         if (!user?.role) return false;
@@ -79,7 +79,7 @@ export default function DailySettlementPage() {
                 setDailyExpenses(expRes.expenses || []);
                 setSettlementRecord(null);
                 setVaultDeposit(0);
-                setManualPreviousBalance(0);
+                setManualPreviousBalance(null);
                 setPrevSettlementRecord(null);
                 return;
             }
@@ -109,7 +109,7 @@ export default function DailySettlementPage() {
             setSettlementRecord(settlementResult);
             setDailyExpenses(_expensesToday.expenses || []); // 오늘 지출 데이터 저장
             setVaultDeposit(settlementResult?.vaultDeposit || 0);
-            setManualPreviousBalance(settlementResult?.previousVaultBalance || 0);
+            setManualPreviousBalance(settlementResult ? Number(settlementResult.previousVaultBalance || 0) : null);
 
             // 2. 어제 정산 기록이 없는 경우 -> 과거 기록부터 갭(Gap) 계산하여 자동 복원
             if (!prevSettlementResult) {
@@ -709,7 +709,7 @@ export default function DailySettlementPage() {
 
         // 이전 잔액 결정: 수동 입력값이 있으면 우선
         // settlementRecord가 존재하면 해당 기록의 previousVaultBalance를 우선적으로 사용 (0 포함)
-        const prevBalance = (manualPreviousBalance !== 0) ? manualPreviousBalance :
+        const prevBalance = (manualPreviousBalance !== null) ? manualPreviousBalance :
             (settlementRecord ? Number(settlementRecord.previousVaultBalance || 0) :
                 (prevSettlementRecord ?
                     (Number(prevSettlementRecord.previousVaultBalance || 0) +
@@ -831,7 +831,7 @@ export default function DailySettlementPage() {
                                         <Input
                                             type="number"
                                             value={vaultCash.prevBalance}
-                                            onChange={(e) => setManualPreviousBalance(Number(e.target.value))}
+                                            onChange={(e) => setManualPreviousBalance(e.target.value === '' ? null : Number(e.target.value))}
                                             className="h-8 text-sm font-bold"
                                         />
                                     </div>

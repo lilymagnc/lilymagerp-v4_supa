@@ -15,6 +15,7 @@ import { useBranches } from "@/hooks/use-branches";
 import { Order } from "@/hooks/use-orders";
 import { Branch } from "@/hooks/use-branches";
 import { useRouter } from "next/navigation";
+import { parseDate } from "@/lib/date-utils";
 
 interface StatementDialogProps {
   isOpen: boolean;
@@ -57,21 +58,7 @@ export function StatementDialog({ isOpen, onOpenChange, customer }: StatementDia
 
     // 고객의 주문 내역 필터링 - 연락처로 매칭
     const customerOrders = orders.filter(order => {
-      let orderDate: Date;
-      const orderDateValue = order.orderDate as any;
-
-      // Firebase Timestamp 객체인 경우
-      if (orderDateValue && typeof orderDateValue.toDate === 'function') {
-        orderDate = orderDateValue.toDate();
-      }
-      // Timestamp 객체의 seconds/nanoseconds 구조인 경우
-      else if (orderDateValue && typeof orderDateValue.seconds === 'number') {
-        orderDate = new Date(orderDateValue.seconds * 1000);
-      }
-      // 일반 Date 객체나 문자열인 경우
-      else {
-        orderDate = new Date(orderDateValue);
-      }
+      const orderDate = parseDate(order.orderDate) || new Date();
 
       return order.orderer.contact === customer.contact &&
         orderDate >= startDate &&
@@ -229,17 +216,7 @@ export function StatementDialog({ isOpen, onOpenChange, customer }: StatementDia
                   <div key={order.id} className="text-xs p-2 bg-white rounded border">
                     <div className="flex justify-between mb-1">
                       <span>{(() => {
-                        const orderDateValue = order.orderDate as any;
-                        let orderDate: Date;
-
-                        if (orderDateValue && typeof orderDateValue.toDate === 'function') {
-                          orderDate = orderDateValue.toDate();
-                        } else if (orderDateValue && typeof orderDateValue.seconds === 'number') {
-                          orderDate = new Date(orderDateValue.seconds * 1000);
-                        } else {
-                          orderDate = new Date(orderDateValue);
-                        }
-
+                        const orderDate = parseDate(order.orderDate) || new Date();
                         return format(orderDate, "MM/dd", { locale: ko });
                       })()}</span>
                       <span>{order.summary.total?.toLocaleString()}원</span>

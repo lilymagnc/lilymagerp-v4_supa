@@ -33,6 +33,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import type { MaterialRequest, RequestStatus } from '@/types/material-request';
 import { REQUEST_STATUS_LABELS, URGENCY_LABELS } from '@/types/material-request';
+import { parseDate } from '@/lib/date-utils';
 interface RequestStatusTrackerProps {
   selectedBranch?: string;
 }
@@ -45,10 +46,7 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [refreshKey, setRefreshKey] = useState(0); // 새로고침을 위한 키
   const [displayCount, setDisplayCount] = useState(5); // 표시할 요청 수
-  // 컴포넌트를 외부에서 제어할 수 있도록 ref로 노출
-  React.useImperativeHandle(React.useRef(), () => ({
-    refresh: () => setRefreshKey(prev => prev + 1)
-  }));
+
   const loadRequests = useCallback(async () => {
     if (!user) return;
     try {
@@ -92,11 +90,8 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
       // 안전한 timestamp 정렬 (Supabase returns ISO strings for createdAt)
       setRequests(fetchedRequests.sort((a, b) => {
         const getTimestamp = (timestamp: any) => {
-          if (!timestamp) return 0;
-          if (timestamp.toMillis) return timestamp.toMillis(); // Legacy Firebase
-          if (timestamp.seconds) return timestamp.seconds * 1000; // Legacy Firebase
-          if (timestamp instanceof Date) return timestamp.getTime();
-          return new Date(timestamp).getTime(); // ISO string
+          const date = parseDate(timestamp);
+          return date ? date.getTime() : 0;
         };
         return getTimestamp(b.createdAt) - getTimestamp(a.createdAt);
       }));
@@ -234,11 +229,7 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
   }, [requests]);
   // 안전한 Date 변환 유틸리티 함수
   const getDateFromTimestamp = (timestamp: any): Date => {
-    if (!timestamp) return new Date();
-    if (timestamp.toDate) return timestamp.toDate();
-    if (timestamp.seconds) return new Date(timestamp.seconds * 1000);
-    if (timestamp instanceof Date) return timestamp;
-    return new Date(timestamp);
+    return parseDate(timestamp) || new Date();
   };
   const formatDate = (timestamp: any) => {
     if (!timestamp) return '-';

@@ -11,7 +11,6 @@ import React from 'react';
 import Image from 'next/image';
 import { ROLE_LABELS } from '@/types/user-role';
 import { NotificationCenter } from '@/components/notification-center';
-import { SyncBridgeProvider } from '@/components/sync-bridge-provider';
 import { DiscountProvider } from '@/context/discount-context';
 import { OrdersProvider } from '@/context/orders-context';
 import { NotificationProvider } from '@/hooks/use-realtime-notifications';
@@ -258,13 +257,11 @@ export default function DashboardLayout({
                         </div>
                     </header>
                     <div className="p-4 lg:p-6">
-                        <SyncBridgeProvider>
-                            <OrdersProvider>
-                                <DiscountProvider>
-                                    {children}
-                                </DiscountProvider>
-                            </OrdersProvider>
-                        </SyncBridgeProvider>
+                        <OrdersProvider>
+                            <DiscountProvider>
+                                {children}
+                            </DiscountProvider>
+                        </OrdersProvider>
                     </div>
                 </main>
             </SidebarProvider>

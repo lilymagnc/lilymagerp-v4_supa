@@ -109,7 +109,7 @@ const HRManagementPage = () => {
       ...selectedDoc,
       documentType: selectedDoc.document_type,
       userName: selectedDoc.user_name,
-      submissionDate: { toDate: () => new Date(selectedDoc.submission_date) } // Mimic Firebase timestamp for compatibility if needed
+      submissionDate: new Date(selectedDoc.submission_date)
     };
 
     const printWindow = window.open('', '', 'height=800,width=800');
@@ -199,7 +199,7 @@ const HRManagementPage = () => {
     ...doc,
     documentType: doc.document_type,
     userName: doc.user_name,
-    submissionDate: { toDate: () => new Date(doc.submission_date) }
+    submissionDate: new Date(doc.submission_date)
   });
 
   return (

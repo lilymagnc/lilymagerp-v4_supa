@@ -43,9 +43,20 @@ export function parseDate(date: any): Date | null {
         return isNaN(parsed.getTime()) ? null : parsed;
     }
 
-    // Firebase Timestamp (object with toDate function)
-    if (typeof date === 'object' && date !== null && typeof date.toDate === 'function') {
-        return date.toDate();
+    // Object types (Legacy Timestamp instances or raw JSON objects from Supabase)
+    if (typeof date === 'object' && date !== null) {
+        // Legacy Timestamp class instance
+        if (typeof date.toDate === 'function') {
+            return date.toDate();
+        }
+
+        // Raw JSON object from Supabase (migrated from Legacy Timestamp)
+        if ('_seconds' in date) {
+            return new Date(date._seconds * 1000);
+        }
+        if ('seconds' in date) {
+            return new Date(date.seconds * 1000);
+        }
     }
 
     return null;
