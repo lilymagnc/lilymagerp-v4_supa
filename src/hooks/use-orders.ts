@@ -757,11 +757,12 @@ function useOrdersLocal(initialFetch = true) {
               quantity: item.quantity,
               from_stock: currentStock,
               to_stock: newStock,
+resulting_stock: newStock,
               branch: orderData.branchName,
               operator: user?.email || "Unknown User",
               price: item.price,
               total_amount: item.price * item.quantity,
-              created_at: new Date().toISOString()
+              occurred_at: new Date().toISOString()
             }]);
           }
         } else {
@@ -774,13 +775,14 @@ function useOrdersLocal(initialFetch = true) {
             item_name: item.name,
             quantity: item.quantity,
             from_stock: 0, // Added to satisfying potential NOT NULL constraint
-            to_stock: 0,   // Added to satisfying potential NOT NULL constraint
+            to_stock: 0,
+resulting_stock: 0,   // Added to satisfying potential NOT NULL constraint
             branch: orderData.branchName,
             operator: user?.email || "Excel Upload",
             price: item.price,
             total_amount: item.price * item.quantity,
             note: "엑셀 업로드 주문 - 재고 차감 없음",
-            created_at: new Date().toISOString()
+            occurred_at: new Date().toISOString()
           }]);
         }
       }

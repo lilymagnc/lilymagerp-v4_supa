@@ -329,9 +329,10 @@ export function useProducts() {
         quantity: newStock - currentStock,
         from_stock: currentStock,
         to_stock: newStock,
+resulting_stock: newStock,
         branch: branch,
         operator: userEmail,
-        created_at: new Date().toISOString()
+        occurred_at: new Date().toISOString()
       }]);
 
       toast({ title: "성공", description: "재고가 업데이트되었습니다." });

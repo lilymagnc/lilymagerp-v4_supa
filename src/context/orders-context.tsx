@@ -473,8 +473,9 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
                         await supabase.from('stock_history').insert([{
                             id: crypto.randomUUID(), type: 'out', item_type: 'product', item_id: item.id,
                             item_name: item.name, quantity: item.quantity, from_stock: currentStock, to_stock: newStock,
+resulting_stock: newStock,
                             branch: orderData.branchName, operator: user?.email || "Unknown User",
-                            price: item.price, total_amount: item.price * item.quantity, created_at: new Date().toISOString()
+                            price: item.price, total_amount: item.price * item.quantity, occurred_at: new Date().toISOString()
                         }]);
                     }
                 } else {
@@ -483,7 +484,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
                         item_name: item.name, quantity: item.quantity, branch: orderData.branchName,
                         operator: user?.email || "Excel Upload", price: item.price,
                         total_amount: item.price * item.quantity, note: "엑셀 업로드 주문 - 재고 차감 없음",
-                        created_at: new Date().toISOString()
+                        occurred_at: new Date().toISOString()
                     }]);
                 }
             }

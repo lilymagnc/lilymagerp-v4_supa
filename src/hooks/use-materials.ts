@@ -265,7 +265,7 @@ export function useMaterials() {
 
                     await supabase.from('stock_history').insert([{
                         id: crypto.randomUUID(),
-                        created_at: new Date().toISOString(),
+                        occurred_at: new Date().toISOString(),
                         type,
                         item_type: "material",
                         item_id: item.id,
@@ -273,6 +273,7 @@ export function useMaterials() {
                         quantity: item.quantity,
                         from_stock: currentStock,
                         to_stock: newStock,
+resulting_stock: newStock,
                         branch: branchName,
                         operator,
                     }]);
@@ -294,7 +295,7 @@ export function useMaterials() {
 
             await supabase.from('stock_history').insert([{
                 id: crypto.randomUUID(),
-                created_at: new Date().toISOString(),
+                occurred_at: new Date().toISOString(),
                 type: "manual_update",
                 item_type: "material",
                 item_id: itemId,
@@ -302,6 +303,7 @@ export function useMaterials() {
                 quantity: newStock - currentStock,
                 from_stock: currentStock,
                 to_stock: newStock,
+resulting_stock: newStock,
                 branch: branchName,
                 operator,
             }]);
