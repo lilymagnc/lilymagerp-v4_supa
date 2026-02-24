@@ -1145,29 +1145,31 @@ export function ExpenseInputForm({
                           </div>
                         )}
                         <FormMessage />
-                        <div className="flex flex-row gap-1 mt-2">
-                          {['월드플로라', '꽃동산', '일산플라워', '꽃도매119', '채아네가든'].map((name) => (
-                            <button
-                              key={name}
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                handleSupplierSelect(name);
-                              }}
-                              className={cn(
-                                "flex-1 text-[10px] sm:text-xs px-1 py-1.5 rounded-md border transition-colors shadow-sm text-center truncate",
-                                field.value === name
-                                  ? "border-primary bg-primary/5 text-primary font-bold"
-                                  : "border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50 bg-white"
-                              )}
-                            >
-                              {name}
-                            </button>
-                          ))}
-                        </div>
                       </FormItem>
                     )}
                   />
+                </div>
+
+                {/* 빠른 구매처 선택 버튼 (전체 너비 가로 배열) */}
+                <div className="flex flex-row gap-2 mt-4">
+                  {['월드플로라', '꽃동산', '일산플라워', '한성난원', '채아네가든'].map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleSupplierSelect(name);
+                      }}
+                      className={cn(
+                        "flex-1 text-xs sm:text-sm px-2 py-2.5 rounded-md border transition-colors shadow-sm text-center truncate font-medium",
+                        form.watch('supplier') === name
+                          ? "border-primary bg-primary/10 text-primary font-bold shadow-sm"
+                          : "border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50 bg-white"
+                      )}
+                    >
+                      {name}
+                    </button>
+                  ))}
                 </div>
               </div>
 
