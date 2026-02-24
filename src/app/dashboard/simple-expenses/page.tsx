@@ -15,7 +15,7 @@ import {
   Building
 } from 'lucide-react';
 import { ExpenseInputForm } from './components/expense-input-form';
-import { FixedCostTemplate } from './components/fixed-cost-template';
+
 import { ExpenseList } from './components/expense-list';
 import { ExpenseCharts } from './components/expense-charts';
 import { useSimpleExpenses } from '@/hooks/use-simple-expenses';
@@ -498,10 +498,7 @@ export default function SimpleExpensesPage() {
               <Plus className="h-4 w-4" />
               지출 입력
             </TabsTrigger>
-            <TabsTrigger value="fixed" className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              고정비 관리
-            </TabsTrigger>
+
             <TabsTrigger value="list" className="flex items-center gap-2">
               <Receipt className="h-4 w-4" />
               지출 내역
@@ -510,12 +507,7 @@ export default function SimpleExpensesPage() {
               <BarChart3 className="h-4 w-4" />
               차트 분석
             </TabsTrigger>
-            {isHQManager && (
-              <TabsTrigger value="headquarters" className="flex items-center gap-2">
-                <Building className="h-4 w-4" />
-                본사 관리
-              </TabsTrigger>
-            )}
+
           </TabsList>
           <TabsContent value="input">
             {branchesLoading ? (
@@ -537,12 +529,7 @@ export default function SimpleExpensesPage() {
               />
             )}
           </TabsContent>
-          <TabsContent value="fixed">
-            <FixedCostTemplate
-              key={`fixed-cost-${renderKey}`}
-              onSuccess={handleSuccess}
-            />
-          </TabsContent>
+
           <TabsContent value="list">
             <ExpenseList
               key={`expense-list-${renderKey}-${selectedBranchId}`}
@@ -559,15 +546,7 @@ export default function SimpleExpensesPage() {
               selectedMonth={selectedMonth === 'all' || selectedMonth === 'current' ? undefined : selectedMonth}
             />
           </TabsContent>
-          {isHQManager && (
-            <TabsContent value="headquarters">
-              <ExpenseList
-                refreshTrigger={refreshTrigger}
-                selectedBranchId={selectedBranchId === 'all' ? undefined : selectedBranchId}
-                isHeadquarters={true}
-              />
-            </TabsContent>
-          )}
+
         </Tabs>
       )}
     </div>

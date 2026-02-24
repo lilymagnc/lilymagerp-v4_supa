@@ -32,7 +32,7 @@ import { Order } from "@/hooks/use-orders";
 import { useSimpleExpenses } from "@/hooks/use-simple-expenses";
 import { SimpleExpenseCategory } from "@/types/simple-expense";
 import { supabase } from "@/lib/supabase";
-import { Package, Calculator, Info, Check, ChevronsUpDown } from "lucide-react";
+import { Package, Calculator, Info, Check, ChevronsUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface OrderOutsourceDialogProps {
@@ -53,6 +53,7 @@ export function OrderOutsourceDialog({
     const [notes, setNotes] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [openCombobox, setOpenCombobox] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
     const [autoCalc, setAutoCalc] = useState(true);
 
     const { addExpense, updateExpenseByOrderId } = useSimpleExpenses();
@@ -64,20 +65,19 @@ export function OrderOutsourceDialog({
     const { partners } = usePartners();
     const { toast } = useToast();
 
-    // 초기 로딩 시 파트너 데이터에서 ID 매핑
+    const filteredPartners = useMemo(() => {
+        if (!searchTerm) return partners;
+        return partners.filter((p) => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    }, [partners, searchTerm]);
+
+    // 초기 로딩 시 파트너 데이터에서 ID 매핑 (기본 5개 고정)
     useEffect(() => {
         if (partners.length > 0) {
-            // 로컬 스토리지에서 저장된 인기 파트너 확인
-            const saved = localStorage.getItem("popularPartners");
-            if (saved) {
-                setPopularPartnerIds(JSON.parse(saved));
-            } else {
-                // 저장된게 없으면 기본 이름으로 ID 찾기
-                const defaultIds = DEFAULT_POPULAR_NAMES
-                    .map(name => partners.find(p => p.name.includes(name))?.id)
-                    .filter(id => id !== undefined) as string[];
-                setPopularPartnerIds(defaultIds);
-            }
+            // 기본 이름으로 ID 찾기
+            const defaultIds = DEFAULT_POPULAR_NAMES
+                .map(name => partners.find(p => p.name.includes(name))?.id)
+                .filter(id => id !== undefined) as string[];
+            setPopularPartnerIds(defaultIds);
         }
     }, [partners]);
 
@@ -85,15 +85,7 @@ export function OrderOutsourceDialog({
         setPartnerId(id);
         setAutoCalc(true);
         setOpenCombobox(false);
-
-        // 자주 찾는 업체 리스트 업데이트 (최근 선택한 순서로, 최대 5개)
-        if (id) {
-            setPopularPartnerIds(prev => {
-                const newList = [id, ...prev.filter(pid => pid !== id)].slice(0, 5);
-                localStorage.setItem("popularPartners", JSON.stringify(newList));
-                return newList;
-            });
-        }
+        setSearchTerm("");
     };
 
     const selectedPartner = useMemo(() =>
@@ -282,46 +274,67 @@ export function OrderOutsourceDialog({
                             </div>
                         )}
 
-                        <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    variant="outline"
-                                    role="combobox"
-                                    aria-expanded={openCombobox}
-                                    className="w-full justify-between"
-                                >
-                                    {partnerId
-                                        ? partners.find((partner) => partner.id === partnerId)?.name
-                                        : "발주할 파트너를 검색하세요..."}
-                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[460px] p-0">
-                                <Command>
-                                    <CommandInput placeholder="파트너 이름 검색..." />
-                                    <CommandList>
-                                        <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
-                                        <CommandGroup>
-                                            {partners.map((partner) => (
-                                                <CommandItem
-                                                    key={partner.id}
-                                                    value={partner.name}
-                                                    onSelect={() => handlePartnerSelect(partner.id)}
-                                                >
-                                                    <Check
-                                                        className={cn(
-                                                            "mr-2 h-4 w-4",
-                                                            partnerId === partner.id ? "opacity-100" : "opacity-0"
-                                                        )}
-                                                    />
-                                                    {partner.name} ({partner.defaultMarginPercent}%)
-                                                </CommandItem>
-                                            ))}
-                                        </CommandGroup>
-                                    </CommandList>
-                                </Command>
-                            </PopoverContent>
-                        </Popover>
+                        <div className="flex flex-col gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={openCombobox}
+                                onClick={() => setOpenCombobox(!openCombobox)}
+                                className="w-full justify-between"
+                            >
+                                {partnerId
+                                    ? partners.find((partner) => partner.id === partnerId)?.name
+                                    : "발주할 파트너를 검색하세요..."}
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+
+                            {openCombobox && (
+                                <div className="rounded-md border bg-popover text-popover-foreground shadow-sm flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                                    <div className="flex items-center border-b px-3">
+                                        <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+                                        <input
+                                            ref={(input) => input && input.focus()}
+                                            className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                                            placeholder="파트너 이름 검색..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="max-h-[200px] overflow-y-auto overflow-x-hidden p-1">
+                                        {filteredPartners.length === 0 && (
+                                            <div className="py-6 text-center text-sm">검색 결과가 없습니다.</div>
+                                        )}
+                                        {filteredPartners.map((partner) => (
+                                            <div
+                                                key={partner.id}
+                                                onMouseDown={(e) => {
+                                                    // Prevents the input from losing focus, but allowing the click
+                                                    e.preventDefault();
+                                                }}
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    handlePartnerSelect(partner.id);
+                                                }}
+                                                className={cn(
+                                                    "relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground",
+                                                    partnerId === partner.id && "bg-accent text-accent-foreground"
+                                                )}
+                                            >
+                                                <Check
+                                                    className={cn(
+                                                        "mr-2 h-4 w-4",
+                                                        partnerId === partner.id ? "opacity-100" : "opacity-0"
+                                                    )}
+                                                />
+                                                {partner.name} ({partner.defaultMarginPercent}%)
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     <div className="space-y-2">

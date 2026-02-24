@@ -1947,13 +1947,13 @@ export default function OrdersPage() {
                                 지점 이관
                               </DropdownMenuItem>
                             )}
-                            {((isAdmin || order.branchName === userBranch) && !order.outsourceInfo?.isOutsourced) && (
+                            {(isAdmin || order.branchName === userBranch) && (
                               <DropdownMenuItem onClick={(e) => {
                                 e.stopPropagation();
                                 handleOutsourceClick(order);
                               }}>
                                 <ExternalLink className="mr-2 h-4 w-4" />
-                                외부 발주
+                                {order.outsourceInfo?.isOutsourced ? "외부 발주 수정" : "외부 발주"}
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuSeparator />
