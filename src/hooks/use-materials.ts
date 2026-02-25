@@ -141,21 +141,30 @@ export function useMaterials() {
         }
     };
 
-    const generateNewId = async () => {
+    const generateNewId = async (mainCategory: string) => {
+        let prefix = 'MM'; // 기본 코드는 MM (자재/기타)
+        if (mainCategory === '생화') prefix = 'MF';
+        else if (mainCategory === '분화') prefix = 'MP';
+
         const { data } = await supabase
             .from('materials')
             .select('id')
-            .order('id', { ascending: false })
-            .limit(1);
+            .like('id', `${prefix}%`);
 
-        let lastIdNumber = 0;
+        let maxNumber = 0;
         if (data && data.length > 0) {
-            const lastId = data[0].id;
-            if (lastId && lastId.startsWith('M')) {
-                lastIdNumber = parseInt(lastId.replace('M', ''), 10);
+            const regex = new RegExp(`^${prefix}(\\d+)$`);
+            for (const item of data) {
+                const match = item.id.match(regex);
+                if (match) {
+                    const num = parseInt(match[1], 10);
+                    if (num > maxNumber) {
+                        maxNumber = num;
+                    }
+                }
             }
         }
-        return `M${String(lastIdNumber + 1).padStart(5, '0')}`;
+        return `${prefix}${String(maxNumber + 1).padStart(5, '0')}`;
     }
 
     const syncCategory = async (main: string, mid: string) => {
@@ -176,7 +185,7 @@ export function useMaterials() {
     const addMaterial = async (data: MaterialFormValues) => {
         setLoading(true);
         try {
-            const newId = await generateNewId();
+            const newId = await generateNewId(data.mainCategory);
             const { error } = await supabase.from('materials').insert([{
                 id: newId,
                 name: data.name,
