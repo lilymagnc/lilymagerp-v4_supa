@@ -12,6 +12,7 @@ export interface UserProfile {
   franchise?: string;
   branchId?: string;
   branchName?: string;
+  position?: string; // 직위 (대표, 이사, 실장, 매니저, 직원)
 }
 
 interface AuthContextType {
@@ -91,11 +92,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       let franchise = '미정';
       let branchId = undefined;
       let branchName = undefined;
+      let position = '직원'; // 기본 직위
 
       // Master Admin Bypass (The Ultimate Truth)
       if (email.toLowerCase() === 'lilymag0301@gmail.com') {
         role = '본사 관리자';
         franchise = '본사';
+        position = '대표';
       } else if (roleData) {
         // Normal User Processing
         switch (roleData.role) {
@@ -120,13 +123,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return null;
       }
 
+      // 5. employees 테이블에서 직위(position) 가져오기
+      try {
+        const { data: empData } = await supabase
+          .from('employees')
+          .select('position')
+          .eq('email', email)
+          .maybeSingle();
+        if (empData?.position) {
+          position = empData.position;
+        }
+      } catch {
+        // 직위 정보를 가져오지 못해도 로그인 진행
+      }
+
       const newUser: UserProfile = {
         id: userId,
         email: email,
         role,
         franchise,
         branchId,
-        branchName
+        branchName,
+        position
       };
 
       return newUser;

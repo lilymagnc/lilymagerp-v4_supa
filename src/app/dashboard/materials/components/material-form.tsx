@@ -37,6 +37,9 @@ const materialSchema = z.object({
   color: z.string().min(1, "색상을 입력해주세요."),
   branch: z.string().min(1, "지점을 선택해주세요."),
   stock: z.coerce.number().min(0, "재고는 0 이상이어야 합니다.").default(0),
+  unit: z.string().optional().default(''),
+  spec: z.string().optional().default(''),
+  memo: z.string().optional().default(''),
 })
 export type MaterialFormValues = z.infer<typeof materialSchema>
 interface MaterialFormProps {

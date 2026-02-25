@@ -202,32 +202,51 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
         // 일단 DB 레코드 생성에 집중
       }
 
-      // B. user_roles upsert (이메일 기준)
-      // Upsert user_roles
-      const { error: roleError } = await supabase
-        .from('user_roles')
-        .upsert({
-          email: data.email,
-          role: mappedRole,
-          branch_name: data.franchise,
-          is_active: true,
-          permissions: getPermissionsForRole(mappedRole)
-        }, { onConflict: 'email' });
+      // B. user_roles 저장 (수정: update / 신규: insert)
+      const rolePayload = {
+        email: data.email,
+        role: mappedRole,
+        branch_name: data.franchise,
+        is_active: true,
+        permissions: getPermissionsForRole(mappedRole),
+        updated_at: new Date().toISOString()
+      };
 
-      if (roleError) throw roleError;
+      if (isEditMode) {
+        const { error: roleError } = await supabase
+          .from('user_roles')
+          .update(rolePayload)
+          .eq('email', data.email);
+        if (roleError) throw roleError;
+      } else {
+        const { error: roleError } = await supabase
+          .from('user_roles')
+          .insert({ ...rolePayload, created_at: new Date().toISOString() });
+        if (roleError) throw roleError;
+      }
 
-      // C. employees upsert (이메일 기준)
-      const { error: empError } = await supabase
-        .from('employees')
-        .upsert({
-          email: data.email,
-          name: data.name,
-          position: data.position,
-          contact: data.contact,
-          department: data.franchise,
-        }, { onConflict: 'email' });
+      // C. employees 저장 (수정: update / 신규: insert)
+      const empPayload = {
+        email: data.email,
+        name: data.name,
+        position: data.position,
+        contact: data.contact,
+        department: data.franchise,
+        updated_at: new Date().toISOString()
+      };
 
-      if (empError) throw empError;
+      if (isEditMode) {
+        const { error: empError } = await supabase
+          .from('employees')
+          .update(empPayload)
+          .eq('email', data.email);
+        if (empError) throw empError;
+      } else {
+        const { error: empError } = await supabase
+          .from('employees')
+          .insert({ ...empPayload, id: crypto.randomUUID(), created_at: new Date().toISOString() });
+        if (empError) throw empError;
+      }
 
       toast({
         title: "성공",

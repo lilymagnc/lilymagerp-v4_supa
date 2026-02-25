@@ -26,9 +26,8 @@ export default function ExpensesPage() {
   const { user } = useAuth();
   const { expenses, loading } = useExpenses();
 
-  // 특정인 접근 권한 확인 (대표님 혹은 특정 이메일 지정 가능)
-  // 현재는 본사 관리자 + 추가로 이메일 검증 등으로 강화 가능
-  const hasLaborCostAccess = user?.role === '본사 관리자';
+  // 인건비 관리 접근 권한: 직위가 '대표'인 사용자만 접근 가능
+  const hasLaborCostAccess = user?.position === '대표' || user?.email?.toLowerCase() === 'lilymag0301@gmail.com';
 
   return (
     <div className="container mx-auto p-6 space-y-6">

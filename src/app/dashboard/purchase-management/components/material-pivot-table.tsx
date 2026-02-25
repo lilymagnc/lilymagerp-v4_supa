@@ -7,13 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Printer, FileDown, Edit2 } from 'lucide-react';
+import { Printer, FileDown, Edit2, ShoppingCart } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { MaterialRequest } from '@/types/material-request';
 import { useMaterials } from '@/hooks/use-materials';
 
 interface MaterialPivotTableProps {
   requests: MaterialRequest[];
+  onPurchaseStart?: (requestIds: string[]) => void;
 }
 
 interface PivotData {
@@ -26,8 +27,8 @@ interface PivotData {
   };
 }
 
-export function MaterialPivotTable({ requests }: MaterialPivotTableProps) {
-  const { materials } = useMaterials(); // 자재 원본 데이터 접근
+export function MaterialPivotTable({ requests, onPurchaseStart }: MaterialPivotTableProps) {
+  const { materials } = useMaterials();
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
   const [supplierOverrides, setSupplierOverrides] = useState<Record<string, string>>({});
   const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>({});
@@ -50,7 +51,9 @@ export function MaterialPivotTable({ requests }: MaterialPivotTableProps) {
     activeRequests.forEach(req => {
       if (!req.createdAt) return;
       const requestDate = formatDate(req.createdAt);
-      const columnKey = `${req.branchName} (${requestDate})`;
+      const shortBranch = req.branchName.replace('릴리맥', '');
+      const shortReqNum = req.requestNumber.replace('REQ-', '');
+      const columnKey = `${shortBranch}\n${shortReqNum}`;
       columnSet.add(columnKey);
 
       req.requestedItems.forEach(item => {
@@ -64,7 +67,7 @@ export function MaterialPivotTable({ requests }: MaterialPivotTableProps) {
             values: {},
           };
         }
-        data[item.materialId].values[columnKey] = 
+        data[item.materialId].values[columnKey] =
           (data[item.materialId].values[columnKey] || 0) + item.requestedQuantity;
       });
     });
@@ -108,7 +111,7 @@ export function MaterialPivotTable({ requests }: MaterialPivotTableProps) {
   const handlePrint = () => window.print();
 
   const handleExportXLSX = () => {
-    const header = ['상태', '품목', '구매처', ...uniqueColumns, '총계'];
+    const header = ['상태', '품목', '구매처', ...uniqueColumns.map(c => c.replace('\n', ' ')), '총계'];
     const body = Object.entries(pivotData).map(([id, data]) => [
       checkedItems[id] ? '구매완료' : '대기중',
       data.materialName,
@@ -131,9 +134,28 @@ export function MaterialPivotTable({ requests }: MaterialPivotTableProps) {
         <div className="flex justify-between items-center">
           <div>
             <CardTitle>자재별 취합 뷰</CardTitle>
-            <CardDescription>체크박스로 구매 여부를 표시하고, 구매처를 수정할 수 있습니다.</CardDescription>
+            <CardDescription>
+              ✏️ <strong>구매처</strong>나 <strong>단가</strong>를 클릭하면 직접 수정할 수 있습니다. 체크박스로 구매 완료를 표시하세요.
+            </CardDescription>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant={Object.keys(pivotData).length > 0 && Object.keys(pivotData).every(id => checkedItems[id]) ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                const allIds = Object.keys(pivotData);
+                const allChecked = allIds.every(id => checkedItems[id]);
+                if (allChecked) {
+                  setCheckedItems({});
+                } else {
+                  const newChecked: Record<string, boolean> = {};
+                  allIds.forEach(id => { newChecked[id] = true; });
+                  setCheckedItems(newChecked);
+                }
+              }}
+            >
+              {Object.keys(pivotData).length > 0 && Object.keys(pivotData).every(id => checkedItems[id]) ? '전체 해제' : '전체 선택'}
+            </Button>
             <Button onClick={handleExportXLSX} variant="outline" size="sm"><FileDown className="h-4 w-4 mr-2" />XLSX</Button>
             <Button onClick={handlePrint} variant="outline" size="sm"><Printer className="h-4 w-4 mr-2" />인쇄</Button>
           </div>
@@ -150,7 +172,15 @@ export function MaterialPivotTable({ requests }: MaterialPivotTableProps) {
               <TableHead className="w-[50px] no-print"></TableHead>
               <TableHead className="sticky left-0 bg-background z-10 min-w-[200px]">품목 (구매처)</TableHead>
               <TableHead className="w-[120px]">단가</TableHead>
-              {uniqueColumns.map(col => <TableHead key={col} className="text-center">{col}</TableHead>)}
+              {uniqueColumns.map(col => {
+                const [branchName, reqNum] = col.split('\n');
+                return (
+                  <TableHead key={col} className="text-center min-w-[100px]">
+                    <div className="text-xs font-semibold">{branchName}</div>
+                    <div className="text-[10px] text-muted-foreground font-normal">{reqNum}</div>
+                  </TableHead>
+                );
+              })}
               <TableHead className="text-right font-bold">총계</TableHead>
             </TableRow>
           </TableHeader>
@@ -163,23 +193,39 @@ export function MaterialPivotTable({ requests }: MaterialPivotTableProps) {
                 <TableCell className="sticky left-0 bg-inherit z-10 font-medium data-[state=checked]:text-muted-foreground data-[state=checked]:line-through">
                   {data.materialName}
                   {editingSupplier === id ? (
-                    <Input 
-                      defaultValue={supplierOverrides[id] || data.supplier}
-                      onBlur={(e) => handleSupplierUpdate(id, e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSupplierUpdate(id, e.currentTarget.value)}
-                      autoFocus
-                      className="h-7 mt-1"
-                    />
+                    <div className="flex items-center gap-1 mt-1">
+                      <Input
+                        defaultValue={supplierOverrides[id] || data.supplier}
+                        autoFocus
+                        className="h-7 text-xs"
+                        placeholder="구매처 메모 (선택)"
+                        onBlur={(e) => {
+                          handleSupplierUpdate(id, e.target.value);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleSupplierUpdate(id, e.currentTarget.value);
+                          } else if (e.key === 'Escape') {
+                            setEditingSupplier(null);
+                          }
+                        }}
+                      />
+                    </div>
                   ) : (
-                    <span className="text-xs text-muted-foreground ml-2 group cursor-pointer" onClick={() => setEditingSupplier(id)}>
-                      ({(supplierOverrides[id] || data.supplier).substring(0, 3)})
-                      <Edit2 className="h-3 w-3 ml-1 inline-block opacity-0 group-hover:opacity-100" />
-                    </span>
+                    <div
+                      className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded text-xs cursor-pointer hover:bg-blue-50 border border-dashed border-transparent hover:border-blue-300 transition-colors"
+                      onClick={() => setEditingSupplier(id)}
+                    >
+                      <span className={`${(supplierOverrides[id] || data.supplier) === '미지정' ? 'text-orange-500' : 'text-blue-600'}`}>
+                        {supplierOverrides[id] || data.supplier}
+                      </span>
+                      <Edit2 className="h-3 w-3 text-muted-foreground" />
+                    </div>
                   )}
                 </TableCell>
                 <TableCell className="data-[state=checked]:text-muted-foreground">
                   {editingPrice === id ? (
-                    <Input 
+                    <Input
                       type="number"
                       defaultValue={priceOverrides[id] || data.price}
                       onBlur={(e) => handlePriceUpdate(id, e.target.value)}
@@ -210,6 +256,55 @@ export function MaterialPivotTable({ requests }: MaterialPivotTableProps) {
           </TableFooter>
         </Table>
       </CardContent>
+
+      {/* 체크된 품목 액션 바 */}
+      {Object.values(checkedItems).some(v => v) && (
+        <div className="mx-6 mb-6 p-4 bg-primary/5 border-2 border-primary/20 rounded-lg flex items-center justify-between no-print">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-semibold">
+              ✅ {Object.values(checkedItems).filter(v => v).length}개 품목 선택됨
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCheckedItems({})}
+            >
+              선택 해제
+            </Button>
+            {onPurchaseStart && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  // 체크된 품목의 materialId로 관련 요청 ID들 추출
+                  const checkedMaterialIds = Object.entries(checkedItems)
+                    .filter(([_, checked]) => checked)
+                    .map(([id]) => id);
+
+                  const relatedRequestIds = new Set<string>();
+                  const activeRequests = requests.filter(req => !['shipping', 'delivered', 'completed'].includes(req.status));
+                  activeRequests.forEach(req => {
+                    req.requestedItems.forEach(item => {
+                      if (checkedMaterialIds.includes(item.materialId)) {
+                        relatedRequestIds.add(req.id);
+                      }
+                    });
+                  });
+
+                  if (relatedRequestIds.size > 0) {
+                    onPurchaseStart(Array.from(relatedRequestIds));
+                  }
+                }}
+                className="flex items-center gap-2"
+              >
+                <ShoppingCart className="h-4 w-4" />
+                구매 진행 ({Object.values(checkedItems).filter(v => v).length}개 품목)
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

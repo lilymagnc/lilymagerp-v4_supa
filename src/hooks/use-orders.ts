@@ -163,10 +163,10 @@ export function useOrders(initialFetch = true) {
 
   // Context 밖에서 사용 시 기존 독립 인스턴스 (fallback)
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  return useOrdersLocal(initialFetch);
+  return useIndependentOrders(initialFetch);
 }
 
-function useOrdersLocal(initialFetch = true) {
+export function useIndependentOrders(initialFetch = true) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(initialFetch);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -757,7 +757,7 @@ function useOrdersLocal(initialFetch = true) {
               quantity: item.quantity,
               from_stock: currentStock,
               to_stock: newStock,
-resulting_stock: newStock,
+              resulting_stock: newStock,
               branch: orderData.branchName,
               operator: user?.email || "Unknown User",
               price: item.price,
@@ -776,7 +776,7 @@ resulting_stock: newStock,
             quantity: item.quantity,
             from_stock: 0, // Added to satisfying potential NOT NULL constraint
             to_stock: 0,
-resulting_stock: 0,   // Added to satisfying potential NOT NULL constraint
+            resulting_stock: 0,   // Added to satisfying potential NOT NULL constraint
             branch: orderData.branchName,
             operator: user?.email || "Excel Upload",
             price: item.price,

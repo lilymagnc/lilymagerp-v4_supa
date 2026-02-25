@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { AlertCircle, Package, ShoppingCart, Truck, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, Package, ShoppingCart, Truck, CheckCircle2, Search, X } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   PurchaseBatch,
@@ -20,6 +20,7 @@ import {
 } from '@/types/material-request';
 import { usePurchaseBatches } from '@/hooks/use-purchase-batches';
 import { useMaterialRequests } from '@/hooks/use-material-requests';
+import { usePartners } from '@/hooks/use-partners';
 interface ActualPurchaseFormProps {
   batch: PurchaseBatch;
   onComplete: () => void;
@@ -47,6 +48,9 @@ export function ActualPurchaseForm({
   const [requests, setRequests] = useState<MaterialRequest[]>([]);
   const { updateActualPurchase } = usePurchaseBatches();
   const { getRequestById } = useMaterialRequests();
+  const { partners } = usePartners();
+  const [supplierSearchIndex, setSupplierSearchIndex] = useState<number | null>(null);
+  const [supplierSearchText, setSupplierSearchText] = useState('');
   // 관련 요청들 로드 및 초기 구매 품목 목록 생성
   useEffect(() => {
     const loadRequestsAndItems = async () => {
@@ -380,13 +384,71 @@ export function ActualPurchaseForm({
                   )}
                   {/* 공급업체 및 메모 */}
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
+                    <div className="relative">
                       <Label>공급업체</Label>
-                      <Input
-                        placeholder="구매처 또는 공급업체명"
-                        value={item.supplier || ''}
-                        onChange={(e) => updateItem(index, 'supplier', e.target.value)}
-                      />
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="거래처 검색 또는 직접 입력..."
+                          value={supplierSearchIndex === index ? supplierSearchText : (item.supplier || '')}
+                          onChange={(e) => {
+                            if (supplierSearchIndex !== index) {
+                              setSupplierSearchIndex(index);
+                            }
+                            setSupplierSearchText(e.target.value);
+                            updateItem(index, 'supplier', e.target.value);
+                          }}
+                          onFocus={() => {
+                            setSupplierSearchIndex(index);
+                            setSupplierSearchText(item.supplier || '');
+                          }}
+                          onBlur={() => {
+                            // delay to allow click on dropdown
+                            setTimeout(() => setSupplierSearchIndex(null), 200);
+                          }}
+                          className="pl-9"
+                        />
+                        {item.supplier && supplierSearchIndex !== index && (
+                          <button
+                            type="button"
+                            onClick={() => updateItem(index, 'supplier', '')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 flex items-center justify-center rounded-full hover:bg-muted"
+                          >
+                            <X className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        )}
+                      </div>
+                      {/* 거래처 검색 드롭다운 */}
+                      {supplierSearchIndex === index && (
+                        <div className="absolute z-30 mt-1 w-full max-h-48 overflow-y-auto bg-background border rounded-md shadow-lg">
+                          {partners
+                            .filter(p => !supplierSearchText || p.name.toLowerCase().includes(supplierSearchText.toLowerCase()))
+                            .slice(0, 20)
+                            .map(partner => (
+                              <button
+                                key={partner.id}
+                                type="button"
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors flex items-center justify-between"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  updateItem(index, 'supplier', partner.name);
+                                  setSupplierSearchIndex(null);
+                                  setSupplierSearchText('');
+                                }}
+                              >
+                                <span className="font-medium">{partner.name}</span>
+                                <span className="text-muted-foreground text-xs">
+                                  {partner.type || ''}{partner.items ? ` · ${partner.items}` : ''}
+                                </span>
+                              </button>
+                            ))}
+                          {partners.filter(p => !supplierSearchText || p.name.toLowerCase().includes(supplierSearchText.toLowerCase())).length === 0 && (
+                            <div className="px-3 py-2 text-sm text-muted-foreground">
+                              검색 결과 없음 — 이름을 직접 입력하세요
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <Label>

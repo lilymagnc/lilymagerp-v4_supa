@@ -358,6 +358,27 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
             selectedRequests={selectedRequests}
             onToggleRequest={toggleRequestSelection}
           />
+          {/* 자재별 취합 뷰 내 구매 배치 액션 바 */}
+          {selectedRequests.length > 0 && (
+            <div className="mt-4 p-4 bg-primary/5 border-2 border-primary/20 rounded-lg flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Badge variant="default" className="text-sm px-3 py-1">
+                  {selectedRequests.length}건 선택
+                </Badge>
+                <span className="text-sm text-muted-foreground">
+                  선택한 요청을 구매 배치로 묶어서 처리할 수 있습니다
+                </span>
+              </div>
+              <Button
+                onClick={() => startActualPurchase(selectedRequests)}
+                disabled={batchLoading}
+                className="flex items-center gap-2"
+              >
+                <ShoppingCart className="h-4 w-4" />
+                구매 배치 생성
+              </Button>
+            </div>
+          )}
         </TabsContent>
         <TabsContent value="branch">
           <BranchRequestsView

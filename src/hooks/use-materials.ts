@@ -37,6 +37,8 @@ export function useMaterials() {
         price: Number(row.price),
         stock: Number(row.stock),
         size: row.size,
+        color: row.color || '',
+        supplier: row.supplier || '미지정',
         branch: row.branch,
         memo: row.memo,
         status: getStatus(Number(row.stock))
@@ -215,6 +217,8 @@ export function useMaterials() {
                 price: Number(data.price),
                 stock: Number(data.stock),
                 size: data.size,
+                color: data.color,
+                supplier: data.supplier,
                 branch: data.branch,
                 memo: data.memo,
                 updated_at: new Date().toISOString()
@@ -273,7 +277,7 @@ export function useMaterials() {
                         quantity: item.quantity,
                         from_stock: currentStock,
                         to_stock: newStock,
-resulting_stock: newStock,
+                        resulting_stock: newStock,
                         branch: branchName,
                         operator,
                     }]);
@@ -303,7 +307,7 @@ resulting_stock: newStock,
                 quantity: newStock - currentStock,
                 from_stock: currentStock,
                 to_stock: newStock,
-resulting_stock: newStock,
+                resulting_stock: newStock,
                 branch: branchName,
                 operator,
             }]);

@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Search, ShoppingCart, Plus, Minus, Package, Filter, AlertCircle } from 'lucide-react';
+import { Search, ShoppingCart, Plus, Minus, Package, Filter, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { MaterialRequestCart } from './components/material-request-cart';
 import { RequestStatusTracker } from './components/request-status-tracker';
@@ -23,7 +23,7 @@ export default function MaterialRequestPage() {
   const { user } = useAuth();
   const { materials, loading: materialsLoading, fetchMaterials } = useMaterials();
   const { branches, loading: branchesLoading } = useBranches();
-  const { createRequest, loading: requestLoading } = useMaterialRequests();
+  const { createRequest, deleteRequest, loading: requestLoading } = useMaterialRequests();
   const { toast } = useToast();
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -32,6 +32,8 @@ export default function MaterialRequestPage() {
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('전체');
+  const [isNotificationsCollapsed, setIsNotificationsCollapsed] = useState(true);
+  const [isTrackerCollapsed, setIsTrackerCollapsed] = useState(true);
 
   useEffect(() => {
     if (user && branches.length > 0) {
@@ -145,6 +147,21 @@ export default function MaterialRequestPage() {
     }
   };
 
+  const handleEditRequest = async (request: any) => {
+    try {
+      // 1. 장바구니에 아이템 담기
+      setCartItems(request.requestedItems);
+      // 2. 카트 열기
+      setShowCart(true);
+      // 3. 기존 요청 삭제하기
+      await deleteRequest(request.id);
+      setRefreshTrigger(prev => prev + 1);
+      toast({ title: '수정 모드 전환', description: '기존 요청이 취소되었고 카트로 불러왔습니다.' });
+    } catch (e) {
+      toast({ variant: 'destructive', title: '오류', description: '요청을 불러오는 중 오류가 발생했습니다.' });
+    }
+  };
+
   const totalEstimatedCost = useMemo(() => {
     return cartItems.reduce((total, item) => total + (item.requestedQuantity * item.estimatedPrice), 0);
   }, [cartItems]);
@@ -205,7 +222,24 @@ export default function MaterialRequestPage() {
           </div>
         </div>
 
-        <DeliveryNotifications key={`delivery-${selectedBranch}`} selectedBranch={selectedBranch} />
+        {/* 배송 알림 (접기/펼치기) */}
+        <div className="shrink-0">
+          <button
+            onClick={() => setIsNotificationsCollapsed(!isNotificationsCollapsed)}
+            className="w-full flex items-center justify-between px-4 py-2.5 bg-muted/40 hover:bg-muted/60 rounded-lg border text-sm font-medium text-muted-foreground transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              🔔 배송 알림
+            </span>
+            {isNotificationsCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+          </button>
+          {!isNotificationsCollapsed && (
+            <div className="mt-2">
+              <DeliveryNotifications key={`delivery-${selectedBranch}`} selectedBranch={selectedBranch} />
+            </div>
+          )}
+        </div>
 
         {/* 카탈로그 컨텐츠 영역 */}
         <Card className="flex-1 flex flex-col overflow-hidden shadow-sm border-muted">
@@ -239,60 +273,62 @@ export default function MaterialRequestPage() {
                 <p>해당 조건의 자재가 존재하지 않습니다.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 lg:gap-6 auto-rows-max">
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-2 auto-rows-max">
                 {filteredMaterials.map(material => {
                   const qtyInCart = getCartQuantity(material);
                   return (
                     <div
                       key={material.id}
                       className={cn(
-                        "group relative flex flex-col bg-card rounded-xl border shadow-sm transition-all hover:shadow-md hover:border-primary/30",
+                        "group relative flex flex-col bg-card rounded-lg border shadow-sm transition-all hover:shadow-md hover:border-primary/30",
                         qtyInCart > 0 && "ring-1 ring-primary border-primary"
                       )}
                     >
-                      <div className="p-4 flex-1">
-                        <Badge variant="outline" className="text-[10px] sm:text-xs mb-2 text-muted-foreground">
-                          {material.midCategory || material.mainCategory || '기타'}
-                        </Badge>
-                        <h3 className="font-semibold text-sm sm:text-base leading-tight line-clamp-2 min-h-[40px]">
+                      <div className="px-2.5 py-1.5 flex-1">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 text-muted-foreground">
+                            {material.midCategory || material.mainCategory || '기타'}
+                          </Badge>
+                          {material.stock > 0 && (
+                            <span className="text-[9px] text-muted-foreground">재고:{material.stock}</span>
+                          )}
+                        </div>
+                        <h3 className="font-semibold text-xs leading-tight line-clamp-1">
                           {material.name}
                         </h3>
-                        <p className="text-xs text-muted-foreground mt-1 mb-3 line-clamp-1">
-                          {material.size} {material.color ? ` / ${material.color}` : ''}
+                        <p className="text-[10px] text-muted-foreground line-clamp-1">
+                          {material.size}{material.color ? ` / ${material.color}` : ''}
                         </p>
-                        <p className="font-bold text-primary">
-                          {material.price.toLocaleString()}원
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          현재 재고: {material.stock}
+                        <p className="font-bold text-primary text-xs mt-0.5">
+                          {material.price > 0 ? `${material.price.toLocaleString()}원` : '시세변동'}
                         </p>
                       </div>
-                      <div className="p-3 bg-muted/30 border-t mt-auto rounded-b-xl">
+                      <div className="px-2 py-1.5 bg-muted/30 border-t mt-auto rounded-b-lg">
                         {qtyInCart > 0 ? (
-                          <div className="flex items-center justify-between w-full h-8 bg-background border rounded-md">
+                          <div className="flex items-center justify-between w-full h-6 bg-background border rounded">
                             <button
                               onClick={() => handleUpdateCartQuantity(material, -1)}
-                              className="h-full px-3 text-muted-foreground hover:bg-muted hover:text-foreground rounded-l-md transition-colors"
+                              className="h-full px-2 text-muted-foreground hover:bg-muted hover:text-foreground rounded-l transition-colors"
                             >
-                              <Minus className="h-3 w-3" />
+                              <Minus className="h-2.5 w-2.5" />
                             </button>
-                            <span className="text-sm font-semibold select-none w-8 text-center">{qtyInCart}</span>
+                            <span className="text-xs font-semibold select-none w-6 text-center">{qtyInCart}</span>
                             <button
                               onClick={() => handleUpdateCartQuantity(material, 1)}
-                              className="h-full px-3 text-muted-foreground hover:bg-muted hover:text-foreground rounded-r-md transition-colors"
+                              className="h-full px-2 text-muted-foreground hover:bg-muted hover:text-foreground rounded-r transition-colors"
                             >
-                              <Plus className="h-3 w-3" />
+                              <Plus className="h-2.5 w-2.5" />
                             </button>
                           </div>
                         ) : (
                           <Button
                             variant="secondary"
                             size="sm"
-                            className="w-full h-8 text-xs font-semibold"
+                            className="w-full h-6 text-[10px] font-semibold"
                             onClick={() => handleUpdateCartQuantity(material, 1)}
                           >
-                            <Plus className="h-3 w-3 mr-1" />
-                            장바구니 담기
+                            <Plus className="h-2.5 w-2.5 mr-0.5" />
+                            담기
                           </Button>
                         )}
                       </div>
@@ -304,9 +340,26 @@ export default function MaterialRequestPage() {
           </CardContent>
         </Card>
 
-        {/* 요청 현황 트래커 (하단) */}
-        <div className="shrink-0 p-1">
-          <RequestStatusTracker key={`tracker-${selectedBranch}-${refreshTrigger}`} selectedBranch={selectedBranch} />
+        {/* 요청 현황 트래커 (하단, 접기/펼치기) */}
+        <div className="shrink-0">
+          <button
+            onClick={() => setIsTrackerCollapsed(!isTrackerCollapsed)}
+            className="w-full flex items-center justify-between px-4 py-2.5 bg-muted/40 hover:bg-muted/60 rounded-lg border text-sm font-medium text-muted-foreground transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              📋 요청 현황
+            </span>
+            {isTrackerCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+          </button>
+          {!isTrackerCollapsed && (
+            <div className="mt-2">
+              <RequestStatusTracker
+                key={`tracker-${selectedBranch}-${refreshTrigger}`}
+                selectedBranch={selectedBranch}
+                onEditRequest={handleEditRequest}
+              />
+            </div>
+          )}
         </div>
       </div>
 

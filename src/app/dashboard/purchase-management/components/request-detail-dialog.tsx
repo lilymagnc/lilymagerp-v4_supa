@@ -1,7 +1,8 @@
 "use client";
 import React from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Calendar, MapPin, User, Package, AlertCircle } from 'lucide-react';
@@ -10,8 +11,9 @@ interface RequestDetailDialogProps {
   request: MaterialRequest | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onDelete?: (requestId: string) => void;
 }
-export function RequestDetailDialog({ request, open, onOpenChange }: RequestDetailDialogProps) {
+export function RequestDetailDialog({ request, open, onOpenChange, onDelete }: RequestDetailDialogProps) {
   if (!request) return null;
   const formatDate = (timestamp: any): string => {
     if (!timestamp) return '';
@@ -106,7 +108,7 @@ export function RequestDetailDialog({ request, open, onOpenChange }: RequestDeta
                     )}
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    총 {request.requestedItems.length}개 품목 • 
+                    총 {request.requestedItems.length}개 품목 •
                     예상 비용: ₩{totalCost.toLocaleString()}
                   </div>
                 </div>
@@ -190,14 +192,14 @@ export function RequestDetailDialog({ request, open, onOpenChange }: RequestDeta
             </Card>
           )}
           {/* 처리 이력 */}
-          {request.statusHistory && request.statusHistory.length > 0 && (
+          {(request as any).statusHistory && (request as any).statusHistory.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">처리 이력</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {request.statusHistory.map((history, index) => (
+                  {(request as any).statusHistory.map((history: any, index: number) => (
                     <div key={index} className="flex items-center gap-2 text-sm">
                       <Badge variant="outline" className="text-xs">
                         {getStatusText(history.status)}
@@ -215,6 +217,28 @@ export function RequestDetailDialog({ request, open, onOpenChange }: RequestDeta
             </Card>
           )}
         </div>
+        <DialogFooter className="mt-6 flex sm:justify-between items-center w-full">
+          <div>
+            {onDelete && request.status === 'submitted' && (
+              <Button variant="destructive" onClick={() => {
+                if (window.confirm('정말 이 요청을 취소하시겠습니까?')) {
+                  onDelete(request.id);
+                  onOpenChange(false);
+                }
+              }}>
+                요청 취소
+              </Button>
+            )}
+            {onDelete && request.status !== 'submitted' && (
+              <Button variant="destructive" disabled title="제출됨 상태에서만 취소할 수 있습니다." className="opacity-50 cursor-not-allowed">
+                요청 취소
+              </Button>
+            )}
+          </div>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            닫기
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

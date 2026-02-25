@@ -127,11 +127,24 @@ export function usePurchaseBatches() {
           const materialIdToUpdate = item.actualMaterialId || item.originalMaterialId;
           const materialIdBase = materialIdToUpdate.split('-')[0];
 
+          // 기존 extra_data를 가져와서 병합
+          const { data: existingMat } = await supabase.from('materials')
+            .select('extra_data')
+            .eq('id', materialIdBase)
+            .maybeSingle();
+
+          const currentExtraData = existingMat?.extra_data || {};
+
           await supabase.from('materials')
             .update({
               price: item.actualPrice,
-              last_purchase_price: item.actualPrice,
-              last_purchase_date: now
+              supplier: item.supplier || undefined,
+              extra_data: {
+                ...currentExtraData,
+                lastPurchasePrice: item.actualPrice,
+                lastPurchaseDate: now
+              },
+              updated_at: now
             })
             .eq('id', materialIdBase);
         }

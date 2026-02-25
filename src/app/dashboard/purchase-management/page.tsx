@@ -339,7 +339,28 @@ export default function PurchaseManagementPage() {
           />
         </TabsContent>
         <TabsContent value="pivot">
-          <MaterialPivotTable requests={filteredRequests} />
+          <MaterialPivotTable
+            requests={filteredRequests}
+            onPurchaseStart={async (requestIds) => {
+              try {
+                for (const id of requestIds) {
+                  await updateRequestStatus(id, 'purchasing');
+                }
+                toast({
+                  title: "구매 진행",
+                  description: `${requestIds.length}건의 요청이 구매 진행 상태로 변경되었습니다.`,
+                });
+                await loadRequests();
+              } catch (error) {
+                console.error('구매 진행 처리 오류:', error);
+                toast({
+                  variant: 'destructive',
+                  title: "오류",
+                  description: "구매 진행 처리 중 오류가 발생했습니다.",
+                });
+              }
+            }}
+          />
         </TabsContent>
         <TabsContent value="batches">
           <PurchaseBatchList
@@ -543,6 +564,7 @@ export default function PurchaseManagementPage() {
         request={selectedRequest}
         open={detailDialogOpen}
         onOpenChange={setDetailDialogOpen}
+        onDelete={(id) => { handleDeleteRequest(id); setDetailDialogOpen(false); }}
       />
     </div>
   );

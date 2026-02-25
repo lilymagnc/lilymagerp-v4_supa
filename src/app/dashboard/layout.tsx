@@ -176,10 +176,12 @@ export default function DashboardLayout({
                                     <SidebarMenuItem>
                                         <SidebarMenuButton onClick={() => router.push('/dashboard/branches')}><Store />지점 관리</SidebarMenuButton>
                                     </SidebarMenuItem>
-                                    {/* 16. 비용 관리 (본사 관리자만) */}
-                                    <SidebarMenuItem>
-                                        <SidebarMenuButton onClick={() => router.push('/dashboard/expenses')}><DollarSign />비용 관리</SidebarMenuButton>
-                                    </SidebarMenuItem>
+                                    {/* 16. 비용 관리 (대표 직위만) */}
+                                    {(user?.position === '대표' || user?.email?.toLowerCase() === 'lilymag0301@gmail.com') && (
+                                        <SidebarMenuItem>
+                                            <SidebarMenuButton onClick={() => router.push('/dashboard/expenses')}><DollarSign />비용 관리</SidebarMenuButton>
+                                        </SidebarMenuItem>
+                                    )}
                                     {/* 17. 예산 관리 (본사 관리자만) */}
                                     <SidebarMenuItem>
                                         <SidebarMenuButton onClick={() => router.push('/dashboard/budgets')}><Target />예산 관리</SidebarMenuButton>

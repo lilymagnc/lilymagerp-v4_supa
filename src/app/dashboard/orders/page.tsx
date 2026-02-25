@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { useOrders, Order } from "@/hooks/use-orders";
+import { useOrders, useIndependentOrders, Order } from "@/hooks/use-orders";
 import { useOrderTransfers } from "@/hooks/use-order-transfers";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/use-auth";
@@ -40,8 +40,8 @@ import { isSettled, isCanceled, isPendingPayment } from "@/lib/order-utils";
 export default function OrdersPage() {
   const { orders, loading, fetchOrders, fetchOrdersByRange, fetchAllOrders, updateOrderStatus, updatePaymentStatus, cancelOrder, deleteOrder } = useOrders();
   // Separate hook for fetching future schedule without affecting main table
-  // Alias fetchCalendarOrders to fetchScheduleOrders to clarify purpose
-  const { orders: scheduleOrders, fetchCalendarOrders: fetchScheduleOrders } = useOrders(false);
+  // ★ 독립 인스턴스 사용 - 전역 Context와 상태를 공유하지 않아 메인 주문 데이터 덮어쓰기 방지
+  const { orders: scheduleOrders, fetchCalendarOrders: fetchScheduleOrders } = useIndependentOrders(false);
   const [isFullDataLoaded, setIsFullDataLoaded] = useState(false);
   const { branches, loading: branchesLoading } = useBranches();
   const { createTransfer, getTransferPermissions } = useOrderTransfers();

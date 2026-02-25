@@ -25,7 +25,9 @@ import {
   Minus,
   Info,
   Calendar,
-  MapPin
+  MapPin,
+  Trash2,
+  Edit2
 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useMaterialRequests } from '@/hooks/use-material-requests';
@@ -34,15 +36,19 @@ import { supabase } from '@/lib/supabase';
 import type { MaterialRequest, RequestStatus } from '@/types/material-request';
 import { REQUEST_STATUS_LABELS, URGENCY_LABELS } from '@/types/material-request';
 import { parseDate } from '@/lib/date-utils';
+import { RequestDetailDialog } from '@/app/dashboard/purchase-management/components/request-detail-dialog';
+
 interface RequestStatusTrackerProps {
   selectedBranch?: string;
+  onEditRequest?: (request: MaterialRequest) => void;
 }
-export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerProps) {
+
+export function RequestStatusTracker({ selectedBranch, onEditRequest }: RequestStatusTrackerProps) {
   const { user } = useAuth();
-  const { getRequestsByBranch, getRequestsByBranchId, getAllRequests, updateRequestStatus, loading } = useMaterialRequests();
+  const { getRequestsByBranch, getRequestsByBranchId, getAllRequests, updateRequestStatus, deleteRequest, loading } = useMaterialRequests();
   const { toast } = useToast();
   const [requests, setRequests] = useState<MaterialRequest[]>([]);
-  const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
+  const [detailRequest, setDetailRequest] = useState<MaterialRequest | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [refreshKey, setRefreshKey] = useState(0); // 새로고침을 위한 키
   const [displayCount, setDisplayCount] = useState(5); // 표시할 요청 수
@@ -267,9 +273,7 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
       return '-';
     }
   };
-  const toggleRequestExpansion = (requestId: string) => {
-    setExpandedRequest(expandedRequest === requestId ? null : requestId);
-  };
+
   if (loading) {
     return (
       <Card>
@@ -346,7 +350,7 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
                     {/* 요청 헤더 */}
                     <div
                       className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => toggleRequestExpansion(request.id)}
+                      onClick={() => setDetailRequest(request)}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -446,38 +450,47 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
                               입고완료
                             </Button>
                           )}
-                          {/* 완료 버튼 - 요청됨 상태일 때 표시 (기존) */}
-                          {request.status === 'submitted' && (
+                          {/* 수정/취소 버튼 - 완료/배송완료가 아닐 때 표시 */}
+                          {onEditRequest && !['completed', 'delivered'].includes(request.status) && (
                             <Button
                               size="sm"
                               variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (window.confirm('기존 요청을 취소하고 장바구니로 다시 불러와 수정하시겠습니까?')) {
+                                  onEditRequest(request);
+                                }
+                              }}
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            >
+                              <Edit2 className="h-3 w-3 mr-1" />
+                              수정
+                            </Button>
+                          )}
+                          {!['completed', 'delivered'].includes(request.status) && (
+                            <Button
+                              size="sm"
+                              variant="destructive"
                               onClick={async (e) => {
                                 e.stopPropagation();
-                                try {
-                                  await updateRequestStatus(request.id, 'completed');
-                                  setRefreshKey(prev => prev + 1);
-                                  toast({
-                                    title: "요청 완료",
-                                    description: "자재 요청이 완료 처리되었습니다."
-                                  });
-                                } catch (error) {
-                                  toast({
-                                    variant: "destructive",
-                                    title: "오류",
-                                    description: "완료 처리 중 오류가 발생했습니다."
-                                  });
+                                if (window.confirm('정말 이 자재 요청을 취소하시겠습니까?')) {
+                                  try {
+                                    await deleteRequest(request.id);
+                                    setRefreshKey(prev => prev + 1);
+                                  } catch (error) {
+                                    // 오류 처리는 deleteRequest 내부에 toast로 됨
+                                  }
                                 }
                               }}
                             >
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              완료
+                              <Trash2 className="h-3 w-3 mr-1" />
+                              취소
                             </Button>
                           )}
-                          {expandedRequest === request.id ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
+                          <Button variant="ghost" size="sm" className="px-2">
+                            <Eye className="h-4 w-4 mr-1" />
+                            상세
+                          </Button>
                         </div>
                       </div>
                       {/* 진행률 표시 */}
@@ -488,151 +501,6 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
                         />
                       </div>
                     </div>
-                    {/* 요청 상세 정보 */}
-                    {expandedRequest === request.id && (
-                      <div className="border-t bg-muted/20">
-                        <div className="p-3 space-y-4">
-                          {/* 요청 vs 실제 비교 */}
-                          {comparison && (
-                            <div className="bg-white rounded-lg p-3 border">
-                              <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                                <Info className="h-4 w-4" />
-                                요청 vs 실제 비교
-                              </h4>
-                              <div className="grid grid-cols-3 gap-4 text-sm">
-                                <div>
-                                  <p className="text-muted-foreground">요청 금액</p>
-                                  <p className="font-medium">{comparison.requestedTotal.toLocaleString()}원</p>
-                                </div>
-                                <div>
-                                  <p className="text-muted-foreground">실제 금액</p>
-                                  <p className="font-medium">{comparison.actualTotal.toLocaleString()}원</p>
-                                </div>
-                                <div>
-                                  <p className="text-muted-foreground">차이</p>
-                                  <p className={`font-medium flex items-center gap-1 ${comparison.isHigher ? 'text-red-600' :
-                                    comparison.isLower ? 'text-green-600' : 'text-gray-600'
-                                    }`}>
-                                    {comparison.isHigher ? (
-                                      <TrendingUp className="h-3 w-3" />
-                                    ) : comparison.isLower ? (
-                                      <TrendingDown className="h-3 w-3" />
-                                    ) : (
-                                      <Minus className="h-3 w-3" />
-                                    )}
-                                    {comparison.difference > 0 ? '+' : ''}{comparison.difference.toLocaleString()}원
-                                    <span className="text-xs text-muted-foreground">
-                                      ({comparison.percentDiff > 0 ? '+' : ''}{comparison.percentDiff.toFixed(1)}%)
-                                    </span>
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                          {/* 요청 품목 */}
-                          <div>
-                            <h4 className="text-sm font-medium mb-2">요청 품목</h4>
-                            <div className="space-y-2">
-                              {request.requestedItems.map((item, index) => (
-                                <div key={index} className="flex justify-between items-center text-sm bg-white rounded p-2">
-                                  <div className="flex items-center gap-2">
-                                    <span>{item.materialName}</span>
-                                    {item.urgency === 'urgent' && (
-                                      <Badge variant="destructive" className="text-xs">
-                                        긴급
-                                      </Badge>
-                                    )}
-                                  </div>
-                                  <div className="text-right">
-                                    <p>{item.requestedQuantity}개</p>
-                                    <p className="text-xs text-muted-foreground">
-                                      {(item.requestedQuantity * item.estimatedPrice).toLocaleString()}원
-                                    </p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                          {/* 실제 구매 정보 (구매 완료 후) */}
-                          {request.actualPurchase && (
-                            <div>
-                              <h4 className="text-sm font-medium mb-2">실제 구매 정보</h4>
-                              <div className="bg-white rounded-lg p-3 space-y-2 text-sm">
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div>
-                                    <p className="text-muted-foreground">구매일</p>
-                                    <p>{formatDate(request.actualPurchase.purchaseDate)}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-muted-foreground">구매자</p>
-                                    <p>{request.actualPurchase.purchaserName}</p>
-                                  </div>
-                                </div>
-                                <div>
-                                  <p className="text-muted-foreground">실제 비용</p>
-                                  <p className="font-medium text-lg">{request.actualPurchase.totalCost.toLocaleString()}원</p>
-                                </div>
-                                {request.actualPurchase.notes && (
-                                  <div>
-                                    <p className="text-muted-foreground">메모</p>
-                                    <p className="text-sm bg-muted/50 rounded p-2">{request.actualPurchase.notes}</p>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                          {/* 배송 추적 정보 */}
-                          {request.delivery && (
-                            <div>
-                              <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                                <Truck className="h-4 w-4" />
-                                배송 추적
-                              </h4>
-                              <div className="bg-white rounded-lg p-3 space-y-2 text-sm">
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div>
-                                    <p className="text-muted-foreground">배송 시작</p>
-                                    <p>{formatDate(request.delivery.shippingDate)}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-muted-foreground">배송 방법</p>
-                                    <p>{request.delivery.deliveryMethod}</p>
-                                  </div>
-                                </div>
-                                {request.delivery.trackingNumber && (
-                                  <div>
-                                    <p className="text-muted-foreground">송장번호</p>
-                                    <p className="font-mono text-sm bg-muted/50 rounded p-2">
-                                      {request.delivery.trackingNumber}
-                                    </p>
-                                  </div>
-                                )}
-                                {request.delivery.deliveryDate ? (
-                                  <div className="flex items-center gap-2 text-green-600">
-                                    <CheckCircle className="h-4 w-4" />
-                                    <span>배송 완료: {formatDate(request.delivery.deliveryDate)}</span>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center gap-2 text-blue-600">
-                                    <MapPin className="h-4 w-4" />
-                                    <span>예상 도착: {getEstimatedDeliveryDate(request)}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                          {/* 입고 예정 알림 */}
-                          {request.status === 'shipping' && (
-                            <Alert className="border-blue-200 bg-blue-50">
-                              <Bell className="h-4 w-4 text-blue-600" />
-                              <AlertDescription className="text-blue-800">
-                                <strong>입고 준비 알림:</strong> 곧 자재가 도착할 예정입니다. 입고 공간을 준비해 주세요.
-                              </AlertDescription>
-                            </Alert>
-                          )}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -651,6 +519,21 @@ export function RequestStatusTracker({ selectedBranch }: RequestStatusTrackerPro
           )}
         </CardContent>
       </Card>
-    </div>
+
+      <RequestDetailDialog
+        request={detailRequest}
+        open={!!detailRequest}
+        onOpenChange={(open) => {
+          if (!open) setDetailRequest(null);
+        }}
+        onDelete={async (id) => {
+          try {
+            await deleteRequest(id);
+            setDetailRequest(null);
+            setRefreshKey(prev => prev + 1);
+          } catch (e) { /* error handled in deleteRequest */ }
+        }}
+      />
+    </div >
   );
 }

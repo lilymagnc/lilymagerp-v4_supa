@@ -12,10 +12,10 @@ interface ConsolidatedItemsViewProps {
   selectedRequests: string[];
   onToggleRequest: (requestId: string) => void;
 }
-export function ConsolidatedItemsView({ 
-  items, 
-  selectedRequests, 
-  onToggleRequest 
+export function ConsolidatedItemsView({
+  items,
+  selectedRequests,
+  onToggleRequest
 }: ConsolidatedItemsViewProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const toggleExpanded = (materialId: string) => {
@@ -62,8 +62,8 @@ export function ConsolidatedItemsView({
         {items.map((item) => {
           const isExpanded = expandedItems.has(item.materialId);
           const hasUrgent = item.requestingBranches.some(branch => branch.urgency === 'urgent');
-          const selectedBranchCount = item.requestingBranches.filter(branch => 
-            selectedRequests.includes(branch.requestId)
+          const selectedBranchCount = item.requestingBranches.filter(branch =>
+            branch.requestIds.some(id => selectedRequests.includes(id))
           ).length;
           return (
             <Card key={item.materialId} className={hasUrgent ? 'border-red-200' : ''}>
@@ -109,18 +109,19 @@ export function ConsolidatedItemsView({
                         요청 지점별 상세 내역
                       </div>
                       {item.requestingBranches.map((branch, index) => {
-                        const isSelected = selectedRequests.includes(branch.requestId);
+                        const isSelected = branch.requestIds.some(id => selectedRequests.includes(id));
                         return (
-                          <div 
-                            key={`${branch.requestId}-${index}`}
-                            className={`flex items-center justify-between p-3 rounded-lg border ${
-                              isSelected ? 'bg-blue-50 border-blue-200' : 'bg-muted/30'
-                            }`}
+                          <div
+                            key={`${branch.branchId}-${index}`}
+                            className={`flex items-center justify-between p-3 rounded-lg border ${isSelected ? 'bg-blue-50 border-blue-200' : 'bg-muted/30'
+                              }`}
                           >
                             <div className="flex items-center gap-3">
                               <Checkbox
                                 checked={isSelected}
-                                onCheckedChange={() => onToggleRequest(branch.requestId)}
+                                onCheckedChange={() => {
+                                  branch.requestIds.forEach(id => onToggleRequest(id));
+                                }}
                               />
                               <div>
                                 <div className="flex items-center gap-2">
