@@ -758,9 +758,10 @@ export default function NewOrderMobilePage() {
             }
         }
         const discountedSubtotal = subtotal - discountAmount;
-        const maxUsablePoints = selectedCustomer && discountedSubtotal >= 5000 ? Math.min(selectedCustomer.points || 0, discountedSubtotal) : 0;
+        const totalBeforePoints = discountedSubtotal + deliveryFee;
+        const maxUsablePoints = selectedCustomer && discountedSubtotal >= 5000 ? Math.min(selectedCustomer.points || 0, totalBeforePoints) : 0;
         const actualUsedPoints = Math.min(usedPoints, maxUsablePoints);
-        const finalTotal = discountedSubtotal + deliveryFee - actualUsedPoints;
+        const finalTotal = totalBeforePoints - actualUsedPoints;
         const canApply = selectedBranch ? canApplyDiscount(selectedBranch.id, subtotal) : false;
         return { subtotal, discountAmount, discountRate: rate, deliveryFee, finalTotal, maxUsablePoints, actualUsedPoints, canUsePoints: discountedSubtotal >= 5000, canApply };
     }, [orderItems, selectedDiscountRate, customDiscountRate, receiptType, deliveryFeeType, manualDeliveryFee, selectedBranch, selectedDistrict, usedPoints, selectedCustomer, canApplyDiscount]);

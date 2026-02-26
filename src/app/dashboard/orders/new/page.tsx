@@ -500,11 +500,11 @@ export default function NewOrderPage() {
     const discountedSubtotal = subtotal - discountAmount;
 
     const canUsePoints = selectedCustomer && discountedSubtotal >= 5000;
-    const maxUsablePoints = canUsePoints ? Math.min(selectedCustomer.points || 0, discountedSubtotal) : 0;
-    const pointsToUse = Math.min(discountedSubtotal, usedPoints, maxUsablePoints);
+    const totalBeforePoints = discountedSubtotal + deliveryFee;
+    const maxUsablePoints = canUsePoints ? Math.min(selectedCustomer.points || 0, totalBeforePoints) : 0;
+    const pointsToUse = Math.min(totalBeforePoints, usedPoints, maxUsablePoints);
 
-    const finalSubtotal = discountedSubtotal - pointsToUse;
-    const total = finalSubtotal + deliveryFee;
+    const total = totalBeforePoints - pointsToUse;
 
     // For VAT (Supplied 10/11)
     const supplyPrice = Math.round(total / 1.1);
