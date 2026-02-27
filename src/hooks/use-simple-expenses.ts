@@ -424,6 +424,21 @@ export function useSimpleExpenses({ enableRealtime = false }: { enableRealtime?:
     } catch (error) { return false; }
   }, [toast]);
 
+  // 자재요청 ID로 자동 생성된 지출 삭제 (배송완료 취소 시 사용)
+  const deleteExpenseByRequestId = useCallback(async (requestId: string): Promise<boolean> => {
+    try {
+      const { error } = await supabase
+        .from('simple_expenses')
+        .delete()
+        .eq('related_request_id', requestId);
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error('자재요청 지출 삭제 오류:', error);
+      return false;
+    }
+  }, []);
+
   useEffect(() => {
     if (user) {
       if (enableRealtime) {
@@ -458,6 +473,6 @@ export function useSimpleExpenses({ enableRealtime = false }: { enableRealtime?:
     expenses, loading, supplierSuggestions, isRefreshing,
     fetchExpenses, addExpense, updateExpense, deleteExpense,
     updateExpenseByOrderId, deleteExpenseByOrderId,
-    fetchSupplierSuggestions, fetchFixedCostTemplate, saveFixedCostTemplate, addFixedCosts, calculateStats, addMaterialRequestExpense
+    fetchSupplierSuggestions, fetchFixedCostTemplate, saveFixedCostTemplate, addFixedCosts, calculateStats, addMaterialRequestExpense, deleteExpenseByRequestId
   };
 }

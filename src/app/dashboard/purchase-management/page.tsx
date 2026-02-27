@@ -12,6 +12,7 @@ import { MaterialPivotTable } from './components/material-pivot-table';
 import { RequestDetailDialog } from './components/request-detail-dialog';
 import { useMaterialRequests } from '@/hooks/use-material-requests';
 import { useMaterials } from '@/hooks/use-materials';
+import { useSimpleExpenses } from '@/hooks/use-simple-expenses';
 import type { MaterialRequest, RequestStatus, UrgencyLevel } from '@/types/material-request';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -31,6 +32,7 @@ export default function PurchaseManagementPage() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const { getAllRequests, updateRequestStatus, deleteRequest } = useMaterialRequests();
   const { updateStock } = useMaterials();
+  const { addMaterialRequestExpense, deleteExpenseByRequestId } = useSimpleExpenses({ enableRealtime: false });
   const { user } = useAuth();
   const { toast } = useToast();
   // 요청 목록 로드
@@ -98,42 +100,56 @@ export default function PurchaseManagementPage() {
       if (existingDelivery?.trackingNumber) {
         deliveryData.trackingNumber = existingDelivery.trackingNumber;
       }
-      // 1. 배송 상태 업데이트
+      // 1. 배송 상태 업데이트 (순수 상태 업데이트용, 실제 재고/지출 등록은 지점에서 수행)
       await updateRequestStatus(requestId, 'delivered', {
         delivery: deliveryData,
       });
-      // 2. 재고 업데이트 (입고 처리)
-      // materialId에서 실제 자재 ID 추출 (format: "materialId-branchName")
-      const stockItems = currentRequest.requestedItems.map(item => {
-        // materialId가 "id-branch" 형태인 경우 실제 ID 추출
-        const actualMaterialId = item.materialId.includes('-')
-          ? item.materialId.split('-')[0]
-          : item.materialId;
-        return {
-          id: actualMaterialId,
-          name: item.materialName,
-          quantity: item.requestedQuantity,
-          price: item.estimatedPrice
-        };
-      });
-      await updateStock(
-        stockItems,
-        'in', // 입고
-        currentRequest.branchName,
-        user?.email || '시스템'
-      );
+
       toast({
-        title: "배송 완료 처리",
-        description: "요청의 배송이 완료되고 재고가 업데이트되었습니다.",
+        title: "배송 상태 업데이트",
+        description: "상태가 배송 완료(도착)로 변경되었습니다. (실제 입고는 지점에서 진행합니다)",
       });
-      loadRequests(); // 목록 새로고침
-      setDeliveryTabKey(prev => prev + 1); // 탭 강제 새로고침
+      loadRequests();
+      setDeliveryTabKey(prev => prev + 1);
     } catch (error) {
       console.error('배송 완료 처리 오류:', error);
       toast({
         variant: 'destructive',
         title: "오류",
         description: "배송 완료 처리 중 오류가 발생했습니다.",
+      });
+    }
+  };
+
+  // 배송 완료 취소 (롤백: 상태 복원 + 재고 차감 + 지출 삭제)
+  const handleDeliveryCancel = async (requestId: string) => {
+    try {
+      const currentRequest = requests.find(r => r.id === requestId);
+      if (!currentRequest) {
+        throw new Error('요청을 찾을 수 없습니다.');
+      }
+
+      // 1. 상태를 purchased로 복원
+      await updateRequestStatus(requestId, 'purchased', {
+        delivery: {
+          ...currentRequest.delivery,
+          deliveryDate: null,
+          deliveryStatus: 'preparing' as any,
+        },
+      });
+
+      toast({
+        title: "배송 완료 취소",
+        description: "상태가 구매완료(배송 준비)로 취소되었습니다.",
+      });
+      loadRequests();
+      setDeliveryTabKey(prev => prev + 1);
+    } catch (error) {
+      console.error('배송 완료 취소 오류:', error);
+      toast({
+        variant: 'destructive',
+        title: "오류",
+        description: "배송 완료 취소 중 오류가 발생했습니다.",
       });
     }
   };
@@ -220,7 +236,7 @@ export default function PurchaseManagementPage() {
         </div>
       </div>
       {/* 통계 카드 */}
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">전체 요청</CardTitle>
@@ -268,7 +284,7 @@ export default function PurchaseManagementPage() {
           <CardTitle>필터 및 검색</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <Input
               placeholder="요청번호, 지점명, 요청자 검색..."
               value={searchTerm}
@@ -325,12 +341,27 @@ export default function PurchaseManagementPage() {
       </Card>
       {/* 메인 대시보드 */}
       <Tabs defaultValue="dashboard" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="dashboard">취합 대시보드</TabsTrigger>
-          <TabsTrigger value="pivot">취합 뷰</TabsTrigger>
-          <TabsTrigger value="batches">구매 배치</TabsTrigger>
-          <TabsTrigger value="delivery">배송 관리</TabsTrigger>
-          <TabsTrigger value="requests">요청 목록</TabsTrigger>
+        <TabsList className="w-full h-auto p-1 bg-muted/50 grid grid-cols-2 md:grid-cols-5 gap-2">
+          <TabsTrigger value="dashboard" className="flex flex-col items-center py-3 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md shadow-sm">
+            <span className="text-[10px] md:text-xs opacity-80 mb-1">STEP 1</span>
+            <span className="font-bold text-sm md:text-base">요청 취합</span>
+          </TabsTrigger>
+          <TabsTrigger value="pivot" className="flex flex-col items-center py-3 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md shadow-sm">
+            <span className="text-[10px] md:text-xs opacity-80 mb-1">STEP 2</span>
+            <span className="font-bold text-sm md:text-base">전체 품목 뷰</span>
+          </TabsTrigger>
+          <TabsTrigger value="batches" className="flex flex-col items-center py-3 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md shadow-sm">
+            <span className="text-[10px] md:text-xs opacity-80 mb-1">STEP 3</span>
+            <span className="font-bold text-sm md:text-base">추가/실제 구매</span>
+          </TabsTrigger>
+          <TabsTrigger value="delivery" className="flex flex-col items-center py-3 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md shadow-sm">
+            <span className="text-[10px] md:text-xs opacity-80 mb-1">STEP 4</span>
+            <span className="font-bold text-sm md:text-base">배송시작/이동</span>
+          </TabsTrigger>
+          <TabsTrigger value="requests" className="flex flex-col items-center py-3 text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-md shadow-sm col-span-2 md:col-span-1">
+            <span className="text-[10px] md:text-xs opacity-80 mb-1">조회</span>
+            <span className="font-bold text-sm md:text-base">전체 목록</span>
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard">
           <PurchaseRequestDashboard
@@ -406,8 +437,8 @@ export default function PurchaseManagementPage() {
                             <p className="text-xs text-muted-foreground">
                               구매가 완료되어 배송을 시작할 수 있습니다.
                             </p>
-                            <Button size="sm" className="mt-2" onClick={() => handleStartDelivery(request.id)}>
-                              배송 시작
+                            <Button size="lg" className="w-full mt-4 text-base py-6 shadow-md" onClick={() => handleStartDelivery(request.id)}>
+                              배송 출발 (이동 시작)
                             </Button>
                           </div>
                         )}
@@ -428,11 +459,11 @@ export default function PurchaseManagementPage() {
                               </p>
                             )}
                             <Button
-                              size="sm"
-                              className="mt-2"
+                              size="lg"
+                              className="w-full mt-4 text-base py-6 shadow-md"
                               onClick={() => handleDeliveryComplete(request.id)}
                             >
-                              배송 완료
+                              배송 완료 (지점 도착)
                             </Button>
                           </div>
                         )}
@@ -440,13 +471,37 @@ export default function PurchaseManagementPage() {
                           <div className="space-y-2">
                             <p className="text-sm font-medium text-green-600">배송 완료</p>
                             <p className="text-xs text-muted-foreground">
-                              배송이 완료되었습니다. 입고 확인을 기다리고 있습니다.
+                              배송이 완료되었습니다. 지점에서 품목/가격 확인 후 입고처리를 진행합니다.
                             </p>
                             {request.delivery?.deliveryDate && (
                               <p className="text-xs text-muted-foreground">
                                 배송 완료: {new Date(request.delivery.deliveryDate).toLocaleDateString()}
                               </p>
                             )}
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button size="lg" variant="outline" className="w-full mt-4 text-base py-6 text-red-500 border-red-200 hover:bg-red-50 hover:text-red-600 shadow-sm">
+                                  배송 완료 취소 (뒤로가기)
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>배송 완료를 취소하시겠습니까?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    상태가 &quot;구매완료&quot;로 복원됩니다.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>취소</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    className="bg-red-500 hover:bg-red-600"
+                                    onClick={() => handleDeliveryCancel(request.id)}
+                                  >
+                                    배송 완료 취소
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </div>
                         )}
                       </div>

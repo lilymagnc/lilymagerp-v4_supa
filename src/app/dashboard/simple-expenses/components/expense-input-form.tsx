@@ -132,6 +132,136 @@ interface ExpenseInputFormProps {
   selectedBranchName?: string;
 }
 
+// 자재 검색 드롭다운 컴포넌트 (마우스 클릭 100% 지원)
+function MaterialCombobox({ value, materials, branchName, onSelect }: {
+  value: string;
+  materials: any[];
+  branchName?: string;
+  onSelect: (name: string, price?: number) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [search, setSearch] = React.useState('');
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  // 해당 지점 자재만 필터 + 검색어로 필터
+  const filtered = React.useMemo(() => {
+    const branchMaterials = branchName
+      ? materials.filter(m =>
+        !m.branch ||
+        m.branch === '전체' ||
+        m.branch === 'all' ||
+        m.branch === branchName ||
+        branchName.includes(m.branch) ||
+        m.branch.includes(branchName)
+      )
+      : materials;
+    if (!search) return branchMaterials.slice(0, 50);
+    const term = search.toLowerCase();
+    return branchMaterials
+      .filter(m => m.name.toLowerCase().includes(term))
+      .slice(0, 50);
+  }, [materials, branchName, search]);
+
+  // 외부 클릭 시 닫기
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    if (open) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  const handleItemClick = (name: string, price?: number) => {
+    onSelect(name, price);
+    setOpen(false);
+    setSearch('');
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "w-full h-9 flex items-center justify-between text-sm font-normal rounded-md border px-3 transition-all",
+          "border-gray-100 hover:border-gray-300 bg-white/50 hover:bg-white",
+          open && "border-primary ring-1 ring-primary/20"
+        )}
+      >
+        <span className={cn("truncate text-left", !value && "text-muted-foreground")}>
+          {value || "자재 검색/선택"}
+        </span>
+        <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 top-10 left-0 w-[320px] bg-white border rounded-lg shadow-lg overflow-hidden">
+          <div className="p-2 border-b">
+            <div className="relative">
+              <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="자재명 검색... (예: 장미)"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full h-8 pl-8 pr-3 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div className="max-h-[240px] overflow-y-auto">
+            {filtered.length === 0 ? (
+              <div className="py-4 text-center space-y-2">
+                <p className="text-sm text-muted-foreground">검색 결과 없음</p>
+                {search && (
+                  <button
+                    type="button"
+                    className="text-sm text-primary hover:underline flex items-center justify-center gap-1 mx-auto"
+                    onClick={() => handleItemClick(search, undefined)}
+                  >
+                    <Plus className="h-3 w-3" />
+                    &quot;{search}&quot; 새로운 자재로 입력
+                  </button>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="px-3 py-1.5 text-xs text-muted-foreground font-medium bg-gray-50">
+                  자재 목록 ({filtered.length})
+                </div>
+                {filtered.map(m => (
+                  <button
+                    key={m.docId || m.id}
+                    type="button"
+                    className={cn(
+                      "w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-primary/5 cursor-pointer transition-colors",
+                      value === m.name && "bg-primary/10"
+                    )}
+                    onClick={() => handleItemClick(m.name, m.price)}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <Check className={cn("h-3 w-3 text-primary", value === m.name ? "opacity-100" : "opacity-0")} />
+                      <span className="truncate">{m.name}</span>
+                      {m.color && (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0">{m.color}</Badge>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
+                      ₩{(m.price || 0).toLocaleString()}
+                    </span>
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ExpenseInputForm({
   onSuccess,
   initialData,
@@ -184,9 +314,10 @@ export function ExpenseInputForm({
   const { partners, fetchPartners } = usePartners();
   const { user } = useAuth();
   const { toast } = useToast();
-  const { materials } = useMaterials();
+  const { materials, fetchMaterials } = useMaterials();
   const { products } = useProducts();
   const { branches, loading: branchesLoading } = useBranches();
+
 
   // 중복 데이터 체크 함수
   const checkDuplicateData = useCallback(async (processedData: any[]) => {
@@ -381,6 +512,12 @@ export function ExpenseInputForm({
   const totalAmount = form.watch('items').reduce((sum, item) => sum + (item.amount || 0), 0);
 
   const selectedCategory = form.watch('category');
+  // 자재 목록 로딩 (미로드 시)
+  useEffect(() => {
+    if (materials.length === 0) {
+      fetchMaterials({ pageSize: 1000 });
+    }
+  }, [materials.length, fetchMaterials]);
   const { isHQManager, isHeadOfficeAdmin } = useUserRole();
   const userRole = isHeadOfficeAdmin() ? 'head_office_admin' : isHQManager() ? 'hq_manager' : 'branch_user';
 
@@ -1286,11 +1423,27 @@ export function ExpenseInputForm({
                           name={`items.${index}.description`}
                           render={({ field }) => (
                             <div className="relative">
-                              <Input
-                                placeholder="품목명"
-                                {...field}
-                                className="h-9 text-sm border-gray-100 group-hover:border-gray-300 focus:border-primary bg-white/50 focus:bg-white transition-all"
-                              />
+                              {selectedCategory === SimpleExpenseCategory.MATERIAL ? (
+                                <MaterialCombobox
+                                  value={field.value}
+                                  materials={materials}
+                                  branchName={selectedBranchName}
+                                  onSelect={(name, price) => {
+                                    field.onChange(name);
+                                    if (price !== undefined) {
+                                      form.setValue(`items.${index}.unitPrice`, price);
+                                      const qty = form.getValues(`items.${index}.quantity`) || 1;
+                                      form.setValue(`items.${index}.amount`, price * qty);
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <Input
+                                  placeholder="품목명"
+                                  {...field}
+                                  className="h-9 text-sm border-gray-100 group-hover:border-gray-300 focus:border-primary bg-white/50 focus:bg-white transition-all"
+                                />
+                              )}
                             </div>
                           )}
                         />

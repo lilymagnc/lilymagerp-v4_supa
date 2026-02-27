@@ -5,12 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  Package, 
-  ShoppingCart, 
-  Truck, 
-  CheckCircle, 
-  Clock, 
+import {
+  Package,
+  ShoppingCart,
+  Truck,
+  CheckCircle,
+  Clock,
   Users,
   Calculator,
   Eye,
@@ -31,13 +31,13 @@ export function PurchaseBatchList({ onRefresh }: PurchaseBatchListProps) {
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
   const [activeTab, setActiveTab] = useState<'planning' | 'purchasing' | 'completed'>('planning');
-  const { 
-    batches, 
-    loading, 
-    fetchBatches, 
-    startDelivery, 
+  const {
+    batches,
+    loading,
+    fetchBatches,
+    startDelivery,
     deleteBatch,
-    calculateBatchStats 
+    calculateBatchStats
   } = usePurchaseBatches();
   useEffect(() => {
     fetchBatches();
@@ -129,8 +129,8 @@ export function PurchaseBatchList({ onRefresh }: PurchaseBatchListProps) {
                     return (
                       <Card key={batch.id} className="border-l-4" style={{
                         borderLeftColor: getStatusColor(batch.status) === 'blue' ? '#3b82f6' :
-                                        getStatusColor(batch.status) === 'orange' ? '#f97316' :
-                                        getStatusColor(batch.status) === 'green' ? '#10b981' : '#6b7280'
+                          getStatusColor(batch.status) === 'orange' ? '#f97316' :
+                            getStatusColor(batch.status) === 'green' ? '#10b981' : '#6b7280'
                       }}>
                         <CardContent className="p-4">
                           <div className="flex items-start justify-between">
@@ -146,7 +146,7 @@ export function PurchaseBatchList({ onRefresh }: PurchaseBatchListProps) {
                                 </Badge>
                               </div>
                               <div className="text-sm text-muted-foreground">
-                                생성일: {batch.createdAt?.toDate ? format(batch.createdAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '-'}
+                                생성일: {batch.createdAt ? format(new Date(batch.createdAt), 'yyyy-MM-dd HH:mm', { locale: ko }) : '-'}
                               </div>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                 <div className="flex items-center gap-1">
@@ -173,6 +173,7 @@ export function PurchaseBatchList({ onRefresh }: PurchaseBatchListProps) {
                               )}
                             </div>
                             <div className="flex gap-2">
+                              {/* 상세 정보 버튼 (모든 상태) */}
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -180,40 +181,48 @@ export function PurchaseBatchList({ onRefresh }: PurchaseBatchListProps) {
                                   setSelectedBatch(batch);
                                   setShowDetailsDialog(true);
                                 }}
+                                title="상세보기"
                               >
                                 <Eye className="h-4 w-4" />
                               </Button>
+
+                              {/* 계획중 상태에서만 보이는 수정 버튼 */}
                               {batch.status === 'planning' && (
-                                <>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                      setSelectedBatch(batch);
-                                      setShowPurchaseForm(true);
-                                    }}
-                                  >
-                                    <Edit className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleDeleteBatch(batch.id)}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedBatch(batch);
+                                    setShowPurchaseForm(true);
+                                  }}
+                                  title="수정하기"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
                               )}
+
+                              {/* 완료 상태에서만 보이는 배송시작 버튼 */}
                               {batch.status === 'completed' && (
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   onClick={() => handleStartDelivery(batch.id)}
+                                  title="배송시작"
                                 >
                                   <Truck className="h-4 w-4" />
-                                  배송시작
                                 </Button>
                               )}
+
+                              {/* 모든 상태에서 보이는 삭제 버튼 */}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => handleDeleteBatch(batch.id)}
+                                title="삭제하기"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
                             </div>
                           </div>
                         </CardContent>
@@ -244,7 +253,7 @@ export function PurchaseBatchList({ onRefresh }: PurchaseBatchListProps) {
                   <div className="space-y-1 text-sm">
                     <div>배치 번호: <strong>{selectedBatch.batchNumber}</strong></div>
                     <div>상태: <Badge variant="outline">{getStatusLabel(selectedBatch.status)}</Badge></div>
-                    <div>생성일: {selectedBatch.createdAt?.toDate ? format(selectedBatch.createdAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '-'}</div>
+                    <div>생성일: {selectedBatch.createdAt ? format(new Date(selectedBatch.createdAt), 'yyyy-MM-dd HH:mm', { locale: ko }) : '-'}</div>
                     <div>구매자: {selectedBatch.purchaserName}</div>
                   </div>
                 </div>
@@ -338,6 +347,7 @@ export function PurchaseBatchList({ onRefresh }: PurchaseBatchListProps) {
             </DialogHeader>
             <ActualPurchaseForm
               batch={selectedBatch}
+              loading={loading}
               onComplete={() => {
                 setShowPurchaseForm(false);
                 fetchBatches();

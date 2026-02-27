@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { AlertCircle, Package, ShoppingCart, Truck, CheckCircle2, Search, X } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { AlertCircle, Package, ShoppingCart, Truck, CheckCircle2, Search, X, Plus, Filter, ChevronDown, ChevronUp } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   PurchaseBatch,
@@ -21,21 +22,27 @@ import {
 import { usePurchaseBatches } from '@/hooks/use-purchase-batches';
 import { useMaterialRequests } from '@/hooks/use-material-requests';
 import { usePartners } from '@/hooks/use-partners';
+import { useMaterials } from '@/hooks/use-materials';
+
 interface ActualPurchaseFormProps {
   batch: PurchaseBatch;
   onComplete: () => void;
   onCancel: () => void;
-  loading: boolean; // usePurchaseBatches 훅의 로딩 상태를 전달받음
+  loading: boolean;
 }
+
 interface PurchaseFormItem extends ActualPurchaseItem {
   requestId: string;
   branchName: string;
+  isChecked: boolean;      // 구매 체크 여부
+  isAdditional?: boolean;  // 본사 추가 품목 여부
 }
+
 export function ActualPurchaseForm({
   batch,
   onComplete,
   onCancel,
-  loading // prop으로 loading 상태를 받음
+  loading
 }: ActualPurchaseFormProps) {
   const [purchaseItems, setPurchaseItems] = useState<PurchaseFormItem[]>([]);
   const [purchaseDate, setPurchaseDate] = useState<string>(
@@ -43,26 +50,46 @@ export function ActualPurchaseForm({
   );
   const [notes, setNotes] = useState<string>(batch.notes || '');
   const [errors, setErrors] = useState<Record<string, string>>({});
-  // isSubmitting 상태는 더 이상 필요 없음 (prop으로 loading을 받으므로)
-  // const [isSubmitting, setIsSubmitting] = useState(false);
   const [requests, setRequests] = useState<MaterialRequest[]>([]);
   const { updateActualPurchase } = usePurchaseBatches();
   const { getRequestById } = useMaterialRequests();
   const { partners } = usePartners();
+  const { materials, fetchMaterials } = useMaterials();
   const [supplierSearchIndex, setSupplierSearchIndex] = useState<number | null>(null);
   const [supplierSearchText, setSupplierSearchText] = useState('');
+
+  // 필터링/뷰 상태
+  const [supplierFilter, setSupplierFilter] = useState<string>('all');
+  const [showCheckedOnly, setShowCheckedOnly] = useState<boolean>(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  // 추가 품목 입력 상태
+  const [addItemName, setAddItemName] = useState('');
+  const [addItemQty, setAddItemQty] = useState(1);
+  const [addItemPrice, setAddItemPrice] = useState(0);
+  const [addItemSupplier, setAddItemSupplier] = useState('');
+  const [addItemMemo, setAddItemMemo] = useState('');
+  const [materialSearchOpen, setMaterialSearchOpen] = useState(false);
+  const [materialSearchText, setMaterialSearchText] = useState('');
+
+  // 자재 목록 로딩
+  useEffect(() => {
+    if (materials.length === 0) {
+      fetchMaterials({ pageSize: 1000 });
+    }
+  }, [fetchMaterials, materials.length]);
+
   // 관련 요청들 로드 및 초기 구매 품목 목록 생성
   useEffect(() => {
     const loadRequestsAndItems = async () => {
       try {
-        // 배치에 포함된 요청들 로드
         const requestPromises = batch.includedRequests.map(requestId =>
           getRequestById(requestId)
         );
         const loadedRequests = await Promise.all(requestPromises);
         const validRequests = loadedRequests.filter(req => req !== null) as MaterialRequest[];
         setRequests(validRequests);
-        // 초기 구매 품목 목록 생성
+
         const items: PurchaseFormItem[] = [];
         validRequests.forEach(request => {
           request.requestedItems.forEach(requestItem => {
@@ -80,7 +107,9 @@ export function ActualPurchaseForm({
               status: 'purchased' as PurchaseItemStatus,
               memo: requestItem.memo || '',
               purchaseDate: new Date().toISOString(),
-              supplier: ''
+              supplier: '',
+              isChecked: false,
+              isAdditional: false
             });
           });
         });
@@ -91,38 +120,111 @@ export function ActualPurchaseForm({
     };
     loadRequestsAndItems();
   }, [batch.includedRequests, getRequestById]);
+
   // 품목 업데이트 함수
   const updateItem = (index: number, field: keyof PurchaseFormItem, value: any) => {
     const newItems = [...purchaseItems];
     newItems[index] = { ...newItems[index], [field]: value };
-    // 수량이나 가격이 변경되면 총액 자동 계산
     if (field === 'actualQuantity' || field === 'actualPrice') {
       newItems[index].totalAmount = newItems[index].actualQuantity * newItems[index].actualPrice;
     }
     setPurchaseItems(newItems);
-    // 에러 제거
     if (errors[`item-${index}-${field}`]) {
       const newErrors = { ...errors };
       delete newErrors[`item-${index}-${field}`];
       setErrors(newErrors);
     }
   };
-  // 대체품 설정 함수
-  const setSubstitute = (index: number, isSubstitute: boolean) => {
+
+  // 체크 토글
+  const toggleCheck = (index: number) => {
     const newItems = [...purchaseItems];
-    if (isSubstitute) {
-      newItems[index].status = 'substituted';
-      newItems[index].actualMaterialId = '';
-      newItems[index].actualMaterialName = '';
-    } else {
-      newItems[index].status = 'purchased';
-      newItems[index].actualMaterialId = newItems[index].originalMaterialId;
-      newItems[index].actualMaterialName = newItems[index].originalMaterialName;
-    }
+    newItems[index].isChecked = !newItems[index].isChecked;
     setPurchaseItems(newItems);
   };
-  // 총 비용 계산
+
+  // 전체 체크/해제
+  const toggleAllChecks = () => {
+    const allChecked = filteredItems.every(([_, item]) => item.isChecked);
+    const newItems = [...purchaseItems];
+    filteredItems.forEach(([idx]) => {
+      newItems[idx].isChecked = !allChecked;
+    });
+    setPurchaseItems(newItems);
+  };
+
+  // 추가 품목 삭제
+  const removeItem = (index: number) => {
+    const newItems = purchaseItems.filter((_, i) => i !== index);
+    setPurchaseItems(newItems);
+  };
+
+  // 본사 추가 품목 추가
+  const handleAddExtraItem = () => {
+    if (!addItemName.trim()) return;
+    const newItem: PurchaseFormItem = {
+      requestId: 'HQ-ADDITIONAL',
+      branchName: '본사 추가',
+      originalMaterialId: '',
+      originalMaterialName: addItemName,
+      requestedQuantity: 0,
+      actualMaterialId: '',
+      actualMaterialName: addItemName,
+      actualQuantity: addItemQty,
+      actualPrice: addItemPrice,
+      totalAmount: addItemQty * addItemPrice,
+      status: 'purchased' as PurchaseItemStatus,
+      memo: addItemMemo,
+      purchaseDate: new Date().toISOString(),
+      supplier: addItemSupplier,
+      isChecked: false,
+      isAdditional: true
+    };
+    setPurchaseItems([...purchaseItems, newItem]);
+    // 초기화
+    setAddItemName('');
+    setAddItemQty(1);
+    setAddItemPrice(0);
+    setAddItemSupplier('');
+    setAddItemMemo('');
+    setShowAddForm(false);
+  };
+
+  // 공급업체 목록 (현재 품목에서 추출)
+  const supplierList = useMemo(() => {
+    const suppliers = new Set<string>();
+    purchaseItems.forEach(item => {
+      if (item.supplier) suppliers.add(item.supplier);
+    });
+    return Array.from(suppliers).sort();
+  }, [purchaseItems]);
+
+  // 필터링된 품목 (index와 item 쌍 반환)
+  const filteredItems = useMemo(() => {
+    return purchaseItems
+      .map((item, index) => [index, item] as [number, PurchaseFormItem])
+      .filter(([_, item]) => {
+        if (supplierFilter !== 'all') {
+          if (supplierFilter === 'unassigned' && item.supplier && item.supplier.trim() !== '') return false;
+          if (supplierFilter !== 'unassigned' && item.supplier !== supplierFilter) return false;
+        }
+        if (showCheckedOnly && !item.isChecked) return false;
+        return true;
+      });
+  }, [purchaseItems, supplierFilter, showCheckedOnly]);
+
+  // 통계
+  const checkedCount = purchaseItems.filter(i => i.isChecked).length;
   const totalCost = purchaseItems.reduce((sum, item) => sum + item.totalAmount, 0);
+  const additionalCount = purchaseItems.filter(i => i.isAdditional).length;
+
+  // 자재 검색 필터 (추가 품목용)
+  const filteredMaterials = useMemo(() => {
+    if (!materialSearchText) return materials.slice(0, 30);
+    const term = materialSearchText.toLowerCase();
+    return materials.filter(m => m.name.toLowerCase().includes(term)).slice(0, 30);
+  }, [materials, materialSearchText]);
+
   // 유효성 검사
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -133,7 +235,7 @@ export function ActualPurchaseForm({
       if (!item.actualMaterialName.trim()) {
         newErrors[`item-${index}-actualMaterialName`] = '자재명을 입력해주세요.';
       }
-      if (item.actualQuantity <= 0) {
+      if (item.actualQuantity <= 0 && item.status !== 'unavailable') {
         newErrors[`item-${index}-actualQuantity`] = '수량은 0보다 커야 합니다.';
       }
       if (item.actualPrice < 0) {
@@ -149,12 +251,11 @@ export function ActualPurchaseForm({
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
+
   // 폼 제출
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
     try {
       const purchaseData = {
         batchId: batch.id,
@@ -171,7 +272,8 @@ export function ActualPurchaseForm({
           status: item.status,
           memo: item.memo,
           purchaseDate: new Date(purchaseDate).toISOString(),
-          supplier: item.supplier
+          supplier: item.supplier,
+          isAdditional: item.isAdditional || false
         })),
         totalCost,
         notes
@@ -182,11 +284,9 @@ export function ActualPurchaseForm({
       }
     } catch (error) {
       console.error('구매 내역 저장 오류:', error);
-    } finally {
-      // setIsSubmitting(false); // 외부에서 loading prop으로 관리되므로 제거
     }
   };
-  // 상태별 색상 반환
+
   const getStatusColor = (status: PurchaseItemStatus) => {
     switch (status) {
       case 'purchased': return 'bg-green-100 text-green-800';
@@ -196,25 +296,37 @@ export function ActualPurchaseForm({
       default: return 'bg-gray-100 text-gray-800';
     }
   };
+
   return (
     <div className="space-y-6">
       {/* 헤더 */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-2xl font-bold">실제 구매 내역 입력</h2>
           <p className="text-gray-600">배치 번호: {batch.batchNumber}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className="text-sm">
             <Package className="w-4 h-4 mr-1" />
             {purchaseItems.length}개 품목
           </Badge>
+          <Badge variant="outline" className="text-sm bg-green-50">
+            <CheckCircle2 className="w-4 h-4 mr-1" />
+            {checkedCount}/{purchaseItems.length} 체크
+          </Badge>
+          {additionalCount > 0 && (
+            <Badge variant="outline" className="text-sm bg-blue-50 text-blue-700">
+              <Plus className="w-4 h-4 mr-1" />
+              추가 {additionalCount}개
+            </Badge>
+          )}
           <Badge variant="outline" className="text-sm">
             <ShoppingCart className="w-4 h-4 mr-1" />
             총 {totalCost.toLocaleString()}원
           </Badge>
         </div>
       </div>
+
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* 구매 기본 정보 */}
         <Card>
@@ -258,32 +370,176 @@ export function ActualPurchaseForm({
             </div>
           </CardContent>
         </Card>
+
+        {/* 필터 및 추가 도구 */}
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* 공급업체 필터 */}
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-muted-foreground" />
+                <Select value={supplierFilter} onValueChange={setSupplierFilter}>
+                  <SelectTrigger className="w-[180px] h-8 text-sm">
+                    <SelectValue placeholder="공급업체 필터" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체 공급업체</SelectItem>
+                    {supplierList.map(s => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                    <SelectItem value="unassigned">미지정</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 체크된 것만 보기 */}
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="showChecked"
+                  checked={showCheckedOnly}
+                  onCheckedChange={(v) => setShowCheckedOnly(!!v)}
+                />
+                <label htmlFor="showChecked" className="text-sm cursor-pointer">체크된 것만 보기</label>
+              </div>
+
+              <div className="flex-1" />
+
+              {/* 품목 추가 버튼 */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="text-blue-600 border-blue-200 hover:bg-blue-50"
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                품목 추가 (본사)
+                {showAddForm ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />}
+              </Button>
+            </div>
+
+            {/* 추가 품목 입력 폼 */}
+            {showAddForm && (
+              <div className="mt-4 p-4 border-2 border-dashed border-blue-200 rounded-lg bg-blue-50/50 space-y-3">
+                <p className="text-sm font-medium text-blue-700">📦 본사 추가 품목 (지점 요청 외)</p>
+                <div className="grid grid-cols-12 gap-2">
+                  {/* 자재 검색/선택 */}
+                  <div className="col-span-12 sm:col-span-4 relative" ref={(() => {
+                    const ref = React.createRef<HTMLDivElement>();
+                    return ref;
+                  })()}>
+                    <Label className="text-xs">품목명 *</Label>
+                    <Input
+                      placeholder="자재명 검색..."
+                      value={addItemName}
+                      onChange={(e) => {
+                        setAddItemName(e.target.value);
+                        setMaterialSearchText(e.target.value);
+                        setMaterialSearchOpen(!!e.target.value);
+                      }}
+                      onFocus={() => setMaterialSearchOpen(!!addItemName)}
+                      className="h-8 text-sm"
+                    />
+                    {materialSearchOpen && filteredMaterials.length > 0 && (
+                      <div className="absolute z-50 top-14 left-0 w-full max-h-48 overflow-y-auto bg-white border rounded-md shadow-lg">
+                        {filteredMaterials.map(m => (
+                          <button
+                            key={m.docId || m.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex justify-between"
+                            onClick={() => {
+                              setAddItemName(m.name);
+                              setAddItemPrice(m.price || 0);
+                              setMaterialSearchOpen(false);
+                            }}
+                          >
+                            <span>{m.name}</span>
+                            <span className="text-muted-foreground">₩{(m.price || 0).toLocaleString()}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="col-span-4 sm:col-span-2">
+                    <Label className="text-xs">수량</Label>
+                    <Input type="number" min="1" value={addItemQty} onChange={(e) => setAddItemQty(parseInt(e.target.value) || 1)} className="h-8 text-sm" />
+                  </div>
+                  <div className="col-span-4 sm:col-span-2">
+                    <Label className="text-xs">단가</Label>
+                    <Input type="number" min="0" value={addItemPrice} onChange={(e) => setAddItemPrice(parseFloat(e.target.value) || 0)} className="h-8 text-sm" />
+                  </div>
+                  <div className="col-span-4 sm:col-span-2">
+                    <Label className="text-xs">공급업체</Label>
+                    <Input placeholder="업체명" value={addItemSupplier} onChange={(e) => setAddItemSupplier(e.target.value)} className="h-8 text-sm" />
+                  </div>
+                  <div className="col-span-12 sm:col-span-2 flex items-end">
+                    <Button type="button" size="sm" onClick={handleAddExtraItem} disabled={!addItemName.trim()} className="w-full h-8">
+                      <Plus className="w-3 h-3 mr-1" /> 추가
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* 구매 품목 목록 */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5" />
-              구매 품목 상세 내역
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5" />
+                구매 품목 상세 내역
+                <Badge variant="secondary" className="ml-2">{filteredItems.length}개 표시</Badge>
+              </CardTitle>
+              <Button type="button" variant="ghost" size="sm" onClick={toggleAllChecks} className="text-xs">
+                {filteredItems.every(([_, item]) => item.isChecked) ? '전체 해제' : '전체 체크'}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-6">
-              {purchaseItems.map((item, index) => (
-                <div key={index} className="border rounded-lg p-4 space-y-4">
+            <div className="space-y-4">
+              {filteredItems.map(([index, item]) => (
+                <div
+                  key={index}
+                  className={`border rounded-lg p-4 space-y-4 transition-all ${item.isChecked ? 'bg-green-50/50 border-green-200' : ''
+                    } ${item.isAdditional ? 'border-blue-200 bg-blue-50/30' : ''}`}
+                >
                   {/* 품목 헤더 */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium">{item.originalMaterialName}</h4>
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      checked={item.isChecked}
+                      onCheckedChange={() => toggleCheck(index)}
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h4 className={`font-medium ${item.isChecked ? 'line-through text-muted-foreground' : ''}`}>
+                          {item.originalMaterialName}
+                        </h4>
+                        {item.isAdditional && (
+                          <Badge variant="outline" className="text-[10px] bg-blue-100 text-blue-700">본사 추가</Badge>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-600">
-                        요청 지점: {item.branchName} | 요청 수량: {item.requestedQuantity}개
+                        {item.isAdditional ? '본사 추가 품목' : `요청 지점: ${item.branchName} | 요청 수량: ${item.requestedQuantity}개`}
                       </p>
                     </div>
-                    <Badge className={getStatusColor(item.status)}>
-                      {PURCHASE_ITEM_STATUS_LABELS[item.status]}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge className={getStatusColor(item.status)}>
+                        {PURCHASE_ITEM_STATUS_LABELS[item.status]}
+                      </Badge>
+                      {item.isAdditional && (
+                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600" onClick={() => removeItem(index)}>
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
+
                   <Separator />
-                  {/* 구매 상태 선택 */}
+
+                  {/* 구매 상태 + 수량/가격 */}
                   <div className="grid grid-cols-4 gap-4">
                     <div>
                       <Label>구매 상태 *</Label>
@@ -309,38 +565,20 @@ export function ActualPurchaseForm({
                         <div>
                           <Label>실제 수량 *</Label>
                           <Input
-                            type="number"
-                            min="0"
-                            step="1"
+                            type="number" min="0" step="1"
                             value={item.actualQuantity}
-                            onChange={(e) =>
-                              updateItem(index, 'actualQuantity', parseInt(e.target.value) || 0)
-                            }
+                            onChange={(e) => updateItem(index, 'actualQuantity', parseInt(e.target.value) || 0)}
                             className={errors[`item-${index}-actualQuantity`] ? 'border-red-500' : ''}
                           />
-                          {errors[`item-${index}-actualQuantity`] && (
-                            <p className="text-sm text-red-500 mt-1">
-                              {errors[`item-${index}-actualQuantity`]}
-                            </p>
-                          )}
                         </div>
                         <div>
                           <Label>실제 단가 *</Label>
                           <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                            type="number" min="0" step="0.01"
                             value={item.actualPrice}
-                            onChange={(e) =>
-                              updateItem(index, 'actualPrice', parseFloat(e.target.value) || 0)
-                            }
+                            onChange={(e) => updateItem(index, 'actualPrice', parseFloat(e.target.value) || 0)}
                             className={errors[`item-${index}-actualPrice`] ? 'border-red-500' : ''}
                           />
-                          {errors[`item-${index}-actualPrice`] && (
-                            <p className="text-sm text-red-500 mt-1">
-                              {errors[`item-${index}-actualPrice`]}
-                            </p>
-                          )}
                         </div>
                         <div>
                           <Label>총액</Label>
@@ -351,6 +589,7 @@ export function ActualPurchaseForm({
                       </>
                     )}
                   </div>
+
                   {/* 대체품 정보 */}
                   {item.status === 'substituted' && (
                     <div className="grid grid-cols-2 gap-4 p-3 bg-yellow-50 rounded-lg">
@@ -359,9 +598,7 @@ export function ActualPurchaseForm({
                         <Input
                           placeholder="대체품 자재 ID"
                           value={item.actualMaterialId || ''}
-                          onChange={(e) =>
-                            updateItem(index, 'actualMaterialId', e.target.value)
-                          }
+                          onChange={(e) => updateItem(index, 'actualMaterialId', e.target.value)}
                         />
                       </div>
                       <div>
@@ -369,19 +606,13 @@ export function ActualPurchaseForm({
                         <Input
                           placeholder="실제 구매한 대체품명"
                           value={item.actualMaterialName}
-                          onChange={(e) =>
-                            updateItem(index, 'actualMaterialName', e.target.value)
-                          }
+                          onChange={(e) => updateItem(index, 'actualMaterialName', e.target.value)}
                           className={errors[`item-${index}-actualMaterialName`] ? 'border-red-500' : ''}
                         />
-                        {errors[`item-${index}-actualMaterialName`] && (
-                          <p className="text-sm text-red-500 mt-1">
-                            {errors[`item-${index}-actualMaterialName`]}
-                          </p>
-                        )}
                       </div>
                     </div>
                   )}
+
                   {/* 공급업체 및 메모 */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="relative">
@@ -392,9 +623,7 @@ export function ActualPurchaseForm({
                           placeholder="거래처 검색 또는 직접 입력..."
                           value={supplierSearchIndex === index ? supplierSearchText : (item.supplier || '')}
                           onChange={(e) => {
-                            if (supplierSearchIndex !== index) {
-                              setSupplierSearchIndex(index);
-                            }
+                            if (supplierSearchIndex !== index) setSupplierSearchIndex(index);
                             setSupplierSearchText(e.target.value);
                             updateItem(index, 'supplier', e.target.value);
                           }}
@@ -402,10 +631,7 @@ export function ActualPurchaseForm({
                             setSupplierSearchIndex(index);
                             setSupplierSearchText(item.supplier || '');
                           }}
-                          onBlur={() => {
-                            // delay to allow click on dropdown
-                            setTimeout(() => setSupplierSearchIndex(null), 200);
-                          }}
+                          onBlur={() => setTimeout(() => setSupplierSearchIndex(null), 200)}
                           className="pl-9"
                         />
                         {item.supplier && supplierSearchIndex !== index && (
@@ -418,7 +644,6 @@ export function ActualPurchaseForm({
                           </button>
                         )}
                       </div>
-                      {/* 거래처 검색 드롭다운 */}
                       {supplierSearchIndex === index && (
                         <div className="absolute z-30 mt-1 w-full max-h-48 overflow-y-auto bg-background border rounded-md shadow-lg">
                           {partners
@@ -467,39 +692,43 @@ export function ActualPurchaseForm({
                         onChange={(e) => updateItem(index, 'memo', e.target.value)}
                         className={errors[`item-${index}-memo`] ? 'border-red-500' : ''}
                       />
-                      {errors[`item-${index}-memo`] && (
-                        <p className="text-sm text-red-500 mt-1">
-                          {errors[`item-${index}-memo`]}
-                        </p>
-                      )}
                     </div>
                   </div>
-                  {/* 요청 vs 실제 비교 */}
-                  <div className="bg-gray-50 p-3 rounded-lg">
-                    <div className="grid grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-600">요청 수량:</span>
-                        <span className="ml-2 font-medium">{item.requestedQuantity}개</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">실제 수량:</span>
-                        <span className="ml-2 font-medium">{item.actualQuantity}개</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">수량 차이:</span>
-                        <span className={`ml-2 font-medium ${item.actualQuantity - item.requestedQuantity >= 0 ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                          {item.actualQuantity - item.requestedQuantity > 0 ? '+' : ''}
-                          {item.actualQuantity - item.requestedQuantity}개
-                        </span>
+
+                  {/* 요청 vs 실제 비교 (요청 품목만) */}
+                  {!item.isAdditional && (
+                    <div className="bg-gray-50 p-3 rounded-lg">
+                      <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-600">요청 수량:</span>
+                          <span className="ml-2 font-medium">{item.requestedQuantity}개</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">실제 수량:</span>
+                          <span className="ml-2 font-medium">{item.actualQuantity}개</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">수량 차이:</span>
+                          <span className={`ml-2 font-medium ${item.actualQuantity - item.requestedQuantity >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {item.actualQuantity - item.requestedQuantity > 0 ? '+' : ''}
+                            {item.actualQuantity - item.requestedQuantity}개
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               ))}
+
+              {filteredItems.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  {showCheckedOnly ? '체크된 품목이 없습니다.' : '표시할 품목이 없습니다.'}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
+
         {/* 경고 메시지 */}
         {Object.keys(errors).length > 0 && (
           <Alert>
@@ -509,21 +738,13 @@ export function ActualPurchaseForm({
             </AlertDescription>
           </Alert>
         )}
+
         {/* 액션 버튼 */}
         <div className="flex justify-end gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
-            disabled={loading}
-          >
+          <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
             취소
           </Button>
-          <Button
-            type="submit"
-            disabled={loading}
-            className="min-w-[120px]"
-          >
+          <Button type="submit" disabled={loading} className="min-w-[120px]">
             {loading ? '저장 중...' : '구매 내역 저장'}
           </Button>
         </div>

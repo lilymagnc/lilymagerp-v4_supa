@@ -85,22 +85,38 @@ export function useMaterials() {
             setLoading(true);
             fetchStats(filters?.branch);
 
-            let query = supabase.from('materials').select('*');
-            if (filters?.branch && filters.branch !== 'all') query = query.eq('branch', filters.branch);
-            if (filters?.mainCategory && filters.mainCategory !== 'all') query = query.eq('main_category', filters.mainCategory);
-            if (filters?.midCategory && filters.midCategory !== 'all') query = query.eq('mid_category', filters.midCategory);
-            if (filters?.searchTerm) query = query.ilike('name', `%${filters.searchTerm}%`);
+            let allData: any[] = [];
+            let from = 0;
+            const step = 1000;
+            let isFetching = true;
 
-            const pageSize = filters?.pageSize || 50;
-            const { data, error } = await query
-                .order('id', { ascending: true })
-                .range(0, pageSize - 1);
+            while (isFetching) {
+                let query = supabase.from('materials').select('*');
+                if (filters?.branch && filters.branch !== 'all') query = query.eq('branch', filters.branch);
+                if (filters?.mainCategory && filters.mainCategory !== 'all') query = query.eq('main_category', filters.mainCategory);
+                if (filters?.midCategory && filters.midCategory !== 'all') query = query.eq('mid_category', filters.midCategory);
+                if (filters?.searchTerm) query = query.ilike('name', `%${filters.searchTerm}%`);
 
-            if (error) throw error;
+                const { data, error } = await query
+                    .order('id', { ascending: true })
+                    .range(from, from + step - 1);
 
-            setMaterials((data || []).map(mapRowToMaterial));
-            setLastIndex(pageSize);
-            setHasMore((data || []).length >= pageSize);
+                if (error) throw error;
+
+                if (!data || data.length === 0) {
+                    isFetching = false;
+                } else {
+                    allData = allData.concat(data);
+                    if (data.length < step) {
+                        isFetching = false;
+                    } else {
+                        from += step;
+                    }
+                }
+            }
+
+            setMaterials(allData.map(mapRowToMaterial));
+            setHasMore(false); // 전체 로드 완료
         } catch (error) {
             console.error("Error fetching materials: ", error);
             toast({ variant: 'destructive', title: '오류', description: '자재 정보를 불러오는 중 오류가 발생했습니다.' });
@@ -109,62 +125,58 @@ export function useMaterials() {
         }
     }, [toast, fetchStats]);
 
-    const loadMore = async (filters?: {
-        branch?: string;
-        mainCategory?: string;
-        midCategory?: string;
-        pageSize?: number;
-    }) => {
-        if (!hasMore) return;
-        try {
-            setLoading(true);
-            const pageSize = filters?.pageSize || 50;
-            let query = supabase.from('materials').select('*');
-            if (filters?.branch && filters.branch !== 'all') query = query.eq('branch', filters.branch);
-            if (filters?.mainCategory && filters.mainCategory !== 'all') query = query.eq('main_category', filters.mainCategory);
-            if (filters?.midCategory && filters.midCategory !== 'all') query = query.eq('mid_category', filters.midCategory);
-
-            const { data, error } = await query
-                .order('id', { ascending: true })
-                .range(lastIndex, lastIndex + pageSize - 1);
-
-            if (error) throw error;
-
-            const newMaterials = (data || []).map(mapRowToMaterial);
-            setMaterials(prev => [...prev, ...newMaterials]);
-            setLastIndex(prev => prev + pageSize);
-            setHasMore(newMaterials.length >= pageSize);
-        } catch (error) {
-            console.error("Error loading more materials:", error);
-        } finally {
-            setLoading(false);
-        }
+    const loadMore = async () => {
+        // 더 이상 사용되지 않음 (전체 로드됨)
+        return;
     };
 
-    const generateNewId = async (mainCategory: string) => {
-        let prefix = 'MM'; // 기본 코드는 MM (자재/기타)
-        if (mainCategory === '생화') prefix = 'MF';
-        else if (mainCategory === '분화') prefix = 'MP';
+    // ── 대분류 → 접두어 매핑 ──
+    const MAIN_CAT_PREFIX: Record<string, string> = {
+        '생화': 'MF', '식물': 'MP', '바구니 / 화기': 'MB',
+        '소모품 및 부자재': 'MM', '조화': 'MA', '프리저브드': 'MR',
+    };
 
+    // ── 중분류 → 코드 매핑 ──
+    const MID_CAT_CODE: Record<string, Record<string, string>> = {
+        'MF': { '장미류': '1', '거베라류': '2', '폼플라워': '3', '필러플라워': '4', '라인플라워': '5', '소재(그린)': '6', '국화류': '7', '카네이션류': '8', '리시안서스류': '9', '기타': '0', '매스플라워': 'A' },
+        'MP': { '관엽소형': '1', '관엽중형': '2', '관엽대형': '3', '서양란': '6', '동양란': '7', '기타식물': 'D', '다육선인장소형': '8', '다육선인장중형': '9', '다육선인장대형': '0' },
+        'MB': { '바구니': '1', '도자기': '2', '유리': '3', '테라조': '4', '테라코타(토분)': '5', '플라스틱': '6', '기타': '7' },
+        'MM': { '원예자재': '1', '데코자재': '2', '포장재': '3', '리본/텍': '4', '기타': '5', '제작도구': '6' },
+        'MA': { '장미류': '1', '카네이션류': '2', '리시안서스류': '3', '국화류': '4', '거베라류': '5', '폼플라워': '6', '라인플라워': '7', '필러플라워': '8', '소재(그린)': '9', '트리류': '0', '매스플라워': 'A' },
+        'MR': { '플라워': '1', '잎소재': '2', '열매': '3', '폼플라워': '4', '기타': '5' },
+    };
+
+    // ── 지점 → 코드 매핑 ──
+    const BRANCH_CODE: Record<string, string> = {
+        '릴리맥여의도점': '1', '릴리맥여의도2호점': '2',
+        '릴리맥광화문점': '3', '릴리맥NC이스트폴점': '4',
+    };
+
+    const generateNewId = async (mainCategory: string, midCategory?: string, branch?: string) => {
+        const prefix = MAIN_CAT_PREFIX[mainCategory] || 'MM';
+        const midCode = (midCategory && MID_CAT_CODE[prefix]?.[midCategory]) || '0';
+        const branchCode = (branch && BRANCH_CODE[branch]) || '1';
+        const pattern = `${prefix}${midCode}`;
+
+        // 해당 prefix+midCode 조합의 기존 최대 순번 조회
         const { data } = await supabase
             .from('materials')
             .select('id')
-            .like('id', `${prefix}%`);
+            .like('id', `${pattern}%`);
 
-        let maxNumber = 0;
+        let maxSeq = 0;
         if (data && data.length > 0) {
-            const regex = new RegExp(`^${prefix}(\\d+)$`);
+            // ID 형식: XX + Y + ZZZZ + B (8자리)
+            const regex = new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d{4})\\d$`);
             for (const item of data) {
                 const match = item.id.match(regex);
                 if (match) {
-                    const num = parseInt(match[1], 10);
-                    if (num > maxNumber) {
-                        maxNumber = num;
-                    }
+                    const seq = parseInt(match[1], 10);
+                    if (seq > maxSeq) maxSeq = seq;
                 }
             }
         }
-        return `${prefix}${String(maxNumber + 1).padStart(5, '0')}`;
+        return `${pattern}${String(maxSeq + 1).padStart(4, '0')}${branchCode}`;
     }
 
     const syncCategory = async (main: string, mid: string) => {
@@ -185,7 +197,7 @@ export function useMaterials() {
     const addMaterial = async (data: MaterialFormValues) => {
         setLoading(true);
         try {
-            const newId = await generateNewId(data.mainCategory);
+            const newId = await generateNewId(data.mainCategory, data.midCategory, data.branch);
             const { error } = await supabase.from('materials').insert([{
                 id: newId,
                 name: data.name,
@@ -268,13 +280,18 @@ export function useMaterials() {
     ) => {
         for (const item of items) {
             try {
-                const { data: material } = await supabase.from('materials').select('stock').eq('id', item.id).eq('branch', branchName).single();
+                const { data: material } = await supabase.from('materials').select('stock, price, supplier').eq('id', item.id).eq('branch', branchName).single();
                 if (material) {
                     const currentStock = material.stock || 0;
                     const change = type === 'in' ? item.quantity : -item.quantity;
                     const newStock = currentStock + change;
 
-                    await supabase.from('materials').update({ stock: newStock, updated_at: new Date().toISOString() }).eq('id', item.id).eq('branch', branchName);
+                    await supabase.from('materials').update({
+                        stock: newStock,
+                        price: item.price || material.price, // Update master price
+                        supplier: item.supplier || material.supplier, // Update master supplier
+                        updated_at: new Date().toISOString()
+                    }).eq('id', item.id).eq('branch', branchName);
 
                     await supabase.from('stock_history').insert([{
                         id: crypto.randomUUID(),
@@ -289,6 +306,9 @@ export function useMaterials() {
                         resulting_stock: newStock,
                         branch: branchName,
                         operator,
+                        price: item.price, // New field for tracking
+                        supplier: item.supplier, // New field for tracking
+                        total_amount: (item.price || 0) * item.quantity // New field for tracking
                     }]);
                 }
             } catch (error) {

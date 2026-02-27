@@ -69,16 +69,22 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
   const availableBranches = propBranches || branches;
   const PREDEFINED_CATEGORIES = {
     '생화': [
-      '장미류', '카네이션류', '리시안서스류', '국화/소국류', '거베라류', '매스플라워', '폼플라워', '라인플라워', '필러플라워', '소재(그린)'
+      '장미류', '카네이션류', '리시안서스류', '국화류', '거베라류', '매스플라워', '폼플라워', '라인플라워', '필러플라워', '소재(그린)', '기타'
+    ],
+    '조화': [
+      '장미류', '카네이션류', '리시안서스류', '국화류', '거베라류', '매스플라워', '폼플라워', '라인플라워', '필러플라워', '소재(그린)', '트리류'
+    ],
+    '프리저브드': [
+      '플라워', '잎소재', '열매', '폼플라워', '기타'
     ],
     '식물': [
-      '관엽 대형', '관엽 중형', '관엽 소형', '다육 중형', '다육 소형', '선인장 대형', '선인장 중형', '선인장 소형', '동양란', '서양란', '기타 식물'
+      '관엽소형', '관엽중형', '관엽대형', '다육선인장소형', '다육선인장중형', '다육선인장대형', '서양란', '동양란', '기타식물'
     ],
     '바구니 / 화기': [
-      '바구니', '도자기', '테라코타(토분)', '유리', '플라스틱'
+      '바구니', '도자기', '테라코타(토분)', '유리', '플라스틱', '테라조', '기타'
     ],
     '소모품 및 부자재': [
-      '포장재', '리본/텍', '제작도구', '원예자재'
+      '원예자재', '데코자재', '제작도구', '포장재', '리본/텍', '기타'
     ]
   };
   type PREDEFINED_CATEGORIES_KEYS = keyof typeof PREDEFINED_CATEGORIES;
@@ -140,7 +146,7 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
           updated.midCategory = '리시안서스류';
         } else if (name.includes('국화') || name.includes('소국') || name.includes('대국')) {
           updated.mainCategory = '생화';
-          updated.midCategory = '국화/소국류';
+          updated.midCategory = '국화류';
         } else if (name.includes('거베라')) {
           updated.mainCategory = '생화';
           updated.midCategory = '거베라류';
@@ -260,9 +266,16 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>색상</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Pink" {...field} />
-                    </FormControl>
+                    <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger><SelectValue placeholder="색상 선택" /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {['레드', '핑크', '오렌지', '옐로우', '베이지', '블루', '보라', '흰색', '와인', '피치', '기타'].map(color => (
+                          <SelectItem key={color} value={color}>{color}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}

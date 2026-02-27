@@ -7,10 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Printer, FileDown, Edit2, ShoppingCart } from 'lucide-react';
+import { Printer, FileDown, Edit2, ShoppingCart, Check, ChevronsUpDown, Search } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { MaterialRequest } from '@/types/material-request';
 import { useMaterials } from '@/hooks/use-materials';
+import { usePartners } from '@/hooks/use-partners';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 
 interface MaterialPivotTableProps {
   requests: MaterialRequest[];
@@ -18,7 +22,7 @@ interface MaterialPivotTableProps {
 }
 
 interface PivotData {
-  [materialId: string]: {
+  [materialName: string]: {
     materialName: string;
     supplier: string;
     price: number;
@@ -28,12 +32,26 @@ interface PivotData {
 }
 
 export function MaterialPivotTable({ requests, onPurchaseStart }: MaterialPivotTableProps) {
-  const { materials } = useMaterials();
+  const { materials, fetchMaterials } = useMaterials();
+  const { partners } = usePartners();
+
+  useEffect(() => {
+    if (materials.length === 0) {
+      fetchMaterials();
+    }
+  }, [materials.length, fetchMaterials]);
+
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
   const [supplierOverrides, setSupplierOverrides] = useState<Record<string, string>>({});
   const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>({});
   const [editingSupplier, setEditingSupplier] = useState<string | null>(null);
   const [editingPrice, setEditingPrice] = useState<string | null>(null);
+  const [supplierSearch, setSupplierSearch] = useState("");
+
+  const filteredPartners = useMemo(() => {
+    if (!supplierSearch) return partners;
+    return partners.filter(p => p.name.toLowerCase().includes(supplierSearch.toLowerCase()));
+  }, [partners, supplierSearch]);
 
   const { pivotData, uniqueColumns } = useMemo(() => {
     const data: PivotData = {};
@@ -57,18 +75,19 @@ export function MaterialPivotTable({ requests, onPurchaseStart }: MaterialPivotT
       columnSet.add(columnKey);
 
       req.requestedItems.forEach(item => {
-        if (!data[item.materialId]) {
-          const originalMaterial = materials.find(m => m.id === item.materialId.split('-')[0]);
-          data[item.materialId] = {
+        const groupKey = item.materialName;
+        if (!data[groupKey]) {
+          const originalMaterial = materials.find(m => m.name === item.materialName);
+          data[groupKey] = {
             materialName: item.materialName,
             supplier: originalMaterial?.supplier || '미지정',
-            price: originalMaterial?.price || 0,
+            price: originalMaterial?.price || item.estimatedPrice || 0,
             total: 0,
             values: {},
           };
         }
-        data[item.materialId].values[columnKey] =
-          (data[item.materialId].values[columnKey] || 0) + item.requestedQuantity;
+        data[groupKey].values[columnKey] =
+          (data[groupKey].values[columnKey] || 0) + item.requestedQuantity;
       });
     });
 
@@ -194,22 +213,85 @@ export function MaterialPivotTable({ requests, onPurchaseStart }: MaterialPivotT
                   {data.materialName}
                   {editingSupplier === id ? (
                     <div className="flex items-center gap-1 mt-1">
-                      <Input
-                        defaultValue={supplierOverrides[id] || data.supplier}
-                        autoFocus
-                        className="h-7 text-xs"
-                        placeholder="구매처 메모 (선택)"
-                        onBlur={(e) => {
-                          handleSupplierUpdate(id, e.target.value);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleSupplierUpdate(id, e.currentTarget.value);
-                          } else if (e.key === 'Escape') {
+                      <Popover
+                        open={editingSupplier === id}
+                        onOpenChange={(open) => {
+                          if (!open) {
                             setEditingSupplier(null);
+                            setSupplierSearch("");
                           }
                         }}
-                      />
+                      >
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={editingSupplier === id}
+                            className="h-8 text-xs w-[160px] justify-between px-2"
+                          >
+                            <span className="truncate">
+                              {supplierOverrides[id] || data.supplier}
+                            </span>
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[200px] p-0" align="start">
+                          <div className="flex flex-col w-full bg-white border rounded-md shadow-md">
+                            <div className="flex items-center border-b px-2 py-2">
+                              <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+                              <input
+                                placeholder="구매처 검색..."
+                                value={supplierSearch}
+                                autoFocus
+                                className="flex h-8 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                                onChange={(e) => setSupplierSearch(e.target.value)}
+                              />
+                            </div>
+                            <div className="max-h-[300px] overflow-y-auto p-1">
+                              <div
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  handleSupplierUpdate(id, "미지정");
+                                  setSupplierSearch("");
+                                }}
+                                className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground transition-colors"
+                              >
+                                미지정
+                                <Check
+                                  className={cn(
+                                    "ml-auto h-4 w-4",
+                                    (supplierOverrides[id] || data.supplier) === "미지정" ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                              </div>
+                              {filteredPartners.map((p) => (
+                                <div
+                                  key={p.id}
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => {
+                                    handleSupplierUpdate(id, p.name);
+                                    setSupplierSearch("");
+                                  }}
+                                  className="relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground transition-colors"
+                                >
+                                  {p.name}
+                                  <Check
+                                    className={cn(
+                                      "ml-auto h-4 w-4",
+                                      (supplierOverrides[id] || data.supplier) === p.name ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                </div>
+                              ))}
+                              {filteredPartners.length === 0 && supplierSearch && (
+                                <div className="p-4 text-center text-xs text-muted-foreground">
+                                  검색 결과가 없습니다.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                   ) : (
                     <div
@@ -277,16 +359,16 @@ export function MaterialPivotTable({ requests, onPurchaseStart }: MaterialPivotT
               <Button
                 size="sm"
                 onClick={() => {
-                  // 체크된 품목의 materialId로 관련 요청 ID들 추출
-                  const checkedMaterialIds = Object.entries(checkedItems)
+                  // 체크된 품목의 materialName으로 관련 요청 ID들 추출
+                  const checkedMaterialNames = Object.entries(checkedItems)
                     .filter(([_, checked]) => checked)
-                    .map(([id]) => id);
+                    .map(([name]) => name);
 
                   const relatedRequestIds = new Set<string>();
                   const activeRequests = requests.filter(req => !['shipping', 'delivered', 'completed'].includes(req.status));
                   activeRequests.forEach(req => {
                     req.requestedItems.forEach(item => {
-                      if (checkedMaterialIds.includes(item.materialId)) {
+                      if (checkedMaterialNames.includes(item.materialName)) {
                         relatedRequestIds.add(req.id);
                       }
                     });

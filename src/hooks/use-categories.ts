@@ -82,14 +82,14 @@ export function useCategories() {
   };
 
   const getMainCategories = () => {
-    return categories.filter(cat => cat.type === 'main').map(cat => cat.name);
+    return Array.from(new Set(categories.filter(cat => cat.type === 'main').map(cat => cat.name)));
   };
 
   const getMidCategories = (mainCategory?: string) => {
     if (mainCategory) {
-      return categories.filter(cat => cat.type === 'mid' && cat.parentCategory === mainCategory).map(cat => cat.name);
+      return Array.from(new Set(categories.filter(cat => cat.type === 'mid' && cat.parentCategory === mainCategory).map(cat => cat.name)));
     }
-    return categories.filter(cat => cat.type === 'mid').map(cat => cat.name);
+    return Array.from(new Set(categories.filter(cat => cat.type === 'mid').map(cat => cat.name)));
   };
 
   return {

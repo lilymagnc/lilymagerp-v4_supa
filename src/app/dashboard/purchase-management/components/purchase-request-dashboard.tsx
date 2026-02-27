@@ -28,8 +28,8 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
   const [currentBatch, setCurrentBatch] = useState<PurchaseBatch | null>(null);
   const { toast } = useToast();
   const { updateRequestStatus } = useMaterialRequests();
-  const { createPurchaseBatch, loading: batchLoading } = usePurchaseBatches();
-  const { user } = useAuth(); // useAuth 훅을 사용하여 user 객체 가져오기 // usePurchaseBatches 훅에서 createPurchaseBatch 가져오기
+  const { batches, createPurchaseBatch, loading: batchLoading } = usePurchaseBatches();
+  const { user } = useAuth();
   // 처리 가능한 요청들 (제출됨, 검토중 상태)
   const processableRequests = useMemo(() => {
     return requests.filter(request =>
@@ -156,8 +156,19 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
   };
   // 실제 구매 내역 입력 시작
   const startActualPurchase = async (purchasingRequestIds: string[]) => {
+    // 1. 이미 존재하는 배치 중 해당 요청이 포함된 것(planning 상태) 확인
+    const existingBatch = batches.find(b =>
+      b.status === 'planning' && purchasingRequestIds.some(id => b.includedRequests.includes(id))
+    );
+
+    if (existingBatch) {
+      setCurrentBatch(existingBatch);
+      setShowActualPurchaseForm(true);
+      return;
+    }
+
+    // 2. 없으면 실제 구매 배치 생성
     const batchRequests = requests.filter(r => purchasingRequestIds.includes(r.id));
-    // 실제 구매 배치 생성
     try {
       const newBatch = await createPurchaseBatch(
         {

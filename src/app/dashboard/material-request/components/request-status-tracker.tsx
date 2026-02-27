@@ -31,12 +31,16 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useMaterialRequests } from '@/hooks/use-material-requests';
+import { useMaterials } from '@/hooks/use-materials';
+import { useSimpleExpenses } from '@/hooks/use-simple-expenses';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import type { MaterialRequest, RequestStatus } from '@/types/material-request';
 import { REQUEST_STATUS_LABELS, URGENCY_LABELS } from '@/types/material-request';
 import { parseDate } from '@/lib/date-utils';
 import { RequestDetailDialog } from '@/app/dashboard/purchase-management/components/request-detail-dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { DeliveryConfirmDialog } from './delivery-confirm-dialog';
 
 interface RequestStatusTrackerProps {
   selectedBranch?: string;
@@ -46,9 +50,12 @@ interface RequestStatusTrackerProps {
 export function RequestStatusTracker({ selectedBranch, onEditRequest }: RequestStatusTrackerProps) {
   const { user } = useAuth();
   const { getRequestsByBranch, getRequestsByBranchId, getAllRequests, updateRequestStatus, deleteRequest, loading } = useMaterialRequests();
+  const { updateStock } = useMaterials();
+  const { deleteExpenseByRequestId } = useSimpleExpenses({ enableRealtime: false });
   const { toast } = useToast();
   const [requests, setRequests] = useState<MaterialRequest[]>([]);
   const [detailRequest, setDetailRequest] = useState<MaterialRequest | null>(null);
+  const [deliveryConfirmRequest, setDeliveryConfirmRequest] = useState<MaterialRequest | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [refreshKey, setRefreshKey] = useState(0); // 새로고침을 위한 키
   const [displayCount, setDisplayCount] = useState(5); // 표시할 요청 수
@@ -349,30 +356,31 @@ export function RequestStatusTracker({ selectedBranch, onEditRequest }: RequestS
                   <div key={request.id} className="border rounded-lg">
                     {/* 요청 헤더 */}
                     <div
-                      className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                      className="p-2.5 sm:p-3 cursor-pointer hover:bg-muted/50 transition-colors"
                       onClick={() => setDetailRequest(request)}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          {getStatusIcon(request.status)}
-                          <div>
-                            <p className="font-medium text-sm">{request.requestNumber}</p>
-                            <p className="text-xs text-muted-foreground">
+                      {/* 1행: 요청번호 + 배지 */}
+                      <div className="flex items-start sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                          <div className="shrink-0">{getStatusIcon(request.status)}</div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-xs sm:text-sm">{request.requestNumber}</p>
+                            <p className="text-[10px] sm:text-xs text-muted-foreground truncate">
                               {formatRelativeTime(request.createdAt)} • {formatDate(request.createdAt)}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 sm:gap-2 shrink-0 flex-wrap justify-end">
                           {/* 배송 예정일 */}
                           {['shipping', 'purchased'].includes(request.status) && (
-                            <div className="text-xs text-muted-foreground flex items-center gap-1">
+                            <div className="text-[10px] sm:text-xs text-muted-foreground flex items-center gap-1 hidden sm:flex">
                               <Calendar className="h-3 w-3" />
                               {getEstimatedDeliveryDate(request)}
                             </div>
                           )}
                           {/* 비용 비교 표시 */}
                           {comparison && (
-                            <div className="flex items-center gap-1 text-xs">
+                            <div className="flex items-center gap-0.5 text-[10px] sm:text-xs hidden sm:flex">
                               {comparison.isHigher ? (
                                 <TrendingUp className="h-3 w-3 text-red-500" />
                               ) : comparison.isLower ? (
@@ -388,111 +396,151 @@ export function RequestStatusTracker({ selectedBranch, onEditRequest }: RequestS
                               </span>
                             </div>
                           )}
-                          <Badge variant="outline" className="text-xs">
+                          <Badge variant="outline" className="text-[10px] sm:text-xs">
                             {REQUEST_STATUS_LABELS[request.status]}
                           </Badge>
                           {request.requestedItems.some(item => item.urgency === 'urgent') && (
-                            <Badge variant="destructive" className="text-xs">
+                            <Badge variant="destructive" className="text-[10px] sm:text-xs">
                               긴급
                             </Badge>
                           )}
-                          {/* 배송완료 버튼 - 배송중 상태일 때 표시 */}
-                          {request.status === 'shipping' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                try {
-                                  await updateRequestStatus(request.id, 'delivered');
-                                  setRefreshKey(prev => prev + 1);
-                                  toast({
-                                    title: "배송 완료",
-                                    description: "배송이 완료 처리되었습니다."
-                                  });
-                                } catch (error) {
-                                  toast({
-                                    variant: "destructive",
-                                    title: "오류",
-                                    description: "배송 완료 처리 중 오류가 발생했습니다."
-                                  });
-                                }
-                              }}
-                            >
-                              <Truck className="h-3 w-3 mr-1" />
-                              배송완료
-                            </Button>
-                          )}
-                          {/* 입고완료 버튼 - 배송완료 상태일 때 표시 */}
-                          {request.status === 'delivered' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                try {
-                                  await updateRequestStatus(request.id, 'completed');
-                                  setRefreshKey(prev => prev + 1);
-                                  toast({
-                                    title: "입고 완료",
-                                    description: "자재 입고가 완료 처리되었습니다."
-                                  });
-                                } catch (error) {
-                                  toast({
-                                    variant: "destructive",
-                                    title: "오류",
-                                    description: "입고 완료 처리 중 오류가 발생했습니다."
-                                  });
-                                }
-                              }}
-                            >
-                              <Package className="h-3 w-3 mr-1" />
-                              입고완료
-                            </Button>
-                          )}
-                          {/* 수정/취소 버튼 - 완료/배송완료가 아닐 때 표시 */}
-                          {onEditRequest && !['completed', 'delivered'].includes(request.status) && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (window.confirm('기존 요청을 취소하고 장바구니로 다시 불러와 수정하시겠습니까?')) {
-                                  onEditRequest(request);
-                                }
-                              }}
-                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                            >
-                              <Edit2 className="h-3 w-3 mr-1" />
-                              수정
-                            </Button>
-                          )}
-                          {!['completed', 'delivered'].includes(request.status) && (
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                if (window.confirm('정말 이 자재 요청을 취소하시겠습니까?')) {
-                                  try {
-                                    await deleteRequest(request.id);
-                                    setRefreshKey(prev => prev + 1);
-                                  } catch (error) {
-                                    // 오류 처리는 deleteRequest 내부에 toast로 됨
-                                  }
-                                }
-                              }}
-                            >
-                              <Trash2 className="h-3 w-3 mr-1" />
-                              취소
-                            </Button>
-                          )}
-                          <Button variant="ghost" size="sm" className="px-2">
-                            <Eye className="h-4 w-4 mr-1" />
-                            상세
-                          </Button>
                         </div>
                       </div>
+
+                      {/* 2행: 액션 버튼들 (줄바꿈 허용) */}
+                      <div className="flex items-center gap-1 sm:gap-1.5 mt-2 flex-wrap">
+                        {/* 배송 및 입고처리 버튼 - 배송중/도착 상태일 때 표시 */}
+                        {(request.status === 'shipping' || request.status === 'delivered') && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[10px] sm:text-xs px-2 sm:px-3 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeliveryConfirmRequest(request);
+                            }}
+                          >
+                            <Package className="h-3 w-3 mr-0.5 sm:mr-1" />
+                            배송/입고 처리
+                          </Button>
+                        )}
+                        {/* 배송취소 버튼 - 도착 상태일 때 표시 */}
+                        {request.status === 'delivered' && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-[10px] sm:text-xs px-2 sm:px-3 text-red-500 border-red-200 hover:bg-red-50"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                배송취소
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>배송 완료를 취소하시겠습니까?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  상태가 &quot;배송중&quot;으로 복원됩니다.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>닫기</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-red-500 hover:bg-red-600"
+                                  onClick={async () => {
+                                    try {
+                                      // 1. 상태 복원 (delivered → shipping)
+                                      await updateRequestStatus(request.id, 'shipping');
+                                      setRefreshKey(prev => prev + 1);
+                                      toast({ title: "배송 취소", description: "배송이 취소(배송중으로 복원)되었습니다." });
+                                    } catch (error) {
+                                      toast({ variant: "destructive", title: "오류", description: "배송 취소 처리 중 오류가 발생했습니다." });
+                                    }
+                                  }}
+                                >
+                                  배송 취소
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                        {/* 수정 버튼 */}
+                        {onEditRequest && !['completed', 'delivered'].includes(request.status) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[10px] sm:text-xs px-2 sm:px-3 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm('기존 요청을 취소하고 장바구니로 다시 불러와 수정하시겠습니까?')) {
+                                onEditRequest(request);
+                              }
+                            }}
+                          >
+                            <Edit2 className="h-3 w-3 mr-0.5 sm:mr-1" />
+                            수정
+                          </Button>
+                        )}
+                        {/* 취소 버튼 - 진행 중인 요청만 */}
+                        {!['completed', 'delivered'].includes(request.status) && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="h-7 text-[10px] sm:text-xs px-2 sm:px-3"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (window.confirm('정말 이 자재 요청을 취소하시겠습니까?')) {
+                                try {
+                                  await deleteRequest(request.id);
+                                  setRefreshKey(prev => prev + 1);
+                                } catch (error) {
+                                  // 오류 처리는 deleteRequest 내부에 toast로 됨
+                                }
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3 mr-0.5 sm:mr-1" />
+                            취소
+                          </Button>
+                        )}
+
+                        <div className="flex-1" />
+
+                        {/* 삭제 (모든 상태) */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-red-500 hover:text-red-700 hover:bg-red-50 px-1.5 sm:px-2"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`요청번호 ${request.requestNumber}을(를) 완전히 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) {
+                              try {
+                                await deleteRequest(request.id);
+                                setRefreshKey(prev => prev + 1);
+                                toast({
+                                  title: "삭제 완료",
+                                  description: `요청 ${request.requestNumber}이(가) 삭제되었습니다.`
+                                });
+                              } catch (error) {
+                                toast({
+                                  variant: "destructive",
+                                  title: "삭제 실패",
+                                  description: "요청 삭제 중 오류가 발생했습니다."
+                                });
+                              }
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                        {/* 상세 보기 */}
+                        <Button variant="ghost" size="sm" className="h-7 text-[10px] sm:text-xs px-1.5 sm:px-2">
+                          <Eye className="h-3.5 w-3.5 sm:mr-1" />
+                          <span className="hidden sm:inline">상세</span>
+                        </Button>
+                      </div>
+
                       {/* 진행률 표시 */}
                       <div className="mt-2">
                         <Progress
@@ -532,6 +580,14 @@ export function RequestStatusTracker({ selectedBranch, onEditRequest }: RequestS
             setDetailRequest(null);
             setRefreshKey(prev => prev + 1);
           } catch (e) { /* error handled in deleteRequest */ }
+        }}
+      />
+      <DeliveryConfirmDialog
+        request={deliveryConfirmRequest}
+        isOpen={!!deliveryConfirmRequest}
+        onClose={() => setDeliveryConfirmRequest(null)}
+        onSuccess={() => {
+          setRefreshKey(prev => prev + 1);
         }}
       />
     </div >

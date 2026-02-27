@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,6 +51,23 @@ export function MaterialTable({ materials, onSelectionChange, onEdit, onDelete, 
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState<any>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, boolean>>({});
+
+  // 페이지네이션 관련 상태
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
+  // materials(검색 결과 등)가 변경되면 페이지를 1로 리셋
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [materials]);
+
+  // 현재 페이지에 보여줄 데이터
+  const displayedMaterials = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return materials.slice(startIndex, startIndex + itemsPerPage);
+  }, [materials, currentPage]);
+
+  const totalPages = Math.ceil(materials.length / itemsPerPage);
 
   const handleSelectionChange = (id: string) => {
     const newSelection = { ...selectedRows, [id]: !selectedRows[id] };
@@ -144,7 +161,7 @@ export function MaterialTable({ materials, onSelectionChange, onEdit, onDelete, 
               </TableRow>
             </TableHeader>
             <TableBody>
-              {materials.length > 0 ? materials.map((material, idx) => (
+              {displayedMaterials.length > 0 ? displayedMaterials.map((material, idx) => (
                 <MaterialRow
                   key={`${material.docId}-${idx}`}
                   material={material}
@@ -166,6 +183,35 @@ export function MaterialTable({ materials, onSelectionChange, onEdit, onDelete, 
             </TableBody>
           </Table>
         </CardContent>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t">
+            <div className="text-sm text-muted-foreground">
+              총 {materials.length}개 중 {(currentPage - 1) * itemsPerPage + 1}-
+              {Math.min(currentPage * itemsPerPage, materials.length)}개
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                이전
+              </Button>
+              <div className="text-sm font-medium">
+                {currentPage} / {totalPages}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                다음
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
       {/* 기존 StockUpdateForm 대신 MaterialStockUpdateForm 사용 */}
       {isStockFormOpen && <MaterialStockUpdateForm

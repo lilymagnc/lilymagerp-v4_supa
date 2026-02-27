@@ -6,7 +6,8 @@ import { useUserRole } from '@/hooks/use-user-role';
 import { SidebarProvider, Sidebar, SidebarTrigger, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarFooter } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from '@/components/ui/button';
-import { LayoutDashboard, Boxes, ShoppingCart, Users, UserCog, LogOut, ClipboardList, Store, BookUser, Hammer, History, Briefcase, MapPin, Truck, Images, DollarSign, Target, BarChart3, Package, Receipt, Settings, Database, Percent, ArrowRightLeft, ExternalLink } from 'lucide-react';
+import { LayoutDashboard, Boxes, ShoppingCart, Users, UserCog, LogOut, ClipboardList, Store, BookUser, Hammer, History, Briefcase, MapPin, Truck, Images, DollarSign, Target, BarChart3, Package, Receipt, Settings, Database, Percent, ArrowRightLeft, ExternalLink, CalendarDays } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import React from 'react';
 import Image from 'next/image';
 import { ROLE_LABELS } from '@/types/user-role';
@@ -252,6 +253,52 @@ export default function DashboardLayout({
                             {/* Header content can go here if needed */}
                         </div>
                         <div className="flex items-center gap-2">
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" title="지점 근무 캘린더 및 스케줄">
+                                        <CalendarDays className="h-5 w-5" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-[200px]">
+                                    <DropdownMenuLabel>지점 스케줄 관리</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+
+                                    {(isHQManager() || userRole?.branchName === '릴리맥여의도점' || userRole?.branchName === '여의도점') && (
+                                        <>
+                                            <DropdownMenuItem onClick={() => window.open('https://calendar.google.com/calendar', '_blank')} className="cursor-pointer">
+                                                📅 여의도점 캘린더
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => window.open('https://docs.google.com/spreadsheets', '_blank')} className="text-muted-foreground text-xs cursor-pointer mb-1">
+                                                ↳ 스케줄 입력 시트
+                                            </DropdownMenuItem>
+                                        </>
+                                    )}
+
+                                    {(isHQManager() || userRole?.branchName?.includes('광화문')) && (
+                                        <>
+                                            {isHQManager() && <DropdownMenuSeparator />}
+                                            <DropdownMenuItem onClick={() => window.open('https://calendar.google.com/calendar', '_blank')} className="cursor-pointer">
+                                                📅 광화문점 캘린더
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => window.open('https://docs.google.com/spreadsheets', '_blank')} className="text-muted-foreground text-xs cursor-pointer mb-1">
+                                                ↳ 스케줄 입력 시트
+                                            </DropdownMenuItem>
+                                        </>
+                                    )}
+
+                                    {(isHQManager() || userRole?.branchName?.includes('NC') || userRole?.branchName?.includes('이스트폴')) && (
+                                        <>
+                                            {isHQManager() && <DropdownMenuSeparator />}
+                                            <DropdownMenuItem onClick={() => window.open('https://calendar.google.com/calendar', '_blank')} className="cursor-pointer">
+                                                📅 NC이스트폴점 캘린더
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => window.open('https://docs.google.com/spreadsheets', '_blank')} className="text-muted-foreground text-xs cursor-pointer">
+                                                ↳ 스케줄 입력 시트
+                                            </DropdownMenuItem>
+                                        </>
+                                    )}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
                             <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/manual')} title="사용자 매뉴얼">
                                 <BookUser className="h-5 w-5" />
                             </Button>

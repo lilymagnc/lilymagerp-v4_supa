@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { downloadXLSX } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { ImportButton } from "@/components/import-button";
+import { supabase } from "@/lib/supabase";
 
 export default function MaterialsPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -47,7 +48,6 @@ export default function MaterialsPage() {
     deleteMaterial,
     bulkAddMaterials,
     fetchMaterials,
-    updateMaterialIds,
     rebuildCategories
   } = useMaterials();
   const { getMainCategories, getMidCategories, fetchCategories } = useCategories();
@@ -128,16 +128,83 @@ export default function MaterialsPage() {
     await deleteMaterial(docId);
   };
 
-  const handleDownloadCurrentList = () => {
-    if (filteredMaterials.length === 0) {
+  const handleDownloadCurrentList = async () => {
+    try {
+      toast({
+        title: '다운로드 준비 중',
+        description: '데이터를 불러오고 있습니다. 잠시만 기다려주세요.',
+      });
+
+      let allData: any[] = [];
+      let from = 0;
+      const step = 1000;
+      let isFetching = true;
+
+      while (isFetching) {
+        let query = supabase.from('materials').select('*');
+        if (selectedBranch && selectedBranch !== 'all') query = query.eq('branch', selectedBranch);
+        if (selectedMainCategory && selectedMainCategory !== 'all') query = query.eq('main_category', selectedMainCategory);
+        if (selectedMidCategory && selectedMidCategory !== 'all') query = query.eq('mid_category', selectedMidCategory);
+        if (searchTerm) query = query.ilike('name', `%${searchTerm}%`);
+
+        const { data, error } = await query
+          .order('id', { ascending: true })
+          .range(from, from + step - 1);
+
+        if (error) {
+          throw error;
+        }
+
+        if (!data || data.length === 0) {
+          isFetching = false;
+        } else {
+          allData = allData.concat(data);
+          if (data.length < step) {
+            isFetching = false;
+          } else {
+            from += step;
+          }
+        }
+      }
+
+      if (allData.length === 0) {
+        toast({
+          variant: 'destructive',
+          title: '오류',
+          description: '다운로드할 데이터가 없습니다.',
+        });
+        return;
+      }
+
+      const exportData = allData.map((m, idx) => ({
+        '번호': idx + 1,
+        '자재ID': m.id,
+        '자재명': m.name,
+        '대분류': m.main_category || '',
+        '중분류': m.mid_category || '',
+        '단위': m.unit || '',
+        '규격': m.size || '',
+        '가격': m.price,
+        '색상': m.color || '',
+        '재고': m.stock,
+        '공급업체': m.supplier || '',
+        '지점': m.branch,
+        '메모': m.memo || '',
+      }));
+      downloadXLSX(exportData, `자재목록_${new Date().toLocaleDateString()}`);
+
+      toast({
+        title: '다운로드 완료',
+        description: '성공적으로 엑셀 파일을 다운로드했습니다.',
+      });
+    } catch (error) {
+      console.error('다운로드 오류:', error);
       toast({
         variant: 'destructive',
-        title: '오류',
-        description: '다운로드할 데이터가 없습니다.',
+        title: '다운로드 실패',
+        description: '데이터를 가져오는 중 오류가 발생했습니다.',
       });
-      return;
     }
-    downloadXLSX(filteredMaterials, `자재목록_${new Date().toLocaleDateString()}`);
   };
 
   const handleImport = async (data: any[]) => {
@@ -190,13 +257,6 @@ export default function MaterialsPage() {
               <Button onClick={handleAdd}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 자재 추가
-              </Button>
-              <Button
-                variant="outline"
-                onClick={updateMaterialIds}
-                disabled={materialsLoading}
-              >
-                ID 업데이트
               </Button>
               <Button
                 variant="outline"
@@ -369,24 +429,6 @@ export default function MaterialsPage() {
           onDelete={handleDelete}
           onRefresh={handleRefresh}
         />
-
-        {hasMore && (
-          <div className="flex justify-center pt-2">
-            <Button
-              variant="outline"
-              onClick={() => loadMore(currentFilters)}
-              disabled={materialsLoading}
-              className="w-full max-w-xs shadow-sm hover:bg-accent"
-            >
-              {materialsLoading ? (
-                <div className="flex items-center gap-2">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-                  로딩 중...
-                </div>
-              ) : "자재 더 보기"}
-            </Button>
-          </div>
-        )}
       </div>
 
       <MaterialForm
