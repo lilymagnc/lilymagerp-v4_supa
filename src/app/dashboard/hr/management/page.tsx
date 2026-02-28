@@ -12,6 +12,14 @@ import { CheckCircle, XCircle, Eye, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { HRFormDisplay } from "@/components/hr/HRFormDisplay";
 import { PrintableHRForm } from "@/components/hr/PrintableHRForm";
+import { useBranches } from "@/hooks/use-branches";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { createRoot } from "react-dom/client";
 import {
   Dialog,
@@ -29,7 +37,7 @@ interface HRDocument {
   user_id: string;
   user_name: string;
   submission_date: string; // ISO string
-  status: '처리중' | '승인' | '반려';
+  status: '처리중' | '승인' | '반려' | '확인완료';
   contents?: {
     startDate?: any;
     endDate?: any;
@@ -41,6 +49,8 @@ interface HRDocument {
     contact?: string;
     handover?: string;
     leaveType?: string;
+    branchName?: string;
+    notificationEmail?: string;
   };
   file_url?: string;
   submission_method?: 'online-form' | 'file-upload';
@@ -55,6 +65,8 @@ const HRManagementPage = () => {
   const [isDetailViewOpen, setIsDetailViewOpen] = useState(false);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
   const { toast } = useToast();
+  const { branches } = useBranches();
+  const [selectedBranch, setSelectedBranch] = useState<string>('전체');
 
   const fetchDocuments = async () => {
     try {
@@ -126,16 +138,39 @@ const HRManagementPage = () => {
     }
   };
 
-  const handleStatusChange = async (id: string, status: '승인' | '반려') => {
+  const handleStatusChange = async (doc: HRDocument, status: '승인' | '반려') => {
     try {
       const { error } = await supabase
         .from('hr_documents')
         .update({ status })
-        .eq('id', id);
+        .eq('id', doc.id);
 
       if (error) throw error;
 
       toast({ variant: 'default', title: '성공', description: `문서 상태가 '${status}'으로 변경되었습니다.` });
+
+      // If approved, send notification email
+      if (status === '승인' && doc.contents?.notificationEmail) {
+        try {
+          await fetch('/api/email/approve-hr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              toEmail: doc.contents.notificationEmail,
+              documentType: doc.document_type,
+              userName: doc.user_name,
+              branchName: doc.contents.branchName,
+              startDate: doc.contents.startDate,
+              endDate: doc.contents.endDate,
+              reason: doc.contents.reason,
+            }),
+          });
+          toast({ variant: 'default', title: '알림', description: '승인 안내 메일이 발송되었습니다.' });
+        } catch (emailError) {
+          console.error("Email send error:", emailError);
+          toast({ variant: 'destructive', title: '알림', description: '이메일 발송에 실패했습니다.' });
+        }
+      }
 
       // 즉시 목록 새로고침
       await fetchDocuments();
@@ -189,6 +224,7 @@ const HRManagementPage = () => {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case '승인': return <Badge variant="default" className="bg-green-100 text-green-800">승인</Badge>;
+      case '확인완료': return <Badge variant="default" className="bg-blue-100 text-blue-800 border-blue-200">지점확인완료</Badge>;
       case '반려': return <Badge variant="destructive">반려</Badge>;
       default: return <Badge variant="secondary">처리중</Badge>;
     }
@@ -202,12 +238,32 @@ const HRManagementPage = () => {
     submissionDate: new Date(doc.submission_date)
   });
 
+  const filteredDocs = selectedBranch === '전체'
+    ? documents
+    : documents.filter(doc => (doc.contents?.branchName || doc.contents?.department || '알 수 없음') === selectedBranch);
+
   return (
     <div>
-      <PageHeader
-        title="인사 서류 관리 (Supabase)"
-        description="제출된 휴직 및 퇴직 신청서를 확인하고 관리합니다."
-      />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 mt-4">
+        <PageHeader
+          title="인사 서류 관리"
+          description="제출된 휴직, 퇴직, 휴가 신청서를 확인하고 관리합니다."
+        />
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">지점 필터:</span>
+          <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="전체" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="전체">전체 지점</SelectItem>
+              {branches.map(b => (
+                <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
       <Card>
         <CardContent className="pt-6">
           {loading ? (
@@ -219,6 +275,7 @@ const HRManagementPage = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>제출일</TableHead>
+                  <TableHead>지점</TableHead>
                   <TableHead>제출자</TableHead>
                   <TableHead>문서 종류</TableHead>
                   <TableHead>상태</TableHead>
@@ -226,44 +283,51 @@ const HRManagementPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {documents.map((doc) => (
-                  <TableRow key={doc.id}>
-                    <TableCell>{new Date(doc.submission_date).toLocaleDateString('ko-KR')}</TableCell>
-                    <TableCell>{doc.user_name}</TableCell>
-                    <TableCell>{doc.document_type}</TableCell>
-                    <TableCell>{getStatusBadge(doc.status)}</TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => handleViewDetails(doc)}>
-                        <Eye className="mr-2 h-4 w-4" /> 상세 보기
-                      </Button>
-
-                      {/* 승인 버튼: 현재 상태가 '승인'이 아닐 때 표시 */}
-                      {doc.status !== '승인' && (
-                        <Button variant="default" size="sm" onClick={() => handleStatusChange(doc.id, '승인')} className="bg-green-600 hover:bg-green-700 text-white">
-                          <CheckCircle className="mr-2 h-4 w-4" /> 승인
+                {filteredDocs.length > 0 ? (
+                  filteredDocs.map((doc) => (
+                    <TableRow key={doc.id}>
+                      <TableCell>{new Date(doc.submission_date).toLocaleDateString('ko-KR')}</TableCell>
+                      <TableCell className="text-gray-500">{doc.contents?.branchName || doc.contents?.department || '알 수 없음'}</TableCell>
+                      <TableCell>{doc.user_name}</TableCell>
+                      <TableCell>{doc.document_type}</TableCell>
+                      <TableCell>{getStatusBadge(doc.status)}</TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button variant="outline" size="sm" onClick={() => handleViewDetails(doc)}>
+                          <Eye className="mr-2 h-4 w-4" /> 상세 보기
                         </Button>
-                      )}
 
-                      {/* 반려 버튼: 현재 상태가 '반려'가 아닐 때 표시 */}
-                      {doc.status !== '반려' && (
-                        <Button variant="destructive" size="sm" onClick={() => handleStatusChange(doc.id, '반려')}>
-                          <XCircle className="mr-2 h-4 w-4" /> 반려
+                        {/* 승인 버튼: 현재 상태가 '승인' 또는 '확인완료'가 아닐 때 표시 */}
+                        {!['승인', '확인완료'].includes(doc.status) && (
+                          <Button variant="default" size="sm" onClick={() => handleStatusChange(doc, '승인')} className="bg-green-600 hover:bg-green-700 text-white">
+                            <CheckCircle className="mr-2 h-4 w-4" /> 승인
+                          </Button>
+                        )}
+
+                        {/* 반려 버튼: 현재 상태가 '반려' 또는 '확인완료'가 아닐 때 표시 */}
+                        {!['반려', '확인완료'].includes(doc.status) && (
+                          <Button variant="destructive" size="sm" onClick={() => handleStatusChange(doc, '반려')}>
+                            <XCircle className="mr-2 h-4 w-4" /> 반려
+                          </Button>
+                        )}
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDelete(doc)}
+                          disabled={deletingDocId === doc.id}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          {deletingDocId === doc.id ? '삭제 중...' : '삭제'}
                         </Button>
-                      )}
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDelete(doc)}
-                        disabled={deletingDocId === doc.id}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        {deletingDocId === doc.id ? '삭제 중...' : '삭제'}
-                      </Button>
-                    </TableCell>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8 text-gray-500">조회된 신청 내역이 없습니다.</TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           )}

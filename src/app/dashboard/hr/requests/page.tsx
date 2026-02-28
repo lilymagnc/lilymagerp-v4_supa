@@ -4,12 +4,21 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
+import { useUserRole } from '@/hooks/use-user-role';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import {
   detectDocumentTypeFromFileName,
   parseDocxFile,
 } from '@/lib/hr-docx-parser';
+import { useBranches } from '@/hooks/use-branches';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Document as DocxDocument,
   Packer,
@@ -239,11 +248,14 @@ interface HRRequest {
 const HRRequestsPage = () => {
   const router = useRouter();
   const { user } = useAuth();
+  const { isHeadOfficeAdmin } = useUserRole();
   const { toast } = useToast();
   const [uploading, setUploading] = useState(false);
   const [downloadingType, setDownloadingType] = useState<HRDocumentType | null>(null);
   const [requests, setRequests] = useState<HRRequest[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(true);
+  const { branches } = useBranches();
+  const [selectedBranch, setSelectedBranch] = useState<string>('전체');
 
   // Fetch requests using Supabase
   useEffect(() => {
@@ -251,11 +263,16 @@ const HRRequestsPage = () => {
 
     const fetchRequests = async () => {
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from('hr_documents')
           .select('*')
-          .eq('user_id', user.id)
           .order('submission_date', { ascending: false });
+
+        if (!isHeadOfficeAdmin()) {
+          query = query.eq('user_id', user.id);
+        }
+
+        const { data, error } = await query;
 
         if (error) throw error;
         setRequests(data as HRRequest[]);
@@ -269,24 +286,49 @@ const HRRequestsPage = () => {
     fetchRequests();
 
     // Subscribe to realtime changes
-    const channel = supabase.channel('hr_documents_changes')
+    const filterString = isHeadOfficeAdmin() ? undefined : `user_id=eq.${user.id}`;
+
+    // Channel for INSERT and UPDATE (filtered appropriately)
+    const channelFiltered = supabase.channel('hr_documents_changes_filtered')
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: '*', // captures INSERT, UPDATE
           schema: 'public',
           table: 'hr_documents',
-          filter: `user_id=eq.${user.id}`,
+          filter: filterString,
         },
-        (payload) => {
-          // Simply refetch for simplicity, or handle optimistic updates
+        () => {
           fetchRequests();
         }
       )
       .subscribe();
 
+    // Channel specifically for DELETE (no filter, because Supabase doesn't send user_id in DELETE old_record unless REPLICA IDENTITY FULL)
+    const channelDelete = supabase.channel('hr_documents_changes_delete')
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'hr_documents',
+        },
+        (payload) => {
+          // If the deleted record's ID is in our current requests list, refetch or remove it
+          setRequests((prev) => {
+            const exists = prev.some(req => req.id === payload.old.id);
+            if (exists) {
+              fetchRequests();
+            }
+            return prev;
+          });
+        }
+      )
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(channelFiltered);
+      supabase.removeChannel(channelDelete);
     };
   }, [user]);
 
@@ -408,16 +450,39 @@ const HRRequestsPage = () => {
     );
   }
 
+  const handleConfirm = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('hr_documents')
+        .update({ status: '확인완료' })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      toast({ variant: 'default', title: '확인 완료', description: '승인 내역을 확인했습니다.' });
+      setRequests(requests.map(req => req.id === id ? { ...req, status: '확인완료' } : req));
+    } catch (error) {
+      console.error("Confirm error:", error);
+      toast({ variant: 'destructive', title: '오류', description: '확인 처리 중 오류가 발생했습니다.' });
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case '승인':
         return <Badge className="bg-green-500 hover:bg-green-600"><CheckCircle2 className="w-3 h-3 mr-1" /> 승인됨</Badge>;
+      case '확인완료':
+        return <Badge className="bg-blue-500 hover:bg-blue-600"><CheckCircle2 className="w-3 h-3 mr-1" /> 확인완료</Badge>;
       case '반려':
         return <Badge variant="destructive"><AlertCircle className="w-3 h-3 mr-1" /> 반려됨</Badge>;
       default:
         return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" /> 처리중</Badge>;
     }
   };
+
+  const filteredRequests = selectedBranch === '전체'
+    ? requests
+    : requests.filter((req: any) => (req.contents?.branchName || req.contents?.department || '알 수 없음') === selectedBranch);
 
   return (
     <div className="container mx-auto p-6 max-w-7xl animate-in fade-in duration-500">
@@ -532,9 +597,27 @@ const HRRequestsPage = () => {
       </div>
 
       <div className="space-y-4">
-        <div className="flex items-center gap-2 pb-2 border-b">
-          <History className="w-5 h-5 text-gray-500" />
-          <h2 className="text-2xl font-bold">나의 신청 내역</h2>
+        <div className="flex justify-between items-end pb-2 border-b">
+          <div className="flex items-center gap-2">
+            <History className="w-5 h-5 text-gray-500" />
+            <h2 className="text-2xl font-bold">{isHeadOfficeAdmin() ? '모든 신청 내역' : '나의 신청 내역'}</h2>
+          </div>
+          {isHeadOfficeAdmin() && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 font-medium">지점 필터:</span>
+              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="전체" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="전체">전체</SelectItem>
+                  {branches.map(b => (
+                    <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
         <Card className="bg-white dark:bg-gray-900 border-none shadow-md">
@@ -543,7 +626,7 @@ const HRRequestsPage = () => {
               <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 opacity-50" />
               불러오는 중...
             </div>
-          ) : requests.length === 0 ? (
+          ) : filteredRequests.length === 0 ? (
             <div className="p-12 text-center text-muted-foreground">
               <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
               <p>아직 신청한 내역이 없습니다.</p>
@@ -553,6 +636,7 @@ const HRRequestsPage = () => {
               <TableHeader>
                 <UiTableRow className="bg-gray-50/50 hover:bg-gray-50/50">
                   <TableHead className="w-[120px]">신청일</TableHead>
+                  {isHeadOfficeAdmin() && <TableHead className="w-[120px]">지점</TableHead>}
                   <TableHead className="w-[100px]">종류</TableHead>
                   <TableHead>파일명 / 제목</TableHead>
                   <TableHead className="w-[100px]">상태</TableHead>
@@ -560,11 +644,12 @@ const HRRequestsPage = () => {
                 </UiTableRow>
               </TableHeader>
               <TableBody>
-                {requests.map((req) => (
+                {filteredRequests.map((req: any) => (
                   <UiTableRow key={req.id} className="hover:bg-gray-50 transition-colors">
                     <UiTableCell className="font-medium text-gray-600">
                       {req.submission_date ? format(new Date(req.submission_date), 'yyyy-MM-dd') : '-'}
                     </UiTableCell>
+                    {isHeadOfficeAdmin() && <UiTableCell className="text-gray-500">{req.contents?.branchName || req.contents?.department || '알 수 없음'}</UiTableCell>}
                     <UiTableCell>
                       <Badge variant="outline" className="font-normal">{req.document_type || '기타'}</Badge>
                     </UiTableCell>
@@ -574,7 +659,12 @@ const HRRequestsPage = () => {
                     <UiTableCell>
                       {getStatusBadge(req.status)}
                     </UiTableCell>
-                    <UiTableCell className="text-right">
+                    <UiTableCell className="text-right flex items-center justify-end gap-2">
+                      {req.status === '승인' && (
+                        <Button variant="outline" size="sm" onClick={() => handleConfirm(req.id)} className="border-blue-500 text-blue-500 hover:bg-blue-50">
+                          내역 확인
+                        </Button>
+                      )}
                       {req.file_url && (
                         <Button variant="ghost" size="sm" asChild className="h-8 w-8 p-0">
                           <a href={req.file_url} target="_blank" rel="noopener noreferrer" title="다운로드">

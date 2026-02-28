@@ -197,7 +197,7 @@ export default function DashboardLayout({
                                     </SidebarMenuItem>
                                     {/* 인사 서류 관리 (본사 관리자만) */}
                                     <SidebarMenuItem>
-                                        <SidebarMenuButton onClick={() => router.push('/dashboard/hr/management')}><Users />신청서 관리</SidebarMenuButton>
+                                        <SidebarMenuButton onClick={() => router.push('/dashboard/hr/management')}><Users />인사서류관리</SidebarMenuButton>
                                     </SidebarMenuItem>
                                     {/* 20. 사용자 관리 (본사 관리자만) */}
                                     <SidebarMenuItem>

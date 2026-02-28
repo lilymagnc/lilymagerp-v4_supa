@@ -919,7 +919,7 @@ export default function ManualPage() {
               <section id="hr-management" ref={el => { if (el) observerRefs.current["hr-management"] = el; }} className="scroll-mt-24 space-y-6">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="p-2 bg-rose-100 rounded-lg text-rose-600"><Briefcase className="h-6 w-6" /></div>
-                  <h2 className="text-2xl font-bold">24. 인사/신청서 관리</h2>
+                  <h2 className="text-2xl font-bold">24. 인사/인사서류관리</h2>
                 </div>
                 <p className="text-slate-600">모든 직원의 기본 정보와 지점에서 올라온 인사 신청(휴가 등)을 통합 관리합니다.</p>
 

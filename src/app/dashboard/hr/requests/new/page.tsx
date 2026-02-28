@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
+import { useUserRole } from '@/hooks/use-user-role';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import jsPDF from 'jspdf';
@@ -24,6 +25,11 @@ const NewHRRequestPage = () => {
   const [position, setPosition] = useState('');
   const [name, setName] = useState('');
 
+  // Added newly
+  const { userRole } = useUserRole();
+  const branchName = userRole?.branchName || user?.franchise || '알 수 없음';
+  const [notificationEmail, setNotificationEmail] = useState('');
+
   // Form fields
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -34,6 +40,12 @@ const NewHRRequestPage = () => {
   const [leaveType, setLeaveType] = useState('유급휴가'); // For vacation form
 
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (branchName && branchName !== '알 수 없음' && !department) {
+      setDepartment(branchName);
+    }
+  }, [branchName, department]);
 
   useEffect(() => {
     if (user) {
@@ -143,10 +155,18 @@ const NewHRRequestPage = () => {
 
     setSubmitting(true);
 
+    let baseContents = {
+      department,
+      position,
+      name,
+      notificationEmail,
+      branchName,
+    };
+
     let contents = {};
     if (documentType === '휴직원') {
       contents = {
-        department, position, name,
+        ...baseContents,
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null,
         reason,
@@ -155,14 +175,14 @@ const NewHRRequestPage = () => {
       };
     } else if (documentType === '퇴직원') {
       contents = {
-        department, position, name,
+        ...baseContents,
         joinDate: joinDate ? new Date(joinDate) : null,
         endDate: endDate ? new Date(endDate) : null, // 퇴직예정일
         reason,
       };
     } else { // 휴가원
       contents = {
-        department, position, name,
+        ...baseContents,
         leaveType,
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null,
@@ -229,6 +249,19 @@ const NewHRRequestPage = () => {
               <div className="form-control">
                 <label className="label"><span className="label-text">성명</span></label>
                 <input type="text" className="input input-bordered w-full" value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">승인 알림 받을 이메일 <span className="text-red-500">*</span></span>
+                </label>
+                <input
+                  type="email"
+                  placeholder="예: email@example.com"
+                  className="input input-bordered w-full"
+                  value={notificationEmail}
+                  onChange={(e) => setNotificationEmail(e.target.value)}
+                  required
+                />
               </div>
               {documentType === '퇴직원' &&
                 <div className="form-control">
