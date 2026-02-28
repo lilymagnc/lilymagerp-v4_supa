@@ -238,9 +238,20 @@ const HRManagementPage = () => {
     submissionDate: new Date(doc.submission_date)
   });
 
+  const normalizeBranchName = (name: string) => {
+    if (!name) return '';
+    return name.replace(/\s+/g, '').replace(/^릴리맥/, '').replace(/지?점$/, '').toLowerCase();
+  };
+
   const filteredDocs = selectedBranch === '전체'
     ? documents
-    : documents.filter(doc => (doc.contents?.branchName || doc.contents?.department || '알 수 없음') === selectedBranch);
+    : documents.filter(doc => {
+      const rawName = doc.contents?.branchName || doc.contents?.department || '';
+      const docBranch = normalizeBranchName(rawName);
+      const filterBranch = normalizeBranchName(selectedBranch);
+      if (!docBranch) return false;
+      return docBranch === filterBranch || docBranch.includes(filterBranch) || filterBranch.includes(docBranch);
+    });
 
   return (
     <div>
@@ -287,7 +298,15 @@ const HRManagementPage = () => {
                   filteredDocs.map((doc) => (
                     <TableRow key={doc.id}>
                       <TableCell>{new Date(doc.submission_date).toLocaleDateString('ko-KR')}</TableCell>
-                      <TableCell className="text-gray-500">{doc.contents?.branchName || doc.contents?.department || '알 수 없음'}</TableCell>
+                      <TableCell className="text-gray-500 whitespace-nowrap">
+                        {(() => {
+                          const rawName = doc.contents?.branchName || doc.contents?.department;
+                          if (!rawName) return '알 수 없음';
+                          const stripped = rawName.replace(/\s+/g, '').replace(/^릴리맥/, '');
+                          if (stripped === '본사') return '본사';
+                          return `릴리맥${stripped}`;
+                        })()}
+                      </TableCell>
                       <TableCell>{doc.user_name}</TableCell>
                       <TableCell>{doc.document_type}</TableCell>
                       <TableCell>{getStatusBadge(doc.status)}</TableCell>

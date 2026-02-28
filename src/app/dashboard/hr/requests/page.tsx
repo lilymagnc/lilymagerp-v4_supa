@@ -480,9 +480,20 @@ const HRRequestsPage = () => {
     }
   };
 
+  const normalizeBranchName = (name: string) => {
+    if (!name) return '';
+    return name.replace(/\s+/g, '').replace(/^릴리맥/, '').replace(/지?점$/, '').toLowerCase();
+  };
+
   const filteredRequests = selectedBranch === '전체'
     ? requests
-    : requests.filter((req: any) => (req.contents?.branchName || req.contents?.department || '알 수 없음') === selectedBranch);
+    : requests.filter((req: any) => {
+      const rawName = req.contents?.branchName || req.contents?.department || '';
+      const docBranch = normalizeBranchName(rawName);
+      const filterBranch = normalizeBranchName(selectedBranch);
+      if (!docBranch) return false;
+      return docBranch === filterBranch || docBranch.includes(filterBranch) || filterBranch.includes(docBranch);
+    });
 
   return (
     <div className="container mx-auto p-6 max-w-7xl animate-in fade-in duration-500">
@@ -636,7 +647,12 @@ const HRRequestsPage = () => {
               <TableHeader>
                 <UiTableRow className="bg-gray-50/50 hover:bg-gray-50/50">
                   <TableHead className="w-[120px]">신청일</TableHead>
-                  {isHeadOfficeAdmin() && <TableHead className="w-[120px]">지점</TableHead>}
+                  {isHeadOfficeAdmin() && (
+                    <>
+                      <TableHead className="w-[180px] whitespace-nowrap">지점</TableHead>
+                      <TableHead className="w-[100px] whitespace-nowrap">신청인</TableHead>
+                    </>
+                  )}
                   <TableHead className="w-[100px]">종류</TableHead>
                   <TableHead>파일명 / 제목</TableHead>
                   <TableHead className="w-[100px]">상태</TableHead>
@@ -649,7 +665,20 @@ const HRRequestsPage = () => {
                     <UiTableCell className="font-medium text-gray-600">
                       {req.submission_date ? format(new Date(req.submission_date), 'yyyy-MM-dd') : '-'}
                     </UiTableCell>
-                    {isHeadOfficeAdmin() && <UiTableCell className="text-gray-500">{req.contents?.branchName || req.contents?.department || '알 수 없음'}</UiTableCell>}
+                    {isHeadOfficeAdmin() && (
+                      <>
+                        <UiTableCell className="text-gray-500 whitespace-nowrap">
+                          {(() => {
+                            const rawName = req.contents?.branchName || req.contents?.department;
+                            if (!rawName) return '알 수 없음';
+                            const stripped = rawName.replace(/\s+/g, '').replace(/^릴리맥/, '');
+                            if (stripped === '본사') return '본사';
+                            return `릴리맥${stripped}`;
+                          })()}
+                        </UiTableCell>
+                        <UiTableCell className="font-medium whitespace-nowrap">{req.user_name || req.contents?.name || '알 수 없음'}</UiTableCell>
+                      </>
+                    )}
                     <UiTableCell>
                       <Badge variant="outline" className="font-normal">{req.document_type || '기타'}</Badge>
                     </UiTableCell>
