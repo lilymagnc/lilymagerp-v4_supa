@@ -947,7 +947,7 @@ export default function DailySettlementPage() {
 
                                     {/* 외부발주 섹션 (내역이 있으면 파트너별 표시) */}
                                     <div className="flex flex-col p-2 bg-orange-50 rounded border border-orange-100">
-                                        <span className="text-[10px] text-orange-600 font-bold">외부발주 (매입)</span>
+                                        <span className="text-[10px] text-orange-600 font-bold">외부발주 ({summaryExpense.outsource.count}건)</span>
                                         <span className="text-sm font-bold text-orange-800">₩{summaryExpense.outsource.amount.toLocaleString()}</span>
                                         {summaryExpense.outsource.items.length > 0 && (
                                             <div className="mt-1 flex flex-col gap-0.5">
