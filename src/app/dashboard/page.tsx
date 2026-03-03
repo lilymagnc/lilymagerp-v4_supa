@@ -549,32 +549,7 @@ export default function DashboardPage() {
           setStatsEmpty(true);
         } else {
           setStatsEmpty(false);
-          let totalRevenue = 0;
-          let weeklyOrders = 0;
           const weekStartStr = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-
-          statsData.forEach((day: any) => {
-            const isThisYear = day.date >= yearStartStr;
-            const isThisWeek = day.date >= weekStartStr;
-
-            if (branchFilter) {
-              const bKey = sanitizeBranchKey(branchFilter);
-              const branchStat = day.branches?.[bKey];
-              if (branchStat) {
-                if (isThisYear) totalRevenue += branchStat.settledAmount || 0;
-                if (isThisWeek) weeklyOrders += branchStat.orderCount || 0;
-              }
-            } else {
-              if (isThisYear) totalRevenue += day.totalSettledAmount || 0;
-              if (isThisWeek) weeklyOrders += day.totalOrderCount || 0;
-            }
-          });
-
-          setStats(prev => ({ ...prev, totalRevenue, weeklyOrders }));
-
-          // Process Chart Data
-          const statsMap = new Map();
-          statsData.forEach(d => statsMap.set(d.date, d));
 
           // 오늘 날짜 결제일 기준 매출 계산 (주문현황 당일매출 카드와 동기화)
           const todayDateStr = format(now, 'yyyy-MM-dd');
@@ -638,37 +613,75 @@ export default function DashboardPage() {
             todayBranchSales[bKey] = (todayBranchSales[bKey] || 0) + shareAmount;
           }
 
+          // 주간, 월간 차트에도 반영되도록 statsData 원본 데이터 동기화
+          const todayStatIndex = statsData.findIndex((d: any) => d.date === todayDateStr);
+          const newTodayBranchStats: any = {};
+
+          Object.entries(todayBranchSales).forEach(([bKey, amount]) => {
+            newTodayBranchStats[bKey.replace(/\./g, '_')] = {
+              settledAmount: amount
+            };
+          });
+
+          if (todayStatIndex >= 0) {
+            statsData[todayStatIndex].totalSettledAmount = todayPaymentBasedSales;
+            statsData[todayStatIndex].branches = newTodayBranchStats;
+          } else {
+            const newTodayStat = {
+              date: todayDateStr,
+              totalSettledAmount: todayPaymentBasedSales,
+              branches: newTodayBranchStats
+            };
+            statsData.push(newTodayStat);
+          }
+
+          let totalRevenue = 0;
+          let weeklyOrders = 0;
+          // 이제 statsData가 오늘 날짜의 보정된 실매출 데이터를 포함하므로 연간/주간 집계 수행
+          statsData.forEach((day: any) => {
+            const isThisYear = day.date >= yearStartStr;
+            const isThisWeek = day.date >= weekStartStr;
+
+            if (branchFilter) {
+              const bKey = sanitizeBranchKey(branchFilter);
+              const branchStat = day.branches?.[bKey];
+              if (branchStat) {
+                if (isThisYear) totalRevenue += branchStat.settledAmount || 0;
+                if (isThisWeek) weeklyOrders += branchStat.orderCount || 0;
+              }
+            } else {
+              if (isThisYear) totalRevenue += day.totalSettledAmount || 0;
+              if (isThisWeek) weeklyOrders += day.totalOrderCount || 0;
+            }
+          });
+
+          setStats(prev => ({ ...prev, totalRevenue, weeklyOrders }));
+
+          // Process Chart Data Map (보정 후)
+          const processedStatsMap = new Map();
+          statsData.forEach(d => processedStatsMap.set(d.date, d));
+
           const dailyData: DailySalesData[] = [];
           let currentD = parseISO(dailyStartDate);
           const endD = parseISO(dailyEndDate);
 
           while (currentD <= endD) {
             const dateStr = format(currentD, 'yyyy-MM-dd');
-            const day = statsMap.get(dateStr) || { date: dateStr, totalRevenue: 0, totalOrderCount: 0, totalSettledAmount: 0, branches: {} };
+            const day = processedStatsMap.get(dateStr) || { date: dateStr, totalRevenue: 0, totalOrderCount: 0, totalSettledAmount: 0, branches: {} };
             const weekday = koreanWeekdays[currentD.getDay()];
             const label = `${format(currentD, 'M/d')} (${weekday})`;
 
-            // 오늘 날짜는 결제일 기준 매출로 보정 (주문현황 당일매출과 일치시키기 위해)
-            const isToday = dateStr === todayDateStr;
-            const result: any = { date: label, totalSales: isToday ? todayPaymentBasedSales : (day.totalSettledAmount || 0) };
+            const result: any = { date: label, totalSales: day.totalSettledAmount || 0 };
 
-            if (isToday) {
-              Object.entries(todayBranchSales).forEach(([bKey, amount]) => {
-                result[bKey] = amount;
-              });
-            } else if (day.branches) {
+            if (day.branches) {
               Object.entries(day.branches).forEach(([bKey, bStat]: [string, any]) => {
                 result[bKey.replace(/_/g, '.')] = bStat.settledAmount || 0;
               });
             }
 
             if (branchFilter) {
-              if (isToday) {
-                result.sales = todayPaymentBasedSales;
-              } else {
-                const bKey = sanitizeBranchKey(branchFilter);
-                result.sales = day.branches?.[bKey]?.settledAmount || 0;
-              }
+              const bKey = sanitizeBranchKey(branchFilter);
+              result.sales = day.branches?.[bKey]?.settledAmount || 0;
             }
 
             dailyData.push(result);
