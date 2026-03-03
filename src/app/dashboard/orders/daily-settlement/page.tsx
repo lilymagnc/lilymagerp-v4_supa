@@ -665,14 +665,15 @@ export default function DailySettlementPage() {
             ...nonOrderTransport.map(e => ({ ...e, displayDescription: e.description }))
         ];
 
-        // 외부발주 분리 (설명에 '외부발주'가 포함된 자재비)
+        // 외부발주 분리 (하위 카테고리가 'outsource'이거나 설명에 '외부발주' 포함)
         const outsource = filtered.filter(e =>
-            e.category === SimpleExpenseCategory.MATERIAL && e.description.includes('외부발주')
+            (e.category === SimpleExpenseCategory.MATERIAL && e.description.includes('외부발주')) ||
+            e.subCategory === 'outsource'
         );
 
         // 순수 자재비 (외부발주 제외)
         const material = filtered.filter(e =>
-            e.category === SimpleExpenseCategory.MATERIAL && !e.description.includes('외부발주')
+            e.category === SimpleExpenseCategory.MATERIAL && !outsource.includes(e)
         );
 
         const other = filtered.filter(e => e.category !== SimpleExpenseCategory.TRANSPORT && e.category !== SimpleExpenseCategory.MATERIAL);

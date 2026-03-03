@@ -299,8 +299,8 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
   const manageOutsourceExpense = async (orderId: string, branchId: string, branchName: string, info: typeof formData.outsourceInfo) => {
     try {
       if (info.isOutsourced && info.partnerPrice > 0) {
-        // 지출 날짜는 주문의 배송일/픽업일 기준, 없으면 오늘
-        const targetDate = formData.pickupDate ? new Date(formData.pickupDate) : new Date();
+        // 지출 날짜는 '주문일' 기준 (외부발주는 보통 주문(발주) 시점에 등록되므로 주문일로 처리), 없으면 오늘
+        const targetDate = formData.orderDate ? new Date(formData.orderDate) : new Date();
 
         // 지출 등록/업데이트 시도
         const expenseData = {

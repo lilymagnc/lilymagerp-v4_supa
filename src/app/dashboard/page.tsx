@@ -576,6 +576,68 @@ export default function DashboardPage() {
           const statsMap = new Map();
           statsData.forEach(d => statsMap.set(d.date, d));
 
+          // 오늘 날짜 결제일 기준 매출 계산 (주문현황 당일매출 카드와 동기화)
+          const todayDateStr = format(now, 'yyyy-MM-dd');
+          let todayPaymentBasedSales = 0;
+          const todayBranchSales: Record<string, number> = {};
+
+          // 주문현황의 calculateShare와 동일한 지분 계산 함수
+          const calcShare = (order: any) => {
+            const total = order.summary?.total || 0;
+            if (!branchFilter) return total; // 전체 보기
+            const target = branchFilter.replace(/\s/g, '');
+            const ob = (order.branchName || '').replace(/\s/g, '');
+            const pb = (order.transferInfo?.processBranchName || '').replace(/\s/g, '');
+            if (!order.transferInfo?.isTransferred) {
+              return ob === target ? total : 0;
+            }
+            const split = order.transferInfo?.amountSplit || { orderBranch: 100, processBranch: 0 };
+            if (ob === target) return Math.round(total * (split.orderBranch / 100));
+            if (pb === target) return Math.round(total * (split.processBranch / 100));
+            return 0;
+          };
+
+          for (const order of orders) {
+            if (order.status === 'canceled') continue;
+            const paymentStatus = order.payment?.status;
+            if (paymentStatus === 'pending') continue;
+
+            let isCompletedToday = false;
+
+            // 1. 결제완료일(completedAt)이 오늘인지
+            const completedAt = parseDateUtil(order.payment?.completedAt);
+            if (completedAt) {
+              const dateOnly = format(completedAt, 'yyyy-MM-dd');
+              if (dateOnly === todayDateStr) isCompletedToday = true;
+            }
+
+            // 2. 분할결제 2차 결제일이 오늘인지
+            const secondDate = parseDateUtil(order.payment?.secondPaymentDate);
+            if (secondDate) {
+              const dateOnly = format(secondDate, 'yyyy-MM-dd');
+              if (dateOnly === todayDateStr) isCompletedToday = true;
+            }
+
+            // 3. 타임스탬프 없지만 결제완료 + 주문일이 오늘
+            if (!isCompletedToday && (paymentStatus === 'paid' || paymentStatus === 'completed')) {
+              const orderDate = parseDateUtil(order.orderDate);
+              if (orderDate && format(orderDate, 'yyyy-MM-dd') === todayDateStr) {
+                isCompletedToday = true;
+              }
+            }
+
+            if (!isCompletedToday) continue;
+
+            // 지분 반영한 금액 (주문현황 당일매출과 동일 로직)
+            const shareAmount = calcShare(order);
+            if (shareAmount <= 0) continue;
+
+            todayPaymentBasedSales += shareAmount;
+            const orderBranch = order.branchName || '';
+            const bKey = sanitizeBranchKey(orderBranch).replace(/_/g, '.');
+            todayBranchSales[bKey] = (todayBranchSales[bKey] || 0) + shareAmount;
+          }
+
           const dailyData: DailySalesData[] = [];
           let currentD = parseISO(dailyStartDate);
           const endD = parseISO(dailyEndDate);
@@ -585,17 +647,28 @@ export default function DashboardPage() {
             const day = statsMap.get(dateStr) || { date: dateStr, totalRevenue: 0, totalOrderCount: 0, totalSettledAmount: 0, branches: {} };
             const weekday = koreanWeekdays[currentD.getDay()];
             const label = `${format(currentD, 'M/d')} (${weekday})`;
-            const result: any = { date: label, totalSales: day.totalSettledAmount || 0 };
 
-            if (day.branches) {
+            // 오늘 날짜는 결제일 기준 매출로 보정 (주문현황 당일매출과 일치시키기 위해)
+            const isToday = dateStr === todayDateStr;
+            const result: any = { date: label, totalSales: isToday ? todayPaymentBasedSales : (day.totalSettledAmount || 0) };
+
+            if (isToday) {
+              Object.entries(todayBranchSales).forEach(([bKey, amount]) => {
+                result[bKey] = amount;
+              });
+            } else if (day.branches) {
               Object.entries(day.branches).forEach(([bKey, bStat]: [string, any]) => {
                 result[bKey.replace(/_/g, '.')] = bStat.settledAmount || 0;
               });
             }
 
             if (branchFilter) {
-              const bKey = sanitizeBranchKey(branchFilter);
-              result.sales = day.branches?.[bKey]?.settledAmount || 0;
+              if (isToday) {
+                result.sales = todayPaymentBasedSales;
+              } else {
+                const bKey = sanitizeBranchKey(branchFilter);
+                result.sales = day.branches?.[bKey]?.settledAmount || 0;
+              }
             }
 
             dailyData.push(result);
@@ -618,7 +691,7 @@ export default function DashboardPage() {
         }));
       } catch { }
     }
-  }, [user, branches, currentFilteredBranch, dailyStartDate, dailyEndDate, weeklyStartDate, weeklyEndDate, monthlyStartDate, monthlyEndDate, isAdmin]);
+  }, [user, branches, currentFilteredBranch, dailyStartDate, dailyEndDate, weeklyStartDate, weeklyEndDate, monthlyStartDate, monthlyEndDate, isAdmin, orders]);
 
   // --- Effects ---
   useEffect(() => {
