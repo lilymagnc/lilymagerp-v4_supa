@@ -1,0 +1,8 @@
+[dotenv@17.2.4] injecting env (4) from .env.local -- tip: ?숋툘  specify custom .env file path with { path: '/custom/path/.env' }
+Found 10 orders with delivery cost for 2026-03-03
+  [OK] standard 4900 for 誘쇱＜???곷Т??  [OK] standard 12800 for ?고솉以 ?곷Т
+  [OK] standard 11900 for 媛뺣룄??  [OK] standard 6000 for 寃쎄퇋??  [OK] standard 16200 for 二쇳슚??  [OK] standard 5200 for ?ㅽ쁽吏
+  [OK] standard 4800 for 寃쎄퇋??怨쇱옣??  [OK] standard 9000 for ?뺢퀬?
+  [OK] standard 5200 for ?⑥갹???곷Т??  [SKIP] e9648569-7f3b-449d-af55-441710dcef27 - already has 2 expenses
+
+Done!

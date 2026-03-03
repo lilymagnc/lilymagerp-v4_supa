@@ -357,7 +357,7 @@ export default function DailySettlementPage() {
         let deliveryCostCashToday = 0;
         const processedCashOrderIds = new Set<string>();
 
-        // 함수 정의: 지점 필터링 로직 (중복 방지)
+        // 함수 정의: 지점 필터링 로직 (매출용 - 중복 허용)
         const isTargetBranchOrder = (order: Order) => {
             if (currentTargetBranch === 'all') return true;
             const target = currentTargetBranch.trim().replace(/\s/g, '');
@@ -371,6 +371,25 @@ export default function DailySettlementPage() {
             return isOriginal || isProcess;
         };
 
+        // 함수 정의: 지출(비용) 전용 지점 필터링 로직 (중복 방지 - 수주지점에만 귀속)
+        const isTargetBranchExpense = (order: Order) => {
+            if (currentTargetBranch === 'all') return true;
+            const target = currentTargetBranch.trim().replace(/\s/g, '');
+            const branchName = order.branchName?.trim().replace(/\s/g, '') || '';
+            const processName = order.transferInfo?.processBranchName?.trim().replace(/\s/g, '') || '';
+
+            const isTransferred = order.transferInfo?.isTransferred;
+            const isValidTransferStatus = ['pending', 'accepted', 'completed'].includes(order.transferInfo?.status || '');
+
+            // 이관된 주문이고 수주지점이 명확하다면, 오직 수주지점에서만 지출 발생
+            if (isTransferred && processName && isValidTransferStatus) {
+                return processName === target;
+            }
+
+            // 일반 주문(이관 안됨)이거나 이관이 거절/취소된 경우 발주지점(원래 지점)에서 지출 발생
+            return branchName === target;
+        };
+
         // 배송비 현금 지급액 합산 (사용자 요청: 배송일 기준)
         settlementOrders.forEach(order => {
             if (!order.actualDeliveryCostCash) return;
@@ -379,14 +398,14 @@ export default function DailySettlementPage() {
             if (!deliveryDate) return;
 
             if (deliveryDate === reportDate) {
-                if (isTargetBranchOrder(order)) {
+                if (isTargetBranchExpense(order)) {
                     deliveryCostCashToday += Number(order.actualDeliveryCostCash);
                     processedCashOrderIds.add(order.id);
                 }
             } else {
                 const parsedDeliveryDate = parseDate(deliveryDate);
                 if (parsedDeliveryDate && format(parsedDeliveryDate, 'yyyy-MM-dd') === reportDate) {
-                    if (isTargetBranchOrder(order) && !processedCashOrderIds.has(order.id)) {
+                    if (isTargetBranchExpense(order) && !processedCashOrderIds.has(order.id)) {
                         deliveryCostCashToday += Number(order.actualDeliveryCostCash);
                         processedCashOrderIds.add(order.id);
                     }

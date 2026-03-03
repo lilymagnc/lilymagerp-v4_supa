@@ -1,0 +1,21 @@
+[dotenv@17.2.4] injecting env (4) from .env.local -- tip: ?숋툘  suppress all logs with { quiet: true }
+=== simple_expenses (transport, Yeouido, 2026-03-03) ===
+Total: 2 rows
+  id=a44998a7-bb37-4eff-96f3-2fb112228f9e, amount=17000, desc="諛곗넚鍮꾪쁽湲덉?湲?二쇰Ц蹂듦뎄", extra_data.type=driver_cash_payment, related_order=e9648569-7f3b-449d-af55-441710dcef27
+  id=6f89d1e0-adfb-4651-823e-dd4e452f0068, amount=17000, desc="?ㅼ젣諛곗넚猷?二쇰Ц蹂듦뎄", extra_data.type=standard_delivery_fee, related_order=e9648569-7f3b-449d-af55-441710dcef27
+Total amount: 34000
+
+=== Orders with delivery cost (Yeouido, delivery date 2026-03-03) ===
+Total: 10 orders
+  id=a5b57be3-aafb-47a6-bb24-f0c4364dae1c, branch=由대━留μ뿬?섎룄?? cost=4900, cash=0, transferred=undefined, transfer_status=undefined
+  id=645eebef-ce9e-48ec-ba4b-e92c1629aa17, branch=由대━留μ뿬?섎룄?? cost=12800, cash=0, transferred=undefined, transfer_status=undefined
+  id=1735b944-41f9-4d76-a706-91e70fcf69d7, branch=由대━留μ뿬?섎룄?? cost=11900, cash=0, transferred=undefined, transfer_status=undefined
+  id=0e37c3b3-204e-4938-a711-acf792f33f50, branch=由대━留μ뿬?섎룄?? cost=6000, cash=0, transferred=undefined, transfer_status=undefined
+  id=46230eb3-5012-42be-bcdb-8215de70f510, branch=由대━留μ뿬?섎룄?? cost=16200, cash=0, transferred=undefined, transfer_status=undefined
+  id=0a8a5905-f9a3-4e1c-8105-ebfa8527268e, branch=由대━留μ뿬?섎룄?? cost=5200, cash=0, transferred=undefined, transfer_status=undefined
+  id=e3a8e7d2-da14-4422-b953-4200aa094eb2, branch=由대━留μ뿬?섎룄?? cost=4800, cash=0, transferred=undefined, transfer_status=undefined
+  id=a1cd5eda-1e6f-4f93-a0d3-e942549cc394, branch=由대━留κ킅?붾Ц?? cost=9000, cash=0, transferred=true, transfer_status=accepted
+  id=8d96aa8c-5dd5-40a6-bdc8-e57fe28d300c, branch=由대━留κ킅?붾Ц?? cost=5200, cash=0, transferred=true, transfer_status=pending
+  id=e9648569-7f3b-449d-af55-441710dcef27, branch=由대━留κ킅?붾Ц?? cost=17000, cash=17000, transferred=true, transfer_status=pending
+Total delivery cost: 93000
+Total delivery cash: 17000

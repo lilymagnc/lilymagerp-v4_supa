@@ -1,0 +1,114 @@
+[dotenv@17.2.4] injecting env (4) from .env.local -- tip: ?숋툘  suppress all logs with { quiet: true }
+=== Step 1: 二쇰Ц ?뺣낫 ?뺤씤 ===
+諛쒖＜吏?? 由대━留κ킅?붾Ц??( thiLOPFWSRgKKtwNcPCn )
+?섏＜吏?? 由대━留μ뿬?섎룄??( ztewxOfLrno5mEzTKSNT )
+?닿? ?곹깭: pending
+?ㅼ젣諛곗넚鍮? 17000
+諛곗넚鍮??꾧툑: 17000
+諛곗넚?? 2026-03-03
+
+=== Step 2: simple_expenses 寃??===
+寃?? (extra_data.related_order_id): 0 嫄?寃?? (extra_data.relatedOrderId): 0 嫄?寃?? (related_order_id 而щ읆): undefined 嫄?寃?? (description LIKE 諛곗넚, 諛쒖＜吏??: 32 嫄?  - id: b5fc61e3-ee4e-4ea6-8a01-03864e4d60a4, amount: 11800, desc: 諛곗넚鍮?怨좎꽍?? branch: 由대━留κ킅?붾Ц?? date: 2026-01-24T00:00:00+00:00
+  - id: 7275b0b3-de47-4f9e-8664-a6324785c470, amount: 9400, desc: 諛곗넚鍮?Richard wise, branch: 由대━留κ킅?붾Ц?? date: 2026-01-24T00:00:00+00:00
+  - id: 2aixgRY20XFbQeHijass, amount: 15000, desc: 諛곗넚, branch: 由대━留κ킅?붾Ц?? date: 2025-11-28T00:00:00+00:00
+  - id: 3PHsmjN5RZVroA7Z9HNd, amount: 12000, desc: 諛곗넚, branch: 由대━留κ킅?붾Ц?? date: 2026-01-07T00:00:00+00:00
+  - id: d842DgHgHSyQzseGIwNz, amount: 13200, desc: 諛곗넚鍮?移댁뭅?짽 ?꾧툑13,200?? branch: 由대━留κ킅?붾Ц?? date: 2026-01-25T15:00:00+00:00
+  - id: mb6bVpiD7nWdWeIWUWR7, amount: 13200, desc: 諛곗넚鍮?諛뺤꽌??, branch: 由대━留κ킅?붾Ц?? date: 2026-01-25T15:00:00+00:00
+  - id: GcE1rOzNhKPA23BNhuZ3, amount: 11800, desc: 諛곗넚鍮?怨좎꽍?? branch: 由대━留κ킅?붾Ц?? date: 2026-01-23T15:00:00+00:00
+  - id: YadmuUDbuCaOHBImeYfr, amount: 9400, desc: 諛곗넚鍮?Richard wise, branch: 由대━留κ킅?붾Ц?? date: 2026-01-23T15:00:00+00:00
+  - id: 0RGnZZbGNtrb0YZxGfP7, amount: 30000, desc: 諛곗넚鍮?臾몄꽭由? branch: 由대━留κ킅?붾Ц?? date: 2026-01-04T15:00:00+00:00
+  - id: 07V0lVhhkBiNhQdogIOb, amount: 14100, desc: 諛곗넚鍮??뺣떎?? branch: 由대━留κ킅?붾Ц?? date: 2026-01-06T15:00:00+00:00
+  - id: 47RAnj6N8DCbhIAXZzJd, amount: 6200, desc: 諛곗넚鍮?媛뺤쁺誘쇱감?? branch: 由대━留κ킅?붾Ц?? date: 2026-01-05T15:00:00+00:00
+  - id: zj6D6q6BagHdxjhqMEIu, amount: 16000, desc: 諛곗넚鍮??ㅼ씤泥? branch: 由대━留κ킅?붾Ц?? date: 2026-01-11T15:00:00+00:00
+  - id: 0TUioOtgUPuh5vDX6eOE, amount: 5000, desc: 諛곗넚鍮?移댁뭅?짽 ?꾧툑5,000?? branch: 由대━留κ킅?붾Ц?? date: 2026-02-05T15:00:00+00:00
+  - id: 78xCpZUePIG8uIXXxZpX, amount: 19000, desc: 諛곗넚, branch: 由대━留κ킅?붾Ц?? date: 2026-02-04T00:00:00+00:00
+  - id: 7JGcATGZhkphV44ARcXv, amount: 3200, desc: 諛곗넚鍮?KB利앷텒 Equity, branch: 由대━留κ킅?붾Ц?? date: 2026-02-05T15:00:00+00:00
+  - id: dBWdmgvuX1pChr5dwZQf, amount: 15200, desc: 諛곗넚鍮??ㅼ씤泥? branch: 由대━留κ킅?붾Ц?? date: 2026-01-18T15:00:00+00:00
+  - id: B35uCQyiAcL55XfPnN85, amount: 13000, desc: 諛곗넚, branch: 由대━留κ킅?붾Ц?? date: 2026-01-03T00:00:00+00:00
+  - id: E6GmWiOkuMoTiPV8yqwz, amount: 1200, desc: 諛곗넚鍮?- ?좎쑀吏?(tEDodjfO6Kf0m1bO8Tt4), branch: 由대━留κ킅?붾Ц?? date: 2025-08-20T12:06:16.852+00:00
+  - id: 3o0OUENUPw0va2fWdiZQ, amount: 6500, desc: 諛곗넚鍮??댄씗泥? branch: 由대━留κ킅?붾Ц?? date: 2026-02-02T15:00:00+00:00
+  - id: AP041cqtNr5rfJLMGEEQ, amount: 5200, desc: 諛곗넚鍮??닿퇋?, branch: 由대━留κ킅?붾Ц?? date: 2026-01-05T15:00:00+00:00
+  - id: x3bBHrUdwnTQUBBBBCgA, amount: 0, desc: 諛곗넚鍮?諛뺤냼?? branch: 由대━留κ킅?붾Ц?? date: 2026-01-20T15:00:00+00:00
+  - id: 650a9807-cedc-42bd-ad3f-04b46cc8c21e, amount: 6400, desc: 諛곗넚鍮?Richard wise, branch: 由대━留κ킅?붾Ц?? date: 2026-02-07T00:00:00+00:00
+  - id: b3e878f3-c966-47a6-a364-cee42fa0d4b8, amount: 10600, desc: 諛곗넚鍮??댁??? branch: 由대━留κ킅?붾Ц?? date: 2026-02-07T00:00:00+00:00
+  - id: a6168a52-1641-4a31-9df6-7e021e6423ef, amount: 9000, desc: 諛곗넚鍮??댄씗泥? branch: 由대━留κ킅?붾Ц?? date: 2026-02-09T00:00:00+00:00
+  - id: 2a695f64-086f-4e76-b027-66f6cedca922, amount: 8000, desc: 諛곗넚鍮?源?섑쁽, branch: 由대━留κ킅?붾Ц?? date: 2026-02-11T00:00:00+00:00
+  - id: fd2eff93-fb92-472a-bb84-e1ad5afd182c, amount: 13000, desc: 諛곗넚, branch: 由대━留κ킅?붾Ц?? date: 2026-02-14T00:00:00+00:00
+  - id: 6c98fb31-b5d9-48f9-bcd8-49670af597db, amount: 3000, desc: 諛곗넚鍮?移댁뭅?짽 ?꾧툑3,000?? branch: 由대━留κ킅?붾Ц?? date: 2026-02-07T00:00:00+00:00
+  - id: fc8d0aa9-d7e1-4e28-b12a-26c78d9e1acd, amount: 9400, desc: ?ㅼ젣 諛곗넚猷?- Richard wise, branch: 由대━留κ킅?붾Ц?? date: 2026-02-07T00:00:00+00:00
+  - id: 5e8ff977-b04e-4209-8956-38dabb5929eb, amount: 3000, desc: 異붽??꾧툑諛곗넚鍮?- Richard wise, branch: 由대━留κ킅?붾Ц?? date: 2026-02-07T00:00:00+00:00
+  - id: 4587dfe8-a325-4778-b32b-9d5c291dfd1a, amount: 9000, desc: ?ㅼ젣 諛곗넚猷?- ?닿퇋泥??뚰듃?λ떂, branch: 由대━留κ킅?붾Ц?? date: 2026-02-09T00:00:00+00:00
+  - id: 54ed4740-8ae1-405a-92ce-3c7bf6da50f2, amount: 7300, desc: 諛곗넚鍮?源誘쇱? 李⑥옣, branch: 由대━留κ킅?붾Ц?? date: 2026-02-10T00:00:00+00:00
+  - id: 6543611f-be23-4b12-96ea-74535a343f4c, amount: 3000, desc: 諛곗넚鍮?移댁뭅?짽 ?꾧툑3,000?? branch: 由대━留κ킅?붾Ц?? date: 2026-02-11T00:00:00+00:00
+寃?? (description LIKE 諛곗넚, ?섏＜吏??: 55 嫄?  - id: 0kC8a9eFjERtVnRff2AF, amount: 8500, desc: 留덊룷援щ같?? branch: 由대━留μ뿬?섎룄?? date: 2025-09-01T00:00:00+00:00
+  - id: 298PXU9ildOhNT19jAS3, amount: 67000, desc: ?ㅽ닾?????諛곗넚, branch: 由대━留μ뿬?섎룄?? date: 2025-09-02T00:00:00+00:00
+  - id: 2MOEKnc9H18QlS2HAJrE, amount: 14000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2025-12-12T00:00:00+00:00
+  - id: 1EXygxwZriWvoOjCiMFL, amount: 10000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2025-10-29T00:00:00+00:00
+  - id: f6a1078b-ce73-4d9a-a446-354d3d1073ee, amount: 14000, desc: 諛곗넚, branch: 由대━留μ뿬?섎룄?? date: 2026-02-13T00:00:00+00:00
+  - id: 0aYh5AGEYsom1cbih5tC, amount: 18300, desc: 諛곗넚鍮?議곗꽦???댁궗, branch: 由대━留μ뿬?섎룄?? date: 2026-01-26T15:00:00+00:00
+  - id: 1SMkSxFgrWv66JtrKivo, amount: 24000, desc: 諛곗넚, branch: 由대━留μ뿬?섎룄?? date: 2025-09-30T00:00:00+00:00
+  - id: A7QFDrRMIjDnucKsENZO, amount: 15300, desc: 諛곗넚鍮?源?쒗씗, branch: 由대━留μ뿬?섎룄?? date: 2026-01-26T15:00:00+00:00
+  - id: DQ3ZmozHFp8E3kZsK47g, amount: 33400, desc: 諛곗넚猷? branch: 由대━留μ뿬?섎룄?? date: 2025-09-22T00:00:00+00:00
+  - id: lTj2sw2DZ12CypJQXu05, amount: 6500, desc: 諛곗넚鍮??댁듅二? branch: 由대━留μ뿬?섎룄?? date: 2026-02-01T15:00:00+00:00
+  - id: 5DHQIrcKXePnAW7DJT1r, amount: 80000, desc: 12/4 湲덉쟾??諛곗넚, branch: 由대━留μ뿬?섎룄?? date: 2025-12-20T00:00:00+00:00
+  - id: 6yWolakQZkBDnWj6ZQgj, amount: 14000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2025-11-07T00:00:00+00:00
+  - id: i3GYWzMVipIVgftj7lhU, amount: 14000, desc: 諛곗넚猷? branch: 由대━留μ뿬?섎룄?? date: 2026-01-28T00:00:00+00:00
+  - id: jXP3tyIybHtR45hfkvnR, amount: 14000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2025-12-19T00:00:00+00:00
+  - id: 3Llc73HXnxzIgpfoRnU2, amount: 18400, desc: 諛곗넚鍮?理쒖듅?? branch: 由대━留μ뿬?섎룄?? date: 2026-01-25T15:00:00+00:00
+  - id: gc6pFCOcWWzf5K5RVyy8, amount: 6500, desc: ?ъ쓽?꾨같?? branch: 由대━留μ뿬?섎룄?? date: 2025-09-01T00:00:00+00:00
+  - id: 1cc1e60f-0ddd-4069-aedd-d1d31d608c3b, amount: 14000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2026-02-20T00:00:00+00:00
+  - id: 5n25NDCAbc4xpHxRNACE, amount: 14000, desc: 諛곗넚, branch: 由대━留μ뿬?섎룄?? date: 2025-09-22T00:00:00+00:00
+  - id: GYB0wK0zepuT0cIuZOqt, amount: 14000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2026-01-06T00:00:00+00:00
+  - id: BzNNyUJE0FWgKk3I6WXs, amount: 14000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2025-10-27T00:00:00+00:00
+  - id: A4bzRhHgXLMjCj9z2uAs, amount: 10800, desc: 諛곗넚鍮?KB利앷텒 Equity, branch: 由대━留μ뿬?섎룄?? date: 2026-01-27T15:00:00+00:00
+  - id: QTI0h1Ex2OMjROxMF2G1, amount: 10800, desc: 諛곗넚鍮?源湲곕┝, branch: 由대━留μ뿬?섎룄?? date: 2026-01-27T15:00:00+00:00
+  - id: A4yr5fXzzpzRZElU16bF, amount: 10000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2025-10-27T00:00:00+00:00
+  - id: NaWGLGqEyPELxyGU4pdp, amount: 6400, desc: 諛곗넚鍮?源??? branch: 由대━留μ뿬?섎룄?? date: 2026-01-18T15:00:00+00:00
+  - id: P0vt2kIxfPj4z6iDHOAI, amount: 17800, desc: 諛곗넚鍮??덉꽍泥좊??ъ옣?? branch: 由대━留μ뿬?섎룄?? date: 2026-01-27T15:00:00+00:00
+  - id: c7pylrooxTb9pdeLh4vX, amount: 7000, desc: 諛곗넚鍮?移댁뭅?짽 ?꾧툑7,000?? branch: 由대━留μ뿬?섎룄?? date: 2026-01-21T15:00:00+00:00
+  - id: 6c571b80-5c9b-4e8c-9ee5-986b48ecda1c, amount: 10000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2026-02-25T00:00:00+00:00
+  - id: sEjSLKLdSLuLRkUrUwsM, amount: 15000, desc: 諛곗넚鍮??ㅽ뵾???꾧툑15,000?? branch: 由대━留μ뿬?섎룄?? date: 2026-01-27T15:00:00+00:00
+  - id: D1CSIpYmtz2MaGhZpHE8, amount: 8300, desc: 諛곗넚鍮?, branch: 由대━留μ뿬?섎룄?? date: 2026-02-02T15:00:00+00:00
+  - id: 0ePFFTPDdIKFGHwPpKR5, amount: 13770, desc: 諛곗넚鍮?源??? branch: 由대━留μ뿬?섎룄?? date: 2026-02-01T15:00:00+00:00
+  - id: 33682cf8-903b-4ae2-8f6f-260e3b34e1dc, amount: 14000, desc: 諛곗넚, branch: 由대━留μ뿬?섎룄?? date: 2026-02-23T00:00:00+00:00
+  - id: 4vVXa5rSmJXGjUlpPZfL, amount: 82000, desc: 12/11 ?밸낫??諛곗넚, branch: 由대━留μ뿬?섎룄?? date: 2025-12-17T00:00:00+00:00
+  - id: E17lT4pFpYBEtM92f639, amount: 14000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2025-12-01T00:00:00+00:00
+  - id: EQBv9XORseSRz93ZErpk, amount: 14000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2025-09-05T00:00:00+00:00
+  - id: 1asyItVSIBXO7J0jthlA, amount: 13000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2025-09-08T00:00:00+00:00
+  - id: 97d9ec1c-98b6-4128-9555-e8d3003c47a8, amount: 10000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2026-02-20T00:00:00+00:00
+  - id: Fj9TH8HJyGb4uokhJITz, amount: 10000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2025-11-11T00:00:00+00:00
+  - id: IuIYlwo0tVKSeqgqwTvT, amount: 14000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2025-08-19T00:00:00+00:00
+  - id: 52d56d2b-f6df-4d84-a3eb-d93b1755304a, amount: 10000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2026-02-23T00:00:00+00:00
+  - id: 4198db0a-9761-4163-8f70-65312c5a66c3, amount: 14000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2026-02-20T00:00:00+00:00
+  - id: 2908403d-e587-41af-97bc-a5b1979e23a3, amount: 12500, desc: 諛곗넚鍮?源?섎┛, branch: 由대━留μ뿬?섎룄?? date: 2026-02-11T00:00:00+00:00
+  - id: 33ca8a27-6c40-45f9-a3fa-355e7a200792, amount: 14100, desc: 諛곗넚鍮?源?섎┛, branch: 由대━留μ뿬?섎룄?? date: 2026-02-11T00:00:00+00:00
+  - id: 3bb2b004-d7fe-41e8-b507-d6064c1e2876, amount: 75000, desc: ?↔컝諛곗넚, branch: 由대━留μ뿬?섎룄?? date: 2026-02-11T00:00:00+00:00
+  - id: 6e7664cd-9e3d-451c-8737-fe6816197dc9, amount: 20000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2026-02-10T00:00:00+00:00
+  - id: 8ea2fc1c-62a5-4e6c-aab7-619b4876cd96, amount: 15000, desc: 諛곗넚鍮?吏??뾽泥? ?꾧툑15,000?? branch: 由대━留μ뿬?섎룄?? date: 2026-02-09T00:00:00+00:00
+  - id: a6ff2b92-51c4-4f7f-a28c-52342b713efd, amount: 15000, desc: ?ㅼ젣 諛곗넚猷?- ?뺤긽??蹂몃??? branch: 由대━留μ뿬?섎룄?? date: 2026-02-09T00:00:00+00:00
+  - id: b49c6a8c-c330-4bda-ba04-7cb7639b39d9, amount: 15000, desc: 異붽??꾧툑諛곗넚鍮?- ?뺤긽??蹂몃??? branch: 由대━留μ뿬?섎룄?? date: 2026-02-09T00:00:00+00:00
+  - id: a2efc9c1-71d4-4dbe-a4fd-5d1e791a6b96, amount: 7300, desc: ?ㅼ젣 諛곗넚猷?- 諛뺤???怨쇱옣?? branch: 由대━留μ뿬?섎룄?? date: 2026-02-10T00:00:00+00:00
+  - id: 4a653805-73b1-4e8a-afc7-157415a92c5a, amount: 29700, desc: 諛곗넚鍮?源?섎끂?? branch: 由대━留μ뿬?섎룄?? date: 2026-02-10T00:00:00+00:00
+  - id: 5c210142-5f53-4b64-8abf-d4f2fde8f4a1, amount: 29700, desc: ?ㅼ젣 諛곗넚猷?- 源?⑥쭊 , branch: 由대━留μ뿬?섎룄?? date: 2026-02-10T00:00:00+00:00
+  - id: f5cac789-84f9-41d9-8226-06c3236cbd3b, amount: 10000, desc: 諛곗넚鍮? branch: 由대━留μ뿬?섎룄?? date: 2026-02-11T00:00:00+00:00
+  - id: e523682f-ee0b-44bd-af35-637838b7a243, amount: 10100, desc: 諛곗넚鍮??쒖뼇利앷텒 遺?숈궛?ъ옄蹂몃?, branch: 由대━留μ뿬?섎룄?? date: 2026-02-11T00:00:00+00:00
+  - id: 334047f5-ac8a-45ee-b6c4-c86d1d3facf6, amount: 14300, desc: 諛곗넚鍮??쒖뼇利앷텒 遺?숈궛?ъ옄蹂몃?, branch: 由대━留μ뿬?섎룄?? date: 2026-02-11T00:00:00+00:00
+  - id: 2f995f94-226d-4a17-a2a2-1ecdd5809093, amount: 8800, desc: 諛곗넚鍮??쒖뼇利앷텒 遺?숈궛?ъ옄蹂몃?, branch: 由대━留μ뿬?섎룄?? date: 2026-02-11T00:00:00+00:00
+  - id: 81fbfc89-80c4-45c2-8b3c-6f5199cd7ac8, amount: 14000, desc: 諛곗넚, branch: 由대━留μ뿬?섎룄?? date: 2026-02-11T00:00:00+00:00
+
+=== Step 3: 珥?0嫄?諛쒓껄, ?섏젙 吏꾪뻾 ===
+湲곗〈 吏異??덉퐫?쒓? ?놁뒿?덈떎. ?덈줈 ?앹꽦?⑸땲??
+?ㅼ젣諛곗넚鍮??앹꽦 ?ㅽ뙣: {
+  code: 'PGRST204',
+  details: null,
+  hint: null,
+  message: "Could not find the 'payment_method' column of 'simple_expenses' in the schema cache"
+}
+諛곗넚鍮꾪쁽湲??앹꽦 ?ㅽ뙣: {
+  code: 'PGRST204',
+  details: null,
+  hint: null,
+  message: "Could not find the 'payment_method' column of 'simple_expenses' in the schema cache"
+}
+
+=== ?꾨즺 ===

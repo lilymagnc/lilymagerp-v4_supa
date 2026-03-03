@@ -1,0 +1,20 @@
+[dotenv@17.2.4] injecting env (4) from .env.local -- tip: ?숋툘  override existing env vars with { override: true }
+=== e9648569 愿??吏異? 2嫄?===
+  id=6f89d1e0-adfb-4651-823e-dd4e452f0068, amount=17000, type=standard_delivery_fee, desc=?ㅼ젣諛곗넚猷?二쇰Ц蹂듦뎄
+  id=a44998a7-bb37-4eff-96f3-2fb112228f9e, amount=17000, type=driver_cash_payment, desc=諛곗넚鍮꾪쁽湲덉?湲?二쇰Ц蹂듦뎄
+Deleted: a44998a7-bb37-4eff-96f3-2fb112228f9e (driver_cash_payment 17000)
+Updated: 6f89d1e0-adfb-4651-823e-dd4e452f0068 -> desc="諛곗넚鍮꾪쁽湲덉?湲??뺤꽦???댁궗"
+
+=== 理쒖쥌 ?뺤씤 (?ъ쓽??3/3 transport) ===
+Total: 10 rows
+  id=6f89d1e0-adfb-4651-823e-dd4e452f0068, amount=17000, desc="諛곗넚鍮꾪쁽湲덉?湲??뺤꽦???댁궗", type=standard_delivery_fee
+  id=7ca76888-5430-40b0-86a8-06d072e8a7ba, amount=4900, desc="?ㅼ젣諛곗넚猷?誘쇱＜???곷Т??, type=standard_delivery_fee
+  id=13221420-17d6-4f70-bd23-f4aaa3831e36, amount=5200, desc="?ㅼ젣諛곗넚猷??ㅽ쁽吏", type=standard_delivery_fee
+  id=dc22bed5-c651-4c4c-84af-6def9281b3f3, amount=12800, desc="?ㅼ젣諛곗넚猷??고솉以 ?곷Т", type=standard_delivery_fee
+  id=2be05d0e-35cf-4059-b24f-c689ec25846e, amount=11900, desc="?ㅼ젣諛곗넚猷?媛뺣룄??, type=standard_delivery_fee
+  id=9c1df583-89d9-4245-96d4-6707a26bb0fb, amount=6000, desc="?ㅼ젣諛곗넚猷?寃쎄퇋??, type=standard_delivery_fee
+  id=a2968034-d31c-44c9-8de7-bafd9c682e03, amount=16200, desc="?ㅼ젣諛곗넚猷?二쇳슚??, type=standard_delivery_fee
+  id=94f2c33b-d0ca-4ea2-a821-e46f5fc58d9a, amount=4800, desc="?ㅼ젣諛곗넚猷?寃쎄퇋??怨쇱옣??, type=standard_delivery_fee
+  id=a0e13c58-9b0f-4287-8b24-10b9ab0cc82a, amount=9000, desc="?ㅼ젣諛곗넚猷??뺢퀬?", type=standard_delivery_fee
+  id=3af1254d-f92a-47d6-970b-d5414aff427e, amount=5200, desc="?ㅼ젣諛곗넚猷??⑥갹???곷Т??, type=standard_delivery_fee
+Total amount: 93000
