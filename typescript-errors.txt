@@ -1,0 +1,88 @@
+functions/src/index.ts(10,32): error TS2307: Cannot find module 'firebase-functions' or its corresponding type declarations.
+functions/src/index.ts(11,25): error TS2307: Cannot find module 'firebase-functions/https' or its corresponding type declarations.
+functions/src/index.ts(12,25): error TS2307: Cannot find module 'firebase-functions/logger' or its corresponding type declarations.
+functions/src/index.ts(13,28): error TS2307: Cannot find module 'firebase-functions' or its corresponding type declarations.
+functions/src/index.ts(14,24): error TS2307: Cannot find module 'firebase-admin' or its corresponding type declarations.
+scripts/migrate-hr-docs.ts(2,19): error TS2307: Cannot find module 'firebase-admin' or its corresponding type declarations.
+scripts/verify-v3-vs-v4.ts(2,19): error TS2307: Cannot find module 'firebase-admin' or its corresponding type declarations.
+src/app/dashboard/budgets/components/budget-alerts.tsx(237,28): error TS1361: 'EXPENSE_CATEGORY_LABELS' cannot be used as a value because it was imported using 'import type'.
+src/app/dashboard/budgets/components/budget-analytics.tsx(109,15): error TS1361: 'EXPENSE_CATEGORY_LABELS' cannot be used as a value because it was imported using 'import type'.
+src/app/dashboard/budgets/components/budget-analytics.tsx(181,19): error TS1361: 'EXPENSE_CATEGORY_LABELS' cannot be used as a value because it was imported using 'import type'.
+src/app/dashboard/calendar/page.tsx(266,84): error TS18047: 'request.createdAt' is possibly 'null'.
+src/app/dashboard/calendar/page.tsx(267,11): error TS18047: 'request.createdAt' is possibly 'null'.
+src/app/dashboard/checklist/daily/new/page.tsx(47,68): error TS2339: Property 'displayName' does not exist on type 'UserProfile'.
+src/app/dashboard/checklist/daily/new/page.tsx(126,9): error TS2554: Expected 3-4 arguments, but got 5.
+src/app/dashboard/checklist/monthly/new/page.tsx(46,68): error TS2339: Property 'displayName' does not exist on type 'UserProfile'.
+src/app/dashboard/checklist/monthly/new/page.tsx(123,9): error TS2554: Expected 3-4 arguments, but got 5.
+src/app/dashboard/checklist/template/page.tsx(162,7): error TS2322: Type 'string' is not assignable to type '"daily" | "weekly" | "monthly"'.
+src/app/dashboard/checklist/weekly/new/page.tsx(46,68): error TS2339: Property 'displayName' does not exist on type 'UserProfile'.
+src/app/dashboard/checklist/weekly/new/page.tsx(123,9): error TS2554: Expected 3-4 arguments, but got 5.
+src/app/dashboard/customers/components/point-edit-dialog.tsx(94,14): error TS2339: Property 'displayName' does not exist on type 'UserProfile'.
+src/app/dashboard/customers/components/point-edit-dialog.tsx(272,55): error TS2339: Property 'displayName' does not exist on type 'UserProfile'.
+src/app/dashboard/expenses/components/expense-analytics.tsx(67,45): error TS2339: Property 'toDate' does not exist on type 'string | Date'.
+  Property 'toDate' does not exist on type 'string'.
+src/app/dashboard/expenses/components/expense-analytics.tsx(67,72): error TS2339: Property 'toDate' does not exist on type 'string | Date'.
+  Property 'toDate' does not exist on type 'string'.
+src/app/dashboard/expenses/components/expense-analytics.tsx(146,38): error TS2339: Property 'toDate' does not exist on type 'string | Date'.
+  Property 'toDate' does not exist on type 'string'.
+src/app/dashboard/expenses/components/expense-analytics.tsx(146,65): error TS2339: Property 'toDate' does not exist on type 'string | Date'.
+  Property 'toDate' does not exist on type 'string'.
+src/app/dashboard/material-request/components/delivery-management.tsx(97,9): error TS2353: Object literal may only specify known properties, and 'receivingInfo' does not exist in type 'Partial<MaterialRequest>'.
+src/app/dashboard/material-request/components/delivery-management.tsx(147,26): error TS2339: Property 'uid' does not exist on type 'UserProfile'.
+src/app/dashboard/material-request/components/delivery-notifications.tsx(71,53): error TS2339: Property 'toDate' does not exist on type 'string | Date'.
+  Property 'toDate' does not exist on type 'string'.
+src/app/dashboard/material-request/components/delivery-notifications.tsx(71,92): error TS2339: Property 'toDate' does not exist on type 'string | Date'.
+  Property 'toDate' does not exist on type 'string'.
+src/app/dashboard/material-request/components/delivery-notifications.tsx(77,62): error TS2339: Property 'toDate' does not exist on type 'string | Date'.
+  Property 'toDate' does not exist on type 'string'.
+src/app/dashboard/material-request/components/delivery-notifications.tsx(77,101): error TS2339: Property 'toDate' does not exist on type 'string | Date'.
+  Property 'toDate' does not exist on type 'string'.
+src/app/dashboard/orders/components/order-edit-dialog.tsx(303,37): error TS2339: Property 'orderDate' does not exist on type '{ orderer: { name: string; contact: string; company: string; email: string; }; receiptType: "store_pickup" | "pickup_reservation" | "delivery_reservation"; pickupDate: string; pickupTime: string; ... 8 more ...; paymentMethod: any; }'.
+src/app/dashboard/orders/components/order-edit-dialog.tsx(303,67): error TS2339: Property 'orderDate' does not exist on type '{ orderer: { name: string; contact: string; company: string; email: string; }; receiptType: "store_pickup" | "pickup_reservation" | "delivery_reservation"; pickupDate: string; pickupTime: string; ... 8 more ...; paymentMethod: any; }'.
+src/app/dashboard/orders/page.tsx(2250,84): error TS2554: Expected 2-3 arguments, but got 4.
+src/app/dashboard/orders/page.tsx(2262,84): error TS2554: Expected 2-3 arguments, but got 4.
+src/app/dashboard/partners/page.tsx(56,30): error TS2345: Argument of type '{ category?: string; name?: string; type?: string; phone?: string; items?: string; address?: string; email?: string; businessNumber?: string; memo?: string; ceoName?: string; contactPerson?: string; bankAccount?: string; defaultMarginPercent?: number; }' is not assignable to parameter of type 'Omit<Partner, "id">'.
+  Property 'name' is optional in type '{ category?: string; name?: string; type?: string; phone?: string; items?: string; address?: string; email?: string; businessNumber?: string; memo?: string; ceoName?: string; contactPerson?: string; bankAccount?: string; defaultMarginPercent?: number; }' but required in type 'Omit<Partner, "id">'.
+src/app/dashboard/partners/page.tsx(76,28): error TS2339: Property 'contact' does not exist on type 'Partner'.
+src/app/dashboard/pickup-delivery/components/DeliverySettingsDialog.tsx(35,27): error TS2345: Argument of type 'Surcharges' is not assignable to parameter of type 'SetStateAction<{ mediumItem: number; largeItem: number; express: number; }>'.
+  Type 'Surcharges' is not assignable to type '{ mediumItem: number; largeItem: number; express: number; }'.
+    Property 'mediumItem' is optional in type 'Surcharges' but required in type '{ mediumItem: number; largeItem: number; express: number; }'.
+src/app/dashboard/purchase-management/components/branch-requests-view.tsx(172,56): error TS2339: Property 'seconds' does not exist on type 'string | Date'.
+  Property 'seconds' does not exist on type 'string'.
+src/app/dashboard/purchase-management/components/branch-requests-view.tsx(173,56): error TS2339: Property 'seconds' does not exist on type 'string | Date'.
+  Property 'seconds' does not exist on type 'string'.
+src/app/dashboard/purchase-management/components/purchase-batch-manager.tsx(105,29): error TS2339: Property 'uid' does not exist on type 'UserProfile'.
+src/app/dashboard/purchase-management/components/purchase-batch-manager.tsx(106,31): error TS2339: Property 'displayName' does not exist on type 'UserProfile'.
+src/app/dashboard/quotations/components/quotation-form.tsx(489,130): error TS2554: Expected 1-2 arguments, but got 3.
+src/app/dashboard/recipients/components/recipient-detail-dialog.tsx(172,54): error TS2339: Property 'toDate' does not exist on type 'string'.
+src/app/dashboard/recipients/components/recipient-detail-dialog.tsx(392,57): error TS2339: Property 'toDate' does not exist on type 'string'.
+src/app/dashboard/reports/components/report-filters.tsx(23,3): error TS2459: Module '"@/hooks/use-reports"' declares 'ExpenseCategory' locally, but it is not exported.
+src/components/display-board.tsx(193,48): error TS2339: Property 'toDate' does not exist on type 'string | Date'.
+  Property 'toDate' does not exist on type 'string'.
+src/components/email-template-library.tsx(351,55): error TS2339: Property 'uid' does not exist on type 'UserProfile'.
+src/hooks/use-albums.ts(22,5): error TS2353: Object literal may only specify known properties, and 'branchId' does not exist in type 'Album'.
+src/hooks/use-albums.ts(64,30): error TS2339: Property 'branchId' does not exist on type 'CreateAlbumData'.
+src/hooks/use-expenses.ts(30,58): error TS2739: Type '{ id: any; requestNumber: any; requesterId: any; requesterName: any; requesterRole: any; branchId: any; branchName: any; status: any; totalAmount: number; totalTaxAmount: number; items: any; purpose: any; ... 12 more ...; updatedAt: any; }' is missing the following properties from type 'ExpenseRequest': title, urgency
+src/hooks/use-expenses.ts(242,84): error TS2339: Property 'id' does not exist on type 'Omit<ExpenseItem, "id">'.
+src/hooks/use-orders.clean.ts(1,35): error TS2304: Cannot find name 'Order'.
+src/hooks/use-orders.clean.ts(45,29): error TS2304: Cannot find name 'useCallback'.
+src/hooks/use-orders.clean.ts(47,9): error TS2304: Cannot find name 'setLoading'.
+src/hooks/use-orders.clean.ts(48,33): error TS2304: Cannot find name 'subDays'.
+src/hooks/use-orders.clean.ts(48,41): error TS2304: Cannot find name 'startOfDay'.
+src/hooks/use-orders.clean.ts(49,39): error TS2304: Cannot find name 'supabase'.
+src/hooks/use-orders.clean.ts(58,9): error TS2304: Cannot find name 'setOrders'.
+src/hooks/use-orders.clean.ts(64,9): error TS2304: Cannot find name 'setLoading'.
+src/hooks/use-photos.ts(20,5): error TS2353: Object literal may only specify known properties, and 'albumId' does not exist in type 'Photo'.
+src/hooks/use-products.ts(91,7): error TS2552: Cannot find name 'coole'. Did you mean 'console'?
+src/hooks/use-reports.ts(197,23): error TS1361: 'EXPENSE_CATEGORY_LABELS' cannot be used as a value because it was imported using 'import type'.
+src/hooks/use-reports.ts(198,22): error TS2339: Property 'amount' does not exist on type 'unknown'.
+src/hooks/use-reports.ts(199,21): error TS2339: Property 'count' does not exist on type 'unknown'.
+src/hooks/use-reports.ts(200,45): error TS2339: Property 'amount' does not exist on type 'unknown'.
+src/hooks/use-reports.ts(214,26): error TS2339: Property 'branchName' does not exist on type 'unknown'.
+src/hooks/use-reports.ts(215,22): error TS2339: Property 'amount' does not exist on type 'unknown'.
+src/hooks/use-reports.ts(216,21): error TS2339: Property 'count' does not exist on type 'unknown'.
+src/hooks/use-reports.ts(217,45): error TS2339: Property 'amount' does not exist on type 'unknown'.
+src/hooks/use-reports.ts(311,25): error TS1361: 'EXPENSE_CATEGORY_LABELS' cannot be used as a value because it was imported using 'import type'.
+src/types/index.ts(6,1): error TS2308: Module './material-request' has already exported a member named 'calculateTotalAmount'. Consider explicitly re-exporting to resolve the ambiguity.
+src/types/index.ts(6,1): error TS2308: Module './material-request' has already exported a member named 'getStatusColor'. Consider explicitly re-exporting to resolve the ambiguity.
+src/types/index.ts(8,1): error TS2308: Module './expense' has already exported a member named 'getCategoryColor'. Consider explicitly re-exporting to resolve the ambiguity.

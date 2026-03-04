@@ -261,6 +261,7 @@ export default function DailySettlementPage() {
         // 해당 일자의 주문 필터링 (로컬 상태 settlementOrders 사용)
         const dailyOrders: Order[] = [];
         const pendingList: Order[] = [];
+        const todayReceivedOrders: Order[] = [];
 
         // 날짜 필터 생성 (YYYY-MM-DDT00:00:00 형식을 사용하여 로컬 시간 보장)
         const from = new Date(reportDate + 'T00:00:00');
@@ -294,6 +295,10 @@ export default function DailySettlementPage() {
             // 주문일자 스트링 비교 (YYYY-MM-DD) - 날짜 객체 비교보다 정확함
             const orderDateStr = orderDate ? format(orderDate, 'yyyy-MM-dd') : '';
             const isOrderDateToday = orderDateStr === reportDate;
+
+            if (isOrderDateToday) {
+                todayReceivedOrders.push(order);
+            }
 
             let hasPaymentToday = false;
 
@@ -346,6 +351,11 @@ export default function DailySettlementPage() {
                         }
                     }
                 }
+            }
+
+            // 0원 주문 건(서비스 등)이고 오늘 주문한 건이면 지불 완료로 간주하여 반영
+            if (order.summary.total === 0 && isOrderDateToday) {
+                hasPaymentToday = true;
             }
 
             if (hasPaymentToday) {
@@ -428,6 +438,11 @@ export default function DailySettlementPage() {
         let netSales = 0;
         let prevOrderPaymentTotal = 0;
         let pendingAmountToday = 0;
+
+        let todayOrderTotalAmount = 0;
+        let todayOrderTotalCount = 0;
+        let todayOrderPaidAmount = 0;
+        let todayOrderPaidCount = 0;
 
         const pendingOrdersToday: Order[] = [];
         const paidOrdersToday: Order[] = [];
@@ -531,7 +546,8 @@ export default function DailySettlementPage() {
             // 결제 상태 업데이트 & 오늘 내 지분만큼 결제된 금액 받기
             const mySettledAmount = updatePaymentStats(order, ratio);
 
-            if (mySettledAmount > 0) {
+            // 실 결제 금액이 있거나, 지분이 있으면서 금액이 0원(서비스/전액할인)인 경우 수금 내역에 포함
+            if (mySettledAmount > 0 || (order.summary.total === 0 && ratio > 0)) {
                 totalPayment += mySettledAmount;
                 netSales += mySettledAmount;
 
@@ -542,6 +558,8 @@ export default function DailySettlementPage() {
 
                 if (isTodayOrder) {
                     if (!paidOrdersToday.includes(order)) paidOrdersToday.push(order);
+                    todayOrderPaidCount++;
+                    todayOrderPaidAmount += mySettledAmount;
                 }
 
                 // 이월 주문 수금액 (주문일이 오늘 이전)
@@ -549,6 +567,35 @@ export default function DailySettlementPage() {
                     prevOrderPaymentTotal += mySettledAmount;
                     if (!previousOrderPayments.includes(order)) previousOrderPayments.push(order);
                 }
+            }
+        });
+
+        // 금일 주문 (수금, 미수금 전체 잔액 요약)
+        todayReceivedOrders.forEach(order => {
+            let ratio = 1.0;
+            if (currentTargetBranch !== 'all') {
+                const target = currentTargetBranch.trim().replace(/\s/g, '');
+                const branchName = order.branchName?.trim().replace(/\s/g, '') || '';
+                const processName = order.transferInfo?.processBranchName?.trim().replace(/\s/g, '') || '';
+                const isOriginal = branchName === target;
+                const isProcess = order.transferInfo?.isTransferred &&
+                    (order.transferInfo?.status === 'accepted' || order.transferInfo?.status === 'completed') &&
+                    processName === target;
+
+                const split = order.transferInfo?.amountSplit || { orderBranch: 100, processBranch: 0 };
+
+                if (isOriginal) {
+                    ratio = order.transferInfo?.isTransferred ? (split.orderBranch / 100) : 1.0;
+                } else if (isProcess) {
+                    ratio = split.processBranch / 100;
+                } else {
+                    ratio = 0;
+                }
+            }
+
+            if (ratio > 0) {
+                todayOrderTotalCount++;
+                todayOrderTotalAmount += Math.round((order.summary.total || 0) * ratio);
             }
         });
 
@@ -616,6 +663,10 @@ export default function DailySettlementPage() {
             pendingAmountToday,
             deliveryCostCashToday,
             orderCount: dailyOrders.length,
+            todayOrderTotalAmount,
+            todayOrderTotalCount,
+            todayOrderPaidAmount,
+            todayOrderPaidCount,
             from,
             to
         };
@@ -989,44 +1040,56 @@ export default function DailySettlementPage() {
             }
 
             {/* 요약 카드 */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <Card className="bg-blue-50/50 border-blue-100">
-                    <CardHeader className="pb-2">
-                        <CardDescription className="text-blue-600 font-medium whitespace-nowrap">오늘 총 매출 (접수 기준)</CardDescription>
-                        <CardTitle className="text-2xl font-bold flex items-baseline gap-2">
-                            ₩{stats?.totalPayment.toLocaleString()}
+            <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
+                <Card className="bg-blue-50/50 border-blue-200">
+                    <CardHeader className="p-4 pb-2">
+                        <CardDescription className="text-blue-700 font-bold whitespace-nowrap text-[11px] tracking-tight">금일주문 접수총액 (미결포함)</CardDescription>
+                        <CardTitle className="text-lg font-bold flex items-baseline gap-2">
+                            ₩{stats?.todayOrderTotalAmount.toLocaleString()}
                         </CardTitle>
                         <div className="flex justify-between items-center mt-1">
-                            <span className="text-xs text-muted-foreground mr-1">({stats?.orderCount || 0}건)</span>
-                            <span className="text-[10px] text-orange-600 font-medium">실질: ₩{stats?.outgoingSettle.toLocaleString()}</span>
+                            <span className="text-[11px] text-muted-foreground mr-1">({stats?.todayOrderTotalCount || 0}건)</span>
+                        </div>
+                    </CardHeader>
+                </Card>
+                <Card className="bg-green-50/50 border-green-200">
+                    <CardHeader className="p-4 pb-2">
+                        <CardDescription className="text-green-700 font-bold whitespace-nowrap text-[11px] tracking-tight">금일주문 수금액 (미결제외)</CardDescription>
+                        <CardTitle className="text-lg font-bold flex items-baseline gap-2">
+                            ₩{stats?.todayOrderPaidAmount.toLocaleString()}
+                        </CardTitle>
+                        <div className="flex justify-between items-center mt-1">
+                            <span className="text-[11px] text-muted-foreground mr-1">({stats?.todayOrderPaidCount || 0}건)</span>
                         </div>
                     </CardHeader>
                 </Card>
                 <Card>
-                    <CardHeader className="pb-2">
-                        <CardDescription>발주 수금액 (내 지분)</CardDescription>
-                        <CardTitle className="text-2xl font-bold">₩{stats?.outgoingSettle.toLocaleString()}</CardTitle>
+                    <CardHeader className="p-4 pb-2">
+                        <CardDescription className="whitespace-nowrap text-[11px] tracking-tight font-medium text-gray-500">발주 수익 (내 지분)</CardDescription>
+                        <CardTitle className="text-lg font-bold">₩{stats?.outgoingSettle.toLocaleString()}</CardTitle>
                     </CardHeader>
                 </Card>
                 <Card>
-                    <CardHeader className="pb-2">
-                        <CardDescription>수주 수익 (이관 지분)</CardDescription>
-                        <CardTitle className="text-2xl font-bold">₩{stats?.incomingSettle.toLocaleString()}</CardTitle>
+                    <CardHeader className="p-4 pb-2">
+                        <CardDescription className="whitespace-nowrap text-[11px] tracking-tight font-medium text-gray-500">수주 수익 (이관지분)</CardDescription>
+                        <CardTitle className="text-lg font-bold">₩{stats?.incomingSettle.toLocaleString()}</CardTitle>
                     </CardHeader>
                 </Card>
-                <Card className="bg-purple-50/50 border-purple-100">
-                    <CardHeader className="pb-2">
-                        <CardDescription className="text-purple-600 font-medium">이월 주문 결제 (수금)</CardDescription>
-                        <CardTitle className="text-2xl font-bold flex items-baseline gap-2">
+                <Card className="bg-purple-50/50 border-purple-200">
+                    <CardHeader className="p-4 pb-2">
+                        <CardDescription className="text-purple-700 font-bold whitespace-nowrap text-[11px] tracking-tight">이월 주문수금 (과거건)</CardDescription>
+                        <CardTitle className="text-lg font-bold flex items-baseline gap-2">
                             ₩{stats?.prevOrderPaymentTotal.toLocaleString()}
-                            <span className="text-sm font-normal text-muted-foreground">({stats?.previousOrderPayments.length || 0}건)</span>
                         </CardTitle>
+                        <div className="flex justify-between items-center mt-1">
+                            <span className="text-[11px] text-muted-foreground mr-1">({stats?.previousOrderPayments.length || 0}건)</span>
+                        </div>
                     </CardHeader>
                 </Card>
                 <Card className="bg-primary/5 border-primary/20">
-                    <CardHeader className="pb-2">
-                        <CardDescription className="text-primary font-bold">최종 실질 수익 (당일수금+이월수금)</CardDescription>
-                        <CardTitle className="text-2xl font-bold text-primary">₩{stats?.netSales.toLocaleString()}</CardTitle>
+                    <CardHeader className="p-4 pb-2">
+                        <CardDescription className="text-primary font-bold whitespace-nowrap text-[11px] tracking-tight">총매출 (당일+이월)</CardDescription>
+                        <CardTitle className="text-xl font-bold text-primary">₩{stats?.netSales.toLocaleString()}</CardTitle>
                     </CardHeader>
                 </Card>
             </div>
