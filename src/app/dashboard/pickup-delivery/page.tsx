@@ -40,7 +40,7 @@ import { DeliveryCostTable } from "./components/DeliveryCostTable";
 import { CalendarView } from "./components/CalendarView";
 import { DeliverySettingsDialog } from "./components/DeliverySettingsDialog";
 import { DeliveryStatsChart } from "./components/DeliveryStatsChart";
-
+import { parseDate } from "@/lib/date-utils";
 
 const toLocalDate = (dateVal: any): Date => {
   if (!dateVal) return new Date();
@@ -162,7 +162,44 @@ export default function PickupDeliveryPage() {
     } catch (error) { console.error('거래처 자동 등록 오류:', error); }
   };
 
+  // 운송비(배송비) 지출 동기화 헬퍼 함수
+  const syncDeliveryExpense = async (
+    orderId: string,
+    actualCost: number,
+    actualCostCash: number,
+    driverAffil: string,
+    pickupDateStr: string | undefined,
+    branchName: string
+  ) => {
+    try {
+      const branchId = branches.find(b => b.name === branchName)?.id || branches[0]?.id || '';
+      const totalCost = actualCost + actualCostCash;
+      if (totalCost > 0) {
+        const parsedDate = pickupDateStr ? parseDate(pickupDateStr) : null;
+        const targetDate = parsedDate || new Date();
+        const paymentMethod = actualCostCash > 0 ? 'cash' : 'transfer';
 
+        const expenseData = {
+          date: targetDate,
+          amount: totalCost,
+          category: 'transport' as any,
+          subCategory: 'delivery',
+          description: `배송비 (${driverAffil || '운송업체'})`,
+          supplier: driverAffil || '운송업체',
+          quantity: 1,
+          unitPrice: totalCost,
+          paymentMethod: paymentMethod as any,
+          relatedOrderId: orderId
+        };
+        const updated = await updateExpenseByOrderId(orderId, expenseData, 'delivery');
+        if (!updated && branchId) {
+          await addExpense({ ...expenseData, inventoryUpdates: [] }, branchId, branchName);
+        }
+      } else {
+        await deleteExpenseByOrderId(orderId, 'delivery');
+      }
+    } catch (e) { console.error('배송비 지출 동기화 에러', e); }
+  };
 
   // Handlers
   const handleCompletePickup = async (orderId: string) => {
@@ -226,6 +263,19 @@ export default function PickupDeliveryPage() {
         );
       }
       await updateOrder(editingDriverInfo.orderId, updateData);
+
+      // 배송비 지출 내역 동기화
+      const actualCost = parseInt(editingDriverInfo.actualDeliveryCost || '0');
+      const actualCostCash = parseInt(editingDriverInfo.actualDeliveryCostCash || '0');
+      await syncDeliveryExpense(
+        editingDriverInfo.orderId,
+        actualCost,
+        actualCostCash,
+        editingDriverInfo.driverAffiliation,
+        order.deliveryInfo?.date || order.pickupInfo?.date || order.orderDate,
+        order.branchName || ''
+      );
+
       toast({ title: '완료', description: '정보가 업데이트되었습니다.' });
       setIsDriverDialogOpen(false);
     } catch (error) {
@@ -284,6 +334,16 @@ export default function PickupDeliveryPage() {
       if (deliveryAffiliation) {
         await ensurePartnerExists(deliveryAffiliation);
       }
+
+      // 배송비 지출 내역 동기화
+      await syncDeliveryExpense(
+        selectedOrderForCost.id,
+        actualCost,
+        actualCostCash,
+        deliveryAffiliation || selectedOrderForCost.deliveryInfo?.driverAffiliation || '',
+        selectedOrderForCost.deliveryInfo?.date || selectedOrderForCost.pickupInfo?.date || selectedOrderForCost.orderDate,
+        selectedOrderForCost.branchName || ''
+      );
 
       toast({ title: '완료', description: '배송비 정보가 업데이트되었습니다.' });
       setIsDeliveryCostDialogOpen(false);

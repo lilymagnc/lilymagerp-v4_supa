@@ -300,7 +300,7 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
     try {
       if (info.isOutsourced && info.partnerPrice > 0) {
         // 지출 날짜는 '주문일' 기준 (외부발주는 보통 주문(발주) 시점에 등록되므로 주문일로 처리), 없으면 오늘
-        const targetDate = formData.orderDate ? new Date(formData.orderDate) : new Date();
+        const targetDate = order?.orderDate ? new Date(order.orderDate) : new Date();
 
         // 지출 등록/업데이트 시도
         const expenseData = {
@@ -335,6 +335,44 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
       }
     } catch (e) {
       console.error("외부 발주 지출 동기화 실패", e);
+    }
+  };
+
+  // 운송비(배송비) 지출 동기화 함수
+  const manageDeliveryExpense = async (orderId: string, branchId: string, branchName: string) => {
+    try {
+      if (actualDeliveryCost > 0 || actualDeliveryCostCash > 0) {
+        const targetDate = formData.pickupDate ? parseDate(formData.pickupDate) || new Date() : new Date();
+        const totalDeliveryCost = actualDeliveryCost + actualDeliveryCostCash;
+        const paymentMethod = actualDeliveryCostCash > 0 ? 'cash' : 'transfer';
+
+        const expenseData = {
+          date: targetDate,
+          amount: totalDeliveryCost,
+          category: 'transport' as any, // SimpleExpenseCategory.TRANSPORT
+          subCategory: 'delivery',      // TransportSubCategory.DELIVERY
+          description: `배송비 (${driverAffiliation || '운송업체'})`,
+          supplier: driverAffiliation || '운송업체',
+          quantity: 1,
+          unitPrice: totalDeliveryCost,
+          paymentMethod: paymentMethod as any,
+          relatedOrderId: orderId
+        };
+
+        const updated = await updateExpenseByOrderId(orderId, expenseData, 'delivery');
+
+        if (!updated) {
+          await addExpense({
+            ...expenseData,
+            inventoryUpdates: []
+          }, branchId, branchName);
+        }
+      } else {
+        // 배송 정보가 없거나 0원인 경우 지출 항목에서 해당 배송비 삭제
+        await deleteExpenseByOrderId(orderId, 'delivery');
+      }
+    } catch (e) {
+      console.error("운송비 지출 동기화 실패", e);
     }
   };
 
@@ -442,10 +480,11 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
         await ensurePartnerExists(driverAffiliation, formData.recipient.name, formData.recipient.contact);
       }
 
-      // 외부 발주 지출 동기화
+      // 외부 발주 및 배송비 지출 동기화
       const orderBranch = branches.find(branch => branch.name === order.branchName) || branches[0];
       if (orderBranch) {
         await manageOutsourceExpense(order.id, orderBranch.id, orderBranch.name, formData.outsourceInfo);
+        await manageDeliveryExpense(order.id, orderBranch.id, orderBranch.name);
       }
 
       await updateOrder(order.id, updatedOrder);
