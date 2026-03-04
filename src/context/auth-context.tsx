@@ -245,6 +245,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setUser(null);
           clearUserFromStorage();
           setLoading(false);
+          if (typeof window !== 'undefined' && window.location.pathname.startsWith('/dashboard')) {
+            window.location.href = '/login';
+          }
         } else if (session) {
           await handleSession(session);
         }
@@ -268,6 +271,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(null);
       clearUserFromStorage();
       setLoading(false);
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
     }
   };
 

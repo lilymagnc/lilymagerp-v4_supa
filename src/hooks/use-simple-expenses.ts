@@ -92,8 +92,11 @@ export function useSimpleExpenses({ enableRealtime = false }: { enableRealtime?:
       }
 
       return { expenses: expenseList, hasMore: expenseList.length >= limit };
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
+      if (error?.code === 'PGRST301' || error?.status === 401 || error?.message?.includes('JWT')) {
+        supabase.auth.signOut();
+      }
       toast({ variant: "destructive", title: "오류", description: "지출 목록 로드 실패" });
       return { expenses: [] as SimpleExpense[], hasMore: false };
     } finally {

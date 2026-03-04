@@ -422,8 +422,11 @@ export function useIndependentOrders(initialFetch = true) {
         setOrders(mappedOrders);
       }
     } catch (error: any) {
-      if (error.name !== 'AbortError' && error.message !== 'Aborted') {
+      if (error?.name !== 'AbortError' && error?.message !== 'Aborted') {
         // console.error('주문 데이터 로딩 오류:', error);
+        if (error?.code === 'PGRST301' || error?.status === 401 || error?.message?.includes('JWT')) {
+          supabase.auth.signOut();
+        }
       }
     } finally {
       if (!signal.aborted) {
@@ -622,8 +625,10 @@ export function useIndependentOrders(initialFetch = true) {
       });
 
       return ordersData;
-    } catch (error) {
-      // console.error("정산 데이터 로딩 오류:", error);
+    } catch (error: any) {
+      if (error?.code === 'PGRST301' || error?.status === 401 || error?.message?.includes('JWT')) {
+        supabase.auth.signOut();
+      }
       return [];
     } finally {
       setLoading(false);

@@ -185,8 +185,11 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
                 setOrders(mappedOrders);
             }
         } catch (error: any) {
-            if (error.name !== 'AbortError' && error.message !== 'Aborted') {
+            if (error?.name !== 'AbortError' && error?.message !== 'Aborted') {
                 console.error('[Orders] 데이터 로딩 오류:', error);
+                if (error?.code === 'PGRST301' || error?.status === 401 || error?.message?.includes('JWT')) {
+                    supabase.auth.signOut();
+                }
             }
         } finally {
             if (!signal.aborted) {
@@ -473,7 +476,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
                         await supabase.from('stock_history').insert([{
                             id: crypto.randomUUID(), type: 'out', item_type: 'product', item_id: item.id,
                             item_name: item.name, quantity: item.quantity, from_stock: currentStock, to_stock: newStock,
-resulting_stock: newStock,
+                            resulting_stock: newStock,
                             branch: orderData.branchName, operator: user?.email || "Unknown User",
                             price: item.price, total_amount: item.price * item.quantity, occurred_at: new Date().toISOString()
                         }]);

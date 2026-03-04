@@ -111,8 +111,11 @@ export function useOutsourceOrders() {
                 totalProfit,
                 averageMargin
             });
-        } catch (error) {
+        } catch (error: any) {
             console.error('외부 발주 내역 조회 오류:', error);
+            if (error?.code === 'PGRST301' || error?.status === 401 || error?.message?.includes('JWT')) {
+                supabase.auth.signOut();
+            }
         } finally {
             setLoading(false);
         }
