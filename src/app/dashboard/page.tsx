@@ -551,89 +551,123 @@ export default function DashboardPage() {
           setStatsEmpty(false);
           const weekStartStr = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
 
-          // 오늘 날짜 결제일 기준 매출 계산 (주문현황 당일매출 카드와 동기화)
-          const todayDateStr = format(now, 'yyyy-MM-dd');
-          let todayPaymentBasedSales = 0;
-          const todayBranchSales: Record<string, number> = {};
+          // 전체 기간에 대해 결제일(Payment Date) 기준 실매출 데이터를 동적으로 구축 (일일마감정산과 100% 동일한 로직)
+          const paymentBasedSalesMap = new Map<string, { total: number, branches: Record<string, number> }>();
 
-          // 주문현황의 calculateShare와 동일한 지분 계산 함수
-          const calcShare = (order: any) => {
-            const total = order.summary?.total || 0;
-            if (!branchFilter) return total; // 전체 보기
-            const target = branchFilter.replace(/\s/g, '');
-            const ob = (order.branchName || '').replace(/\s/g, '');
-            const pb = (order.transferInfo?.processBranchName || '').replace(/\s/g, '');
-            if (!order.transferInfo?.isTransferred) {
-              return ob === target ? total : 0;
+          const addSalesToMap = (dateStr: string, amount: number, order: any) => {
+            if (!dateStr || amount <= 0) return;
+            if (!paymentBasedSalesMap.has(dateStr)) {
+              paymentBasedSalesMap.set(dateStr, { total: 0, branches: {} });
             }
+            const dayData = paymentBasedSalesMap.get(dateStr)!;
+
+            // 지분율 계산
+            const ob = (order.branchName || '').trim().replace(/\s/g, '');
+            const pb = (order.transferInfo?.processBranchName || '').trim().replace(/\s/g, '');
+            const isTransferred = order.transferInfo?.isTransferred &&
+              (order.transferInfo?.status === 'accepted' || order.transferInfo?.status === 'completed') && pb;
             const split = order.transferInfo?.amountSplit || { orderBranch: 100, processBranch: 0 };
-            if (ob === target) return Math.round(total * (split.orderBranch / 100));
-            if (pb === target) return Math.round(total * (split.processBranch / 100));
-            return 0;
+
+            if (!branchFilter) {
+              // 전체 지점 보기: 지분율에 따라 각 지점에 분배
+              if (isTransferred) {
+                const obAmt = Math.round(amount * (split.orderBranch / 100));
+                const pbAmt = Math.round(amount * (split.processBranch / 100));
+                if (obAmt > 0) {
+                  const obKey = sanitizeBranchKey(ob).replace(/_/g, '.');
+                  dayData.branches[obKey] = (dayData.branches[obKey] || 0) + obAmt;
+                }
+                if (pbAmt > 0) {
+                  const pbKey = sanitizeBranchKey(pb).replace(/_/g, '.');
+                  dayData.branches[pbKey] = (dayData.branches[pbKey] || 0) + pbAmt;
+                }
+              } else {
+                const obKey = sanitizeBranchKey(ob).replace(/_/g, '.');
+                dayData.branches[obKey] = (dayData.branches[obKey] || 0) + amount;
+              }
+              dayData.total += amount;
+            } else {
+              // 특정 지점 필터링: 해당 지점의 지분만 계산
+              const target = branchFilter.trim().replace(/\s/g, '');
+              let shareAmount = 0;
+              if (ob === target) {
+                shareAmount = isTransferred ? Math.round(amount * (split.orderBranch / 100)) : amount;
+              } else if (isTransferred && pb === target) {
+                shareAmount = Math.round(amount * (split.processBranch / 100));
+              }
+
+              if (shareAmount > 0) {
+                const targetKey = sanitizeBranchKey(target).replace(/_/g, '.');
+                dayData.branches[targetKey] = (dayData.branches[targetKey] || 0) + shareAmount;
+                dayData.total += shareAmount;
+              }
+            }
           };
 
           for (const order of orders) {
             if (order.status === 'canceled') continue;
-            const paymentStatus = order.payment?.status;
-            if (paymentStatus === 'pending') continue;
+            const p = order.payment;
+            if (!p || p.status === 'pending') continue;
 
-            let isCompletedToday = false;
+            // 일일마감정산(daily-settlement)의 updatePaymentStats 로직과 동일하게 분할결제 반영
+            const firstDate = parseDateUtil(p.firstPaymentDate);
+            const secondDate = parseDateUtil(p.secondPaymentDate);
+            const completedAt = parseDateUtil(p.completedAt);
+            const safeOrderDate = parseDateUtil(order.orderDate);
+            const isPaid = p.status === 'paid' || p.status === 'completed' || order.status === 'completed';
 
-            // 1. 결제완료일(completedAt)이 오늘인지
-            const completedAt = parseDateUtil(order.payment?.completedAt);
-            if (completedAt) {
-              const dateOnly = format(completedAt, 'yyyy-MM-dd');
-              if (dateOnly === todayDateStr) isCompletedToday = true;
-            }
+            if (p.isSplitPayment) {
+              // 1차 결제
+              if (firstDate) {
+                addSalesToMap(format(firstDate, 'yyyy-MM-dd'), p.firstPaymentAmount || 0, order);
+              }
+              // 2차 결제
+              if (isPaid) {
+                let sDate = secondDate;
+                if (!sDate && completedAt) sDate = completedAt;
 
-            // 2. 분할결제 2차 결제일이 오늘인지
-            const secondDate = parseDateUtil(order.payment?.secondPaymentDate);
-            if (secondDate) {
-              const dateOnly = format(secondDate, 'yyyy-MM-dd');
-              if (dateOnly === todayDateStr) isCompletedToday = true;
-            }
+                const secondAmt = p.secondPaymentAmount ? p.secondPaymentAmount : ((order.summary?.total || 0) - (p.firstPaymentAmount || 0));
 
-            // 3. 타임스탬프 없지만 결제완료 + 주문일이 오늘
-            if (!isCompletedToday && (paymentStatus === 'paid' || paymentStatus === 'completed')) {
-              const orderDate = parseDateUtil(order.orderDate);
-              if (orderDate && format(orderDate, 'yyyy-MM-dd') === todayDateStr) {
-                isCompletedToday = true;
+                if (sDate) {
+                  addSalesToMap(format(sDate, 'yyyy-MM-dd'), secondAmt, order);
+                } else if (!firstDate && safeOrderDate) { // 날짜 정보가 전혀 없을 경우 비상 처리
+                  addSalesToMap(format(safeOrderDate, 'yyyy-MM-dd'), secondAmt, order);
+                }
+              }
+            } else {
+              // 일반 결제 (결제완료일 기준, 없으면 주문일 기준)
+              if (isPaid) {
+                let finalDate = completedAt;
+                if (!finalDate && safeOrderDate) finalDate = safeOrderDate;
+
+                if (finalDate) {
+                  addSalesToMap(format(finalDate, 'yyyy-MM-dd'), order.summary?.total || 0, order);
+                }
               }
             }
-
-            if (!isCompletedToday) continue;
-
-            // 지분 반영한 금액 (주문현황 당일매출과 동일 로직)
-            const shareAmount = calcShare(order);
-            if (shareAmount <= 0) continue;
-
-            todayPaymentBasedSales += shareAmount;
-            const orderBranch = order.branchName || '';
-            const bKey = sanitizeBranchKey(orderBranch).replace(/_/g, '.');
-            todayBranchSales[bKey] = (todayBranchSales[bKey] || 0) + shareAmount;
           }
 
-          // 주간, 월간 차트에도 반영되도록 statsData 원본 데이터 동기화
-          const todayStatIndex = statsData.findIndex((d: any) => d.date === todayDateStr);
-          const newTodayBranchStats: any = {};
+          // 구축된 결제일 기준 맵을 바탕으로 statsData 동기화 및 덮어쓰기
+          // (최근 주문 데이터 기간에 존재하는 매출은 확실한 수금 기준액으로 대체)
+          paymentBasedSalesMap.forEach((dayData, dateStr) => {
+            const statIndex = statsData.findIndex((d: any) => d.date === dateStr);
+            const newBranchStats: any = {};
 
-          Object.entries(todayBranchSales).forEach(([bKey, amount]) => {
-            newTodayBranchStats[bKey.replace(/\./g, '_')] = {
-              settledAmount: amount
-            };
+            Object.entries(dayData.branches).forEach(([bKey, amount]) => {
+              newBranchStats[bKey.replace(/\./g, '_')] = { settledAmount: amount };
+            });
+
+            if (statIndex >= 0) {
+              statsData[statIndex].totalSettledAmount = dayData.total;
+              statsData[statIndex].branches = newBranchStats;
+            } else {
+              statsData.push({
+                date: dateStr,
+                totalSettledAmount: dayData.total,
+                branches: newBranchStats
+              });
+            }
           });
-
-          if (todayStatIndex >= 0) {
-            statsData[todayStatIndex].totalSettledAmount = todayPaymentBasedSales;
-            statsData[todayStatIndex].branches = newTodayBranchStats;
-          } else {
-            const newTodayStat = {
-              date: todayDateStr,
-              totalSettledAmount: todayPaymentBasedSales,
-              branches: newTodayBranchStats
-            };
-            statsData.push(newTodayStat);
-          }
 
           let totalRevenue = 0;
           let weeklyOrders = 0;
