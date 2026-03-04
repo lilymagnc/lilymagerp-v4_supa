@@ -12,6 +12,7 @@ export function useMaterials() {
     const [loading, setLoading] = useState(false);
     const [hasMore, setHasMore] = useState(true);
     const [lastIndex, setLastIndex] = useState(0);
+    const [currentFilters, setCurrentFilters] = useState<any>(null);
     const [stats, setStats] = useState({
         totalTypes: 0,
         totalStock: 0,
@@ -83,6 +84,7 @@ export function useMaterials() {
     }) => {
         try {
             setLoading(true);
+            setCurrentFilters(filters);
             fetchStats(filters?.branch);
 
             let allData: any[] = [];
@@ -217,7 +219,8 @@ export function useMaterials() {
             if (error) throw error;
             await syncCategory(data.mainCategory, data.midCategory);
             toast({ title: "성공", description: `새 자재가 추가되었습니다.` });
-            await fetchMaterials();
+            if (currentFilters) await fetchMaterials(currentFilters);
+            else await fetchMaterials();
         } catch (error) {
             console.error("Error adding material:", error);
             toast({ variant: 'destructive', title: '오류', description: '자재 추가 중 오류 발생' });
@@ -248,7 +251,8 @@ export function useMaterials() {
             if (error) throw error;
             await syncCategory(data.mainCategory, data.midCategory);
             toast({ title: "성공", description: "자재 정보가 수정되었습니다." });
-            await fetchMaterials();
+            if (currentFilters) await fetchMaterials(currentFilters);
+            else await fetchMaterials();
         } catch (error) {
             console.error("Error updating material:", error);
             toast({ variant: 'destructive', title: '오류', description: '자재 수정 중 오류 발생' });
@@ -262,7 +266,8 @@ export function useMaterials() {
         try {
             const { error } = await supabase.from('materials').delete().eq('id', docId);
             if (error) throw error;
-            await fetchMaterials();
+            if (currentFilters) await fetchMaterials(currentFilters);
+            else await fetchMaterials();
             toast({ title: "성공", description: "자재가 삭제되었습니다." });
         } catch (error) {
             console.error("Error deleting material:", error);
@@ -315,7 +320,8 @@ export function useMaterials() {
                 console.error(error);
             }
         }
-        await fetchMaterials();
+        if (currentFilters) await fetchMaterials(currentFilters);
+        else await fetchMaterials();
     };
 
     const manualUpdateStock = async (itemId: string, itemName: string, newStock: number, branchName: string, operator: string) => {
@@ -340,7 +346,8 @@ export function useMaterials() {
                 branch: branchName,
                 operator,
             }]);
-            await fetchMaterials();
+            if (currentFilters) await fetchMaterials(currentFilters);
+            else await fetchMaterials();
         } catch (error) {
             console.error(error);
         }
@@ -383,7 +390,8 @@ export function useMaterials() {
             }
 
             toast({ title: "성공", description: `${data.length}개의 자재가 등록되었습니다.` });
-            await fetchMaterials();
+            if (currentFilters) await fetchMaterials(currentFilters);
+            else await fetchMaterials();
         } catch (error) {
             console.error("Bulk add error:", error);
             toast({ variant: 'destructive', title: '오류', description: '대량 등록 중 오류 발생' });

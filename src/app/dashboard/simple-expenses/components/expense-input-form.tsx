@@ -301,7 +301,7 @@ export function ExpenseInputForm({
     defaultValues: {
       date: initialData?.date || new Date().toISOString().split('T')[0],
       supplier: initialData?.supplier || '',
-      category: initialData?.category || SimpleExpenseCategory.OTHER,
+      category: initialData?.category || SimpleExpenseCategory.MATERIAL,
       subCategory: initialData?.subCategory || '',
       paymentMethod: initialData?.paymentMethod || 'card',
       items: initialData?.items || [{
