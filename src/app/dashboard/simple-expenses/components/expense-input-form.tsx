@@ -111,7 +111,13 @@ const inventoryUpdateSchema = z.object({
 
 // 전체 폼 스키마 수정 - 전체 분류 추가
 const expenseFormSchema = z.object({
-  date: z.string().min(1, '날짜를 선택해주세요'),
+  date: z.string().min(1, '날짜를 선택해주세요').refine((val) => {
+    const selectedDate = new Date(val);
+    const todayDate = new Date();
+    selectedDate.setHours(0, 0, 0, 0);
+    todayDate.setHours(0, 0, 0, 0);
+    return selectedDate <= todayDate;
+  }, { message: "미래 날짜는 입력할 수 없습니다" }),
   supplier: z.string().min(1, '구매처를 입력해주세요'),
   category: z.nativeEnum(SimpleExpenseCategory),
   subCategory: z.string().optional(),
@@ -732,7 +738,19 @@ export function ExpenseInputForm({
               if (isNaN(purchaseDate.getTime())) {
                 throw new Error(`행 ${index + 2}: 유효하지 않은 날짜 형식입니다: ${rowData['날짜']}`);
               }
+
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              const checkDate = new Date(purchaseDate);
+              checkDate.setHours(0, 0, 0, 0);
+
+              if (checkDate > today) {
+                throw new Error(`행 ${index + 2}: 미래 날짜(${rowData['날짜']})는 지출 항목에 추가할 수 없습니다.`);
+              }
             } catch (error) {
+              if (error instanceof Error && error.message.includes('미래 날짜')) {
+                throw error;
+              }
               throw new Error(`행 ${index + 2}: 날짜 처리 중 오류가 발생했습니다: ${rowData['날짜']}`);
             }
 
@@ -1139,7 +1157,12 @@ export function ExpenseInputForm({
                       <FormItem>
                         <FormLabel className="text-xs font-semibold text-gray-500 uppercase tracking-wider">날짜</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} className="h-10 border-gray-200 focus:border-primary focus:ring-primary/20 bg-white" />
+                          <Input
+                            type="date"
+                            max={new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}
+                            {...field}
+                            className="h-10 border-gray-200 focus:border-primary focus:ring-primary/20 bg-white"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
