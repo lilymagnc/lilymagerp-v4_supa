@@ -105,11 +105,6 @@ export interface OrderData {
     outsourcedAt: any;
     updatedAt?: any;
   };
-}
-
-export interface Order extends Omit<OrderData, 'orderDate'> {
-  id: string;
-  orderDate: any;
   transferInfo?: {
     isTransferred: boolean;
     transferId?: string;
@@ -132,6 +127,11 @@ export interface Order extends Omit<OrderData, 'orderDate'> {
     completedAt?: any;
     cancelledAt?: any;
   };
+}
+
+export interface Order extends Omit<OrderData, 'orderDate'> {
+  id: string;
+  orderDate: any;
   outsourceInfo?: {
     isOutsourced: boolean;
     partnerId: string;
@@ -730,25 +730,35 @@ export function useIndependentOrders(initialFetch = true) {
       if (error) throw error;
 
       // --- [Auto-Sync] 신규 주문 배송비 → simple_expenses 자동 생성 ---
-      // actual_delivery_cost = 총 배송비, actual_delivery_cost_cash = 현금 지급분 (부분집합, 별도 비용 아님)
+      // actual_delivery_cost = 계좌이체 등 기타 배송비, actual_delivery_cost_cash = 현금 지급분 (서로 더해서 총 배송비 산출)
       const newDeliveryCost = orderData.actualDeliveryCost || 0;
       const newDeliveryCash = orderData.actualDeliveryCostCash || 0;
+      const totalDeliveryCost = newDeliveryCost + newDeliveryCash;
 
-      if (newDeliveryCost > 0) {
-        const expenseBranchId = orderData.branchId;
-        const expenseBranchName = orderData.branchName;
+      if (totalDeliveryCost > 0) {
+        let expenseBranchId = orderData.branchId;
+        let expenseBranchName = orderData.branchName;
+
+        const tInfo = orderData.transferInfo;
+        const isTransferredOrder = tInfo?.isTransferred && ['pending', 'accepted', 'completed'].includes(tInfo.status || '');
+        if (isTransferredOrder && tInfo.processBranchId) {
+          expenseBranchId = tInfo.processBranchId;
+          expenseBranchName = tInfo.processBranchName;
+        }
+
         const supplierName = orderData.deliveryInfo?.driverAffiliation || '운송업체';
         const driverName = orderData.deliveryInfo?.driverName || '';
         const driverInfo = driverName ? ` (${driverName})` : '';
         const expenseDate = orderData.deliveryInfo?.date || orderDate.toISOString();
         const recipientName = orderData.deliveryInfo?.recipientName || orderData.orderer?.name || '미지정';
         const isCashPayment = newDeliveryCash > 0;
-        const descPrefix = isCashPayment ? '배송비현금지급' : '실제배송료';
+        const transferPrefix = isTransferredOrder ? '이관' : '';
+        const descPrefix = isCashPayment ? `${transferPrefix}배송비현금지급` : `${transferPrefix}실제배송료`;
 
         await supabase.from('simple_expenses').insert([{
           id: crypto.randomUUID(),
           expense_date: expenseDate,
-          amount: newDeliveryCost,
+          amount: totalDeliveryCost,
           category: 'transport',
           sub_category: 'DELIVERY',
           description: `${descPrefix}-${recipientName}${driverInfo}`,
@@ -761,7 +771,8 @@ export function useIndependentOrders(initialFetch = true) {
           extra_data: {
             related_order_id: orderId,
             type: 'standard_delivery_fee',
-            ...(isCashPayment ? { payment_method: 'cash', cash_amount: newDeliveryCash } : {})
+            ...(isCashPayment ? { payment_method: 'cash', cash_amount: newDeliveryCash } : { payment_method: 'transfer' }),
+            ...(isTransferredOrder ? { is_transferred: true, original_branch_name: orderData.branchName } : {})
           }
         }]);
       }
@@ -1104,8 +1115,9 @@ export function useIndependentOrders(initialFetch = true) {
       // Date tracking is completely handled by the unified section below.
 
       // --- [Auto-Sync Logic] Sync Delivery Cost (Standard & Cash) to Simple Expenses ---
-      const newDeliveryCost = data.actualDeliveryCost !== undefined ? data.actualDeliveryCost : oldOrder.actual_delivery_cost;
-      const newDeliveryCash = data.actualDeliveryCostCash !== undefined ? data.actualDeliveryCostCash : oldOrder.actual_delivery_cost_cash;
+      const newDeliveryCost = data.actualDeliveryCost !== undefined ? data.actualDeliveryCost : (oldOrder.actual_delivery_cost || 0);
+      const newDeliveryCash = data.actualDeliveryCostCash !== undefined ? data.actualDeliveryCostCash : (oldOrder.actual_delivery_cost_cash || 0);
+      const totalDeliveryCost = newDeliveryCost + newDeliveryCash;
 
       // Use driverAffiliation as supplier for expenses
       const supplierName = data.deliveryInfo?.driverAffiliation || oldOrder.delivery_info?.driverAffiliation || '운송업체';
@@ -1118,8 +1130,9 @@ export function useIndependentOrders(initialFetch = true) {
         let expenseBranchId = oldOrder.branch_id;
         let expenseBranchName = oldOrder.branch_name;
 
-        const tInfo = oldOrder.transfer_info || oldOrder.extra_data?.transfer_info;
-        if (tInfo?.isTransferred && tInfo.processBranchId && ['pending', 'accepted', 'completed'].includes(tInfo.status)) {
+        const tInfo = data.transferInfo !== undefined ? data.transferInfo : (oldOrder.transfer_info || oldOrder.extra_data?.transfer_info);
+        const isTransferredOrder = tInfo?.isTransferred && ['pending', 'accepted', 'completed'].includes(tInfo.status || '');
+        if (isTransferredOrder && tInfo.processBranchId) {
           expenseBranchId = tInfo.processBranchId;
           expenseBranchName = tInfo.processBranchName;
         }
@@ -1147,17 +1160,16 @@ export function useIndependentOrders(initialFetch = true) {
           }
         }
 
-        // actual_delivery_cost = 총 배송비, actual_delivery_cost_cash = 현금 지급분 (부분집합)
+        // actual_delivery_cost = 계좌이체 등 배송비, actual_delivery_cost_cash = 현금 지급분 (더해서 총 배송비로 씀)
         // 하나의 simple_expense 레코드만 생성
-        const isCashPayment = (newDeliveryCash || 0) > 0;
-        const isTransferredOrder = tInfo?.isTransferred && ['pending', 'accepted', 'completed'].includes(tInfo.status);
+        const isCashPayment = newDeliveryCash > 0;
         const transferPrefix = isTransferredOrder ? '이관' : '';
         const descPrefix = isCashPayment ? `${transferPrefix}배송비현금지급` : `${transferPrefix}실제배송료`;
 
-        if (newDeliveryCost && newDeliveryCost > 0) {
+        if (totalDeliveryCost > 0) {
           const payload = {
             expense_date: expenseDate,
-            amount: newDeliveryCost,
+            amount: totalDeliveryCost,
             category: 'transport',
             sub_category: 'DELIVERY',
             description: `${descPrefix}-${recipientName}${driverInfo}`,
@@ -1170,7 +1182,7 @@ export function useIndependentOrders(initialFetch = true) {
               ...(existingExpense?.extra_data as object || {}),
               related_order_id: orderId,
               type: 'standard_delivery_fee',
-              ...(isCashPayment ? { payment_method: 'cash', cash_amount: newDeliveryCash } : {}),
+              ...(isCashPayment ? { payment_method: 'cash', cash_amount: newDeliveryCash } : { payment_method: 'transfer' }),
               ...(isTransferredOrder ? { is_transferred: true, original_branch_name: oldOrder.branch_name } : {})
             }
           };
