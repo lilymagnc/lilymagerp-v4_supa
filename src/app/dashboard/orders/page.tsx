@@ -1865,18 +1865,13 @@ export default function OrdersPage() {
                             )}
                             {order.outsourceInfo?.isOutsourced && (
                               <Badge variant="outline" className="text-xs bg-orange-50 text-orange-600 border-orange-200">
-                                외부발주
+                                {order.outsourceInfo.partnerName ? `외부발주(${order.outsourceInfo.partnerName})` : '외부발주'}
                               </Badge>
                             )}
                           </div>
                           {order.transferInfo?.isTransferred && order.transferInfo?.processBranchName && (
                             <div className="text-xs text-gray-500">
                               처리: {order.transferInfo.processBranchName}
-                            </div>
-                          )}
-                          {order.outsourceInfo?.isOutsourced && order.outsourceInfo?.partnerName && (
-                            <div className="text-xs text-orange-500 font-medium">
-                              업체: {order.outsourceInfo.partnerName}
                             </div>
                           )}
                         </div>

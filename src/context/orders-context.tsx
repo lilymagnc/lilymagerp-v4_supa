@@ -87,7 +87,21 @@ const mapRowToOrder = (row: any): Order => ({
     request: row.request || row.extra_data?.request || '',
     source: row.source || row.extra_data?.source,
     transferInfo: row.transfer_info || row.extra_data?.transfer_info,
-    outsourceInfo: row.outsource_info || row.extra_data?.outsource_info,
+    outsourceInfo: (() => {
+        const oi = row.outsource_info || row.extra_data?.outsource_info;
+        if (!oi) return undefined;
+        return {
+            isOutsourced: oi.is_outsourced ?? oi.isOutsourced,
+            partnerId: oi.partner_id ?? oi.partnerId,
+            partnerName: oi.partner_name ?? oi.partnerName,
+            partnerPrice: oi.partner_price ?? oi.partnerPrice,
+            profit: oi.profit,
+            status: oi.status,
+            notes: oi.notes,
+            outsourcedAt: oi.outsourced_at ?? oi.outsourcedAt,
+            updatedAt: oi.updated_at ?? oi.updatedAt
+        };
+    })(),
     extraData: row.extra_data
 });
 
