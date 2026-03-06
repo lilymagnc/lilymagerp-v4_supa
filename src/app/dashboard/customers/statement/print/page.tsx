@@ -73,11 +73,11 @@ export default function StatementPrintPage() {
     const start = new Date(startDate);
     const end = new Date(endDate);
 
-    // 고객의 주문 내역 필터링 - 연락처로 매칭
+    // 고객의 주문 내역 필터링 - ID 우선 매칭, 없으면 비어있지 않은 연락처로 매칭
     const customerOrders = orders.filter(order => {
       const orderDate = toLocalDate(order.orderDate);
 
-      return order.orderer.contact === customer.contact &&
+      return (order.orderer.id === customer.id || (customer.contact && order.orderer.contact === customer.contact)) &&
         orderDate >= start &&
         orderDate <= end;
     });

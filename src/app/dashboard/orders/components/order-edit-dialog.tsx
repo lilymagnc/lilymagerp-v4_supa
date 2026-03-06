@@ -414,11 +414,11 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
           id: order.items[idx]?.id || crypto.randomUUID(), // Preserve ID or generate
           source: (order.items[idx]?.source || 'manual') as 'manual' | 'excel_upload'
         })),
-        message: formData.message.type !== 'none' ? {
+        message: {
           type: formData.message.type as any,
           content: formData.message.content,
           sender: formData.message.sender
-        } : null,
+        },
         outsourceInfo: formData.outsourceInfo.isOutsourced ? {
           isOutsourced: true,
           partnerId: '', // Optional or lookup
@@ -541,16 +541,16 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="orderer-name">주문자명 *</Label>
+                  <Label htmlFor="orderer-name">주문자명</Label>
                   <Input
                     id="orderer-name"
                     value={formData.orderer.name}
                     onChange={(e) => handleInputChange('orderer', 'name', e.target.value)}
-                    placeholder="주문자명을 입력하세요"
+                    placeholder="주문자명 (익명 가능)"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="orderer-contact">연락처 *</Label>
+                  <Label htmlFor="orderer-contact">연락처</Label>
                   <Input
                     id="orderer-contact"
                     value={formData.orderer.contact}

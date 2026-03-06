@@ -613,6 +613,17 @@ export default function OrdersPage() {
     }
     return orderer.name;
   };
+
+  // 수령인(배송) 또는 인수자(픽업) 이름 표시 함수
+  const getRecipientDisplay = (order: Order) => {
+    if (order.receiptType === 'delivery_reservation' && order.deliveryInfo?.recipientName) {
+      return order.deliveryInfo.recipientName;
+    }
+    if ((order.receiptType === 'store_pickup' || order.receiptType === 'pickup_reservation') && order.pickupInfo?.pickerName) {
+      return order.pickupInfo.pickerName;
+    }
+    return "-";
+  };
   const filteredOrders = useMemo(() => {
 
     let filtered = orders;
@@ -1756,6 +1767,7 @@ export default function OrdersPage() {
                 <TableHead>수령방법</TableHead>
                 <TableHead>픽업/배송일</TableHead>
                 <TableHead>주문자/회사명</TableHead>
+                <TableHead>수령인</TableHead>
                 <TableHead>상품명</TableHead>
                 <TableHead>출고지점</TableHead>
                 <TableHead>결제수단</TableHead>
@@ -1773,6 +1785,7 @@ export default function OrdersPage() {
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                     <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
@@ -1847,6 +1860,11 @@ export default function OrdersPage() {
                       <TableCell className="max-w-xs">
                         <div className="truncate" title={getOrdererDisplay(order.orderer)}>
                           {getOrdererDisplay(order.orderer)}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="truncate">
+                          {getRecipientDisplay(order)}
                         </div>
                       </TableCell>
                       <TableCell className="max-w-xs">

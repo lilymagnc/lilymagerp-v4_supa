@@ -14,7 +14,6 @@ import { useSettings } from "@/hooks/use-settings";
 import { useSearchParams } from "next/navigation";
 import { FontSelector } from "./font-selector";
 import { LabelGridSelector } from "./label-grid-selector";
-import { GOOGLE_FONTS } from "@/lib/fonts";
 interface MessagePrintDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
@@ -109,12 +108,25 @@ export function MessagePrintDialog({ isOpen, onOpenChange, onSubmit, order }: Me
       localStorage.setItem(STORAGE_KEY_SENDER_SIZE, String(senderFontSize));
     }
   }, [messageFont, messageFontSize, senderFont, senderFontSize]);
-  // 메시지 내용에서 보내는 사람 분리
+
+  // Sync with order updates (especially when message is added during editing)
   const messageParts = (order.message?.content || "").split('\n---\n');
   const defaultMessageContent = messageParts.length > 1 && !order.message?.sender ? messageParts[0] : (order.message?.content || "");
   const defaultSenderName = order.message?.sender || (messageParts.length > 1 ? messageParts[1] : "");
+
   const [messageContent, setMessageContent] = useState(getInitialValue('messageContent', defaultMessageContent));
   const [senderName, setSenderName] = useState(getInitialValue('senderName', defaultSenderName));
+
+  useEffect(() => {
+    if (isOpen && order) {
+      const parts = (order.message?.content || "").split('\n---\n');
+      const content = parts.length > 1 && !order.message?.sender ? parts[0] : (order.message?.content || "");
+      const sender = order.message?.sender || (parts.length > 1 ? parts[1] : "");
+
+      setMessageContent(content);
+      setSenderName(sender);
+    }
+  }, [isOpen, order]);
   // isEditing state removed as we rely on split view
   const handleFormSubmit = () => {
     onSubmit({

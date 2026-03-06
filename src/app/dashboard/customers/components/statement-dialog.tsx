@@ -56,11 +56,11 @@ export function StatementDialog({ isOpen, onOpenChange, customer }: StatementDia
     // 고객의 담당지점 정보 찾기
     const branch = branches.find(b => b.name === customer.branch);
 
-    // 고객의 주문 내역 필터링 - 연락처로 매칭
+    // 고객의 주문 내역 필터링 - ID 우선 매칭, 없으면 비어있지 않은 연락처로 매칭
     const customerOrders = orders.filter(order => {
       const orderDate = parseDate(order.orderDate) || new Date();
 
-      return order.orderer.contact === customer.contact &&
+      return (order.orderer.id === customer.id || (customer.contact && order.orderer.contact === customer.contact)) &&
         orderDate >= startDate &&
         orderDate <= new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59);
     });

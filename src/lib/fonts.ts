@@ -1,5 +1,7 @@
 
 // Korean Google Fonts configuration
+// 기본 폰트 목록 - font-catalog.ts의 동적 목록과 함께 사용됩니다.
+
 export const GOOGLE_FONTS = [
     { name: 'Noto Sans KR', family: 'Noto Sans KR', url: 'https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap' },
     { name: 'Nanum Gothic', family: 'Nanum Gothic', url: 'https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap' },
@@ -16,18 +18,23 @@ export const GOOGLE_FONTS = [
 ];
 
 export function getGoogleFontUrl(fontFamily: string): string | undefined {
+    // font-catalog에서도 검색
     const font = GOOGLE_FONTS.find(f => f.family === fontFamily);
-    return font?.url;
+    if (font) return font.url;
+
+    // 동적 폰트에서 검색
+    if (typeof window !== 'undefined') {
+        try {
+            const { FONT_CATALOG } = require('./font-catalog');
+            const catalogFont = FONT_CATALOG.find((f: any) => f.family === fontFamily);
+            if (catalogFont) return catalogFont.url;
+        } catch { }
+    }
+    return undefined;
 }
 
 export function getAllGoogleFontsUrl(): string {
-    // Combine all font families into a single URL to reduce requests
-    // Format: family=Font1:wght@400;700&family=Font2&...
     const families = GOOGLE_FONTS.map(f => {
-        // Extract family param from full URL for simplicity or reconstruct
-        // Here we reconstruct based on knowledge of the URLs in our constant
-        // But easier is just to use the pre-defined URLs if we want to load individually,
-        // or constructing a big one. Let's construct a big one.
         const urlObj = new URL(f.url);
         return urlObj.searchParams.get('family');
     }).filter(Boolean);

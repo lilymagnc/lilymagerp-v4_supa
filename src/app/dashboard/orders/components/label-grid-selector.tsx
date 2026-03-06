@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { GOOGLE_FONTS } from "@/lib/fonts";
+import { FONT_CATALOG } from "@/lib/font-catalog";
 
 interface LabelGridSelectorProps {
     labelType: string;
@@ -93,9 +93,10 @@ export function LabelGridSelector({
             <div className="flex justify-between items-center">
 
                 {/* Dynamic Font Loading for Preview */}
-                <style jsx global>{`
-                    ${GOOGLE_FONTS.map(font => `@import url('${font.url}');`).join('\n')}
-                `}</style>
+                {/* Dynamic Font Loading for Preview */}
+                {FONT_CATALOG.map((font, i) => (
+                    <link key={i} rel="stylesheet" href={font.url} />
+                ))}
 
                 <Label>라벨 미리보기 (A4 용지)</Label>
                 <div className="flex gap-2 text-xs">

@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import type { SerializableOrder } from '../page';
 import { cn } from "@/lib/utils";
 import { GOOGLE_FONTS } from "@/lib/fonts";
+import { FONT_CATALOG } from "@/lib/font-catalog";
 
 interface MessagePrintLayoutProps {
   order: SerializableOrder;
@@ -150,9 +151,9 @@ export function MessagePrintLayout({
           }
         `}</style>
       {/* Load Fonts for Print */}
-      <style jsx global>{`
-          ${GOOGLE_FONTS.map(font => `@import url('${font.url}');`).join('\n')}
-        `}</style>
+      {FONT_CATALOG.map((font, i) => (
+        <link key={i} rel="stylesheet" href={font.url} />
+      ))}
 
       <div className="no-print">
         <PageHeader
