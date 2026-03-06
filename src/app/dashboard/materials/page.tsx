@@ -4,7 +4,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
-import { PlusCircle, Printer, Search, Download, FileUp, ScanLine, Layers, Package, AlertTriangle, XCircle } from "lucide-react";
+import { PlusCircle, Printer, Search, Download, FileUp, ScanLine, Layers, Package, AlertTriangle, XCircle, Flower2 } from "lucide-react";
 import { MaterialTable } from "./components/material-table";
 import { MaterialForm, MaterialFormValues } from "./components/material-form";
 import { useToast } from "@/hooks/use-toast";
@@ -21,6 +21,7 @@ import { downloadXLSX } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { ImportButton } from "@/components/import-button";
 import { supabase } from "@/lib/supabase";
+import { useFlowerBatches } from "@/hooks/use-flower-batches";
 
 export default function MaterialsPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -51,6 +52,7 @@ export default function MaterialsPage() {
     rebuildCategories
   } = useMaterials();
   const { getMainCategories, getMidCategories, fetchCategories } = useCategories();
+  const { disposeExpiredBatches, loading: batchLoading } = useFlowerBatches();
 
   const isHeadOfficeAdmin = user?.role === '본사 관리자';
   const isAdmin = user?.role === '본사 관리자';
@@ -231,6 +233,18 @@ export default function MaterialsPage() {
     await fetchCategories();
   };
 
+  const handleResetFreshFlowers = async () => {
+    const branch = selectedBranch === 'all' ? userBranch : selectedBranch;
+    if (!branch) {
+      toast({ variant: 'destructive', title: '오류', description: '지점을 선택해주세요.' });
+      return;
+    }
+    if (!confirm(`[${branch}] 입고 후 7일이 경과한 생화만 자동으로 계산하여 폐기합니다.\n(폐기 이력이 기록됩니다)\n\n만료된 생화를 폐기하시겠습니까?`)) return;
+
+    await disposeExpiredBatches(branch, user?.email || '시스템');
+    await fetchMaterials({ branch, mainCategory: selectedMainCategory, midCategory: selectedMidCategory });
+  };
+
   const currentFilters = useMemo(() => ({
     branch: selectedBranch,
     mainCategory: selectedMainCategory,
@@ -268,6 +282,15 @@ export default function MaterialsPage() {
               </Button>
             </>
           )}
+          <Button
+            variant="outline"
+            onClick={handleResetFreshFlowers}
+            disabled={materialsLoading || batchLoading}
+            className="text-pink-600 border-pink-200 hover:bg-pink-50 hover:text-pink-700"
+          >
+            <Flower2 className="mr-2 h-4 w-4" />
+            만료 생화 폐기
+          </Button>
         </div>
       </PageHeader>
 

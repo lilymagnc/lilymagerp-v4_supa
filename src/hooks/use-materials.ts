@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useToast } from './use-toast';
 import type { Material as MaterialData } from "@/app/dashboard/materials/components/material-table";
 import type { MaterialFormValues } from '@/app/dashboard/materials/components/material-form';
+import { useFlowerBatches } from './use-flower-batches';
 
 export type Material = MaterialData;
 
@@ -20,6 +21,7 @@ export function useMaterials() {
         outOfStock: 0
     });
     const { toast } = useToast();
+    const { consumeFromBatch, createBatch } = useFlowerBatches();
 
     const getStatus = (stock: number): string => {
         if (stock === 0) return 'out_of_stock';
@@ -285,25 +287,34 @@ export function useMaterials() {
     ) => {
         for (const item of items) {
             try {
-                const { data: material } = await supabase.from('materials').select('stock, price, supplier').eq('id', item.id).eq('branch', branchName).single();
+                // 1차: ID+지점으로 검색
+                let { data: material } = await supabase.from('materials').select('id, stock, price, supplier, main_category').eq('id', item.id).eq('branch', branchName).maybeSingle();
+
+                // 2차: ID로 못 찾으면 이름+지점으로 fallback
+                if (!material && item.name) {
+                    const { data: matByName } = await supabase.from('materials').select('id, stock, price, supplier, main_category').eq('name', item.name).eq('branch', branchName).maybeSingle();
+                    if (matByName) material = matByName;
+                }
+
                 if (material) {
+                    const materialId = material.id;
                     const currentStock = material.stock || 0;
                     const change = type === 'in' ? item.quantity : -item.quantity;
-                    const newStock = currentStock + change;
+                    const newStock = Math.max(0, currentStock + change);
 
                     await supabase.from('materials').update({
                         stock: newStock,
-                        price: item.price || material.price, // Update master price
-                        supplier: item.supplier || material.supplier, // Update master supplier
+                        price: item.price || material.price,
+                        supplier: item.supplier || material.supplier,
                         updated_at: new Date().toISOString()
-                    }).eq('id', item.id).eq('branch', branchName);
+                    }).eq('id', materialId).eq('branch', branchName);
 
                     await supabase.from('stock_history').insert([{
                         id: crypto.randomUUID(),
                         occurred_at: new Date().toISOString(),
                         type,
                         item_type: "material",
-                        item_id: item.id,
+                        item_id: materialId,
                         item_name: item.name,
                         quantity: item.quantity,
                         from_stock: currentStock,
@@ -311,10 +322,27 @@ export function useMaterials() {
                         resulting_stock: newStock,
                         branch: branchName,
                         operator,
-                        price: item.price, // New field for tracking
-                        supplier: item.supplier, // New field for tracking
-                        total_amount: (item.price || 0) * item.quantity // New field for tracking
+                        price: item.price,
+                        supplier: item.supplier,
+                        total_amount: (item.price || 0) * item.quantity
                     }]);
+
+                    // 출고일 경우 생화 배치에서 차감 (FIFO)
+                    if (type === 'out') {
+                        // main_category가 생화인지 확인하지 않고, 어차피 DB에 배치가 없으면 무시됨
+                        await consumeFromBatch(materialId, branchName, item.quantity);
+                    } else if (type === 'in' && material.main_category === '생화') {
+                        // 생화 입고일 경우 자동 배치(lot) 생성
+                        await createBatch([{
+                            materialId,
+                            materialName: item.name,
+                            branch: branchName,
+                            quantity: item.quantity,
+                            mainCategory: '생화'
+                        }]);
+                    }
+                } else {
+                    console.warn(`[updateStock] 자재를 찾을 수 없음: id=${item.id}, name=${item.name}, branch=${branchName}`);
                 }
             } catch (error) {
                 console.error(error);
@@ -322,6 +350,64 @@ export function useMaterials() {
         }
         if (currentFilters) await fetchMaterials(currentFilters);
         else await fetchMaterials();
+    };
+
+    // 생화 전량 폐기 (일주일 경과 시 수동 실행)
+    const resetFreshFlowerStock = async (branchName: string, operator: string) => {
+        try {
+            setLoading(true);
+            // 생화 카테고리의 모든 자재 조회
+            const { data: freshFlowers } = await supabase
+                .from('materials')
+                .select('id, name, stock')
+                .eq('main_category', '생화')
+                .eq('branch', branchName)
+                .gt('stock', 0);
+
+            if (!freshFlowers || freshFlowers.length === 0) {
+                toast({ title: '안내', description: '폐기할 생화 재고가 없습니다.' });
+                return 0;
+            }
+
+            let resetCount = 0;
+            for (const flower of freshFlowers) {
+                const currentStock = flower.stock || 0;
+                if (currentStock > 0) {
+                    await supabase.from('materials').update({
+                        stock: 0,
+                        updated_at: new Date().toISOString()
+                    }).eq('id', flower.id).eq('branch', branchName);
+
+                    await supabase.from('stock_history').insert([{
+                        id: crypto.randomUUID(),
+                        occurred_at: new Date().toISOString(),
+                        type: 'out',
+                        item_type: 'material',
+                        item_id: flower.id,
+                        item_name: flower.name,
+                        quantity: currentStock,
+                        from_stock: currentStock,
+                        to_stock: 0,
+                        resulting_stock: 0,
+                        branch: branchName,
+                        operator,
+                        memo: '생화 주간 전량 폐기'
+                    }]);
+                    resetCount++;
+                }
+            }
+
+            toast({ title: '생화 폐기 완료', description: `${resetCount}건의 생화 재고가 0으로 초기화되었습니다.` });
+            if (currentFilters) await fetchMaterials(currentFilters);
+            else await fetchMaterials();
+            return resetCount;
+        } catch (error) {
+            console.error('생화 폐기 오류:', error);
+            toast({ variant: 'destructive', title: '오류', description: '생화 폐기 처리 중 문제가 발생했습니다.' });
+            return 0;
+        } finally {
+            setLoading(false);
+        }
     };
 
     const manualUpdateStock = async (itemId: string, itemName: string, newStock: number, branchName: string, operator: string) => {
@@ -433,6 +519,7 @@ export function useMaterials() {
         updateMaterial,
         deleteMaterial,
         bulkAddMaterials,
-        rebuildCategories
+        rebuildCategories,
+        resetFreshFlowerStock
     };
 }

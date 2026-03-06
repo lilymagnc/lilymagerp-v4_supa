@@ -164,22 +164,54 @@ export function useSimpleExpenses({ enableRealtime = false }: { enableRealtime?:
       }
 
       // Sync Material
+      let materialUpdatedId = null;
       if (data.category === SimpleExpenseCategory.MATERIAL && data.description) {
         const { data: mat } = await supabase.from('materials').select('*').eq('name', data.description).eq('branch', branchName).maybeSingle();
+        const mainCategory = (data.subCategory === 'fresh_flower' || data.subCategory === '생화') ? '생화' : '기타자재';
+
         if (!mat) {
+          const newId = `MAT${Date.now()}`;
+          materialUpdatedId = newId;
           await supabase.from('materials').insert([{
-            id: `MAT${Date.now()}`, name: data.description, main_category: '기타자재', mid_category: '기타', price: data.unitPrice || 0, supplier: data.supplier || '미지정', stock: data.quantity || 1, branch: branchName, created_at: new Date().toISOString()
+            id: newId,
+            name: data.description,
+            main_category: mainCategory,
+            mid_category: '기타',
+            price: data.unitPrice || 0,
+            supplier: data.supplier || '미지정',
+            stock: 0,
+            branch: branchName,
+            created_at: new Date().toISOString()
           }]);
+
+          await updateMaterialStock([{
+            id: newId,
+            name: data.description,
+            quantity: data.quantity || 1,
+            price: data.unitPrice || 0,
+            supplier: data.supplier
+          }], 'in', branchName, user.email || 'system');
         } else {
-          await supabase.from('materials').update({ stock: (mat.stock || 0) + (data.quantity || 1), price: data.unitPrice || mat.price }).eq('id', mat.id);
+          materialUpdatedId = mat.id;
+          await updateMaterialStock([{
+            id: mat.id,
+            name: mat.name,
+            quantity: data.quantity || 1,
+            price: data.unitPrice || mat.price,
+            supplier: data.supplier || mat.supplier
+          }], 'in', branchName, user.email || 'system');
         }
       }
 
-      // Sync Stock
+      // Sync Stock (from inventoryUpdates)
       if (data.inventoryUpdates?.length) {
         for (const item of data.inventoryUpdates) {
-          if (item.type === 'material') await updateMaterialStock([{ id: item.id, name: item.name, quantity: item.quantity, price: item.unitPrice }], 'in', branchName, user.email || 'system');
-          else if (item.type === 'product') await updateProductStock([{ id: item.id, name: item.name, quantity: item.quantity, price: item.unitPrice }], 'in', branchName, user.email || 'system');
+          // avoid double-counting if we already updated it in the Sync Material block
+          if (item.type === 'material' && item.id !== materialUpdatedId) {
+            await updateMaterialStock([{ id: item.id, name: item.name, quantity: item.quantity, price: item.unitPrice }], 'in', branchName, user.email || 'system');
+          } else if (item.type === 'product') {
+            await updateProductStock([{ id: item.id, name: item.name, quantity: item.quantity, price: item.unitPrice }], 'in', branchName, user.email || 'system');
+          }
         }
       }
 
@@ -406,25 +438,58 @@ export function useSimpleExpenses({ enableRealtime = false }: { enableRealtime?:
   const addMaterialRequestExpense = useCallback(async (materialRequest: MaterialRequest, actualPurchaseInfo: any): Promise<boolean> => {
     if (!actualPurchaseInfo || !materialRequest.branchId) return false;
     try {
+      const purchaseItems = actualPurchaseInfo.items || [];
+      const supplierName = purchaseItems[0]?.supplier || '자재구매';
+
+      // 상세 내역 생성: "장미 x2, 카네이션 x1" 형태
+      const itemDetails = purchaseItems.map((item: any) =>
+        `${item.name}${item.quantity > 1 ? ` x${item.quantity}` : ''}`
+      ).join(', ');
+
+      // 총 수량 합산
+      const totalQuantity = purchaseItems.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0);
+      // 대표 단가 (총액 / 총수량)
+      const avgUnitPrice = totalQuantity > 0 ? Math.round(actualPurchaseInfo.totalCost / totalQuantity) : 0;
+
+      const description = itemDetails
+        ? `[${materialRequest.requestNumber}] ${itemDetails}`
+        : `자재요청 구매 (${materialRequest.requestNumber})`;
+
       const payload = {
         id: crypto.randomUUID(),
         expense_date: actualPurchaseInfo.purchaseDate,
         amount: actualPurchaseInfo.totalCost,
         category: SimpleExpenseCategory.MATERIAL,
         sub_category: 'material_request',
-        description: `자재요청 구매 (${materialRequest.requestNumber})`,
-        supplier: actualPurchaseInfo.items[0]?.supplier || '자재구매',
+        description,
+        supplier: supplierName,
+        quantity: totalQuantity,
+        unit_price: avgUnitPrice,
         branch_id: materialRequest.branchId,
         branch_name: materialRequest.branchName,
         related_request_id: materialRequest.id,
         is_auto_generated: true,
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        extra_data: {
+          related_request_id: materialRequest.id,
+          request_number: materialRequest.requestNumber,
+          items: purchaseItems.map((item: any) => ({
+            name: item.name,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            supplier: item.supplier,
+            total: (item.quantity || 1) * (item.unitPrice || 0)
+          }))
+        }
       };
       await supabase.from('simple_expenses').insert([payload]);
-      toast({ title: '성공', description: `자동 등록되었습니다.` });
+      toast({ title: '성공', description: `${supplierName} - ${purchaseItems.length}건 지출 자동 등록` });
       return true;
-    } catch (error) { return false; }
+    } catch (error) {
+      console.error('자재요청 지출 등록 오류:', error);
+      return false;
+    }
   }, [toast]);
 
   // 자재요청 ID로 자동 생성된 지출 삭제 (배송완료 취소 시 사용)

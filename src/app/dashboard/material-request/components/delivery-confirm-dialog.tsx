@@ -20,6 +20,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useMaterialRequests } from '@/hooks/use-material-requests';
 import { useToast } from '@/hooks/use-toast';
 import { usePartners } from '@/hooks/use-partners';
+import { useFlowerBatches } from '@/hooks/use-flower-batches';
 import { PackageCheck, Receipt, Package, DollarSign, Store, Plus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -34,6 +35,7 @@ interface EditableItem extends RequestItem {
     actualQuantity: number;
     actualPrice: number;
     category: string;
+    midCategory: string;
     supplier: string;
     isExtra?: boolean;
     isUnavailable?: boolean;
@@ -45,6 +47,7 @@ export function DeliveryConfirmDialog({ request, isOpen, onClose, onSuccess }: D
     const { addMaterialRequestExpense } = useSimpleExpenses({ enableRealtime: false });
     const { updateRequestStatus } = useMaterialRequests();
     const { partners } = usePartners();
+    const { createBatch } = useFlowerBatches();
     const { toast } = useToast();
 
     const [items, setItems] = useState<EditableItem[]>([]);
@@ -65,6 +68,7 @@ export function DeliveryConfirmDialog({ request, isOpen, onClose, onSuccess }: D
                     actualQuantity: item.requestedQuantity,
                     actualPrice: item.estimatedPrice || matInfo?.price || 0,
                     category: matInfo?.mainCategory || '기타',
+                    midCategory: matInfo?.midCategory || '',
                     supplier: matInfo?.supplier || '',
                 };
             });
@@ -95,12 +99,40 @@ export function DeliveryConfirmDialog({ request, isOpen, onClose, onSuccess }: D
         newItems[index].materialName = value;
         const matInfo = materials.find(m => m.name === value);
         if (matInfo) {
+            // 자재 DB에서 찾으면 ID도 갱신 → 정확한 재고 반영
+            newItems[index].materialId = matInfo.id;
             if (!newItems[index].actualPrice) newItems[index].actualPrice = matInfo.price || 0;
             newItems[index].category = matInfo.mainCategory || '기타';
+            newItems[index].midCategory = matInfo.midCategory || '';
             if (!newItems[index].supplier) newItems[index].supplier = matInfo.supplier || '';
         }
         setItems(newItems);
     };
+
+    // 구매처 변경 시 자재 카탈로그에서 카테고리 자동 업데이트 (선택적)
+    const handleSupplierChange = (index: number, value: string) => {
+        const newItems = [...items];
+        newItems[index].supplier = value;
+        setItems(newItems);
+    };
+
+    // 1차 카테고리 변경
+    const handleCategoryChange = (index: number, value: string) => {
+        const newItems = [...items];
+        newItems[index].category = value;
+        setItems(newItems);
+    };
+
+    // 2차 카테고리 변경
+    const handleMidCategoryChange = (index: number, value: string) => {
+        const newItems = [...items];
+        newItems[index].midCategory = value;
+        setItems(newItems);
+    };
+
+    // 고유 카테고리 목록
+    const mainCategories = [...new Set(materials.map(m => m.mainCategory).filter(Boolean))];
+    const midCategories = [...new Set(materials.map(m => m.midCategory).filter(Boolean))];
 
     const toggleUnavailable = (index: number) => {
         const newItems = [...items];
@@ -118,6 +150,7 @@ export function DeliveryConfirmDialog({ request, isOpen, onClose, onSuccess }: D
             actualQuantity: 1,
             actualPrice: 0,
             category: '기타',
+            midCategory: '',
             supplier: '',
             isExtra: true
         };
@@ -240,6 +273,18 @@ export function DeliveryConfirmDialog({ request, isOpen, onClose, onSuccess }: D
                         ))}
                     </datalist>
 
+                    <datalist id="main-category-list">
+                        {mainCategories.map(c => (
+                            <option key={c} value={c} />
+                        ))}
+                    </datalist>
+
+                    <datalist id="mid-category-list">
+                        {midCategories.map(c => (
+                            <option key={c} value={c} />
+                        ))}
+                    </datalist>
+
                     <div className="flex justify-end mb-2">
                         <Button variant="outline" size="sm" onClick={handleAddExtraItem} className="flex items-center gap-1">
                             <Plus className="w-4 h-4" /> 구매자가 추가한 항목 등록
@@ -250,12 +295,13 @@ export function DeliveryConfirmDialog({ request, isOpen, onClose, onSuccess }: D
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead className="w-[120px]">카테고리</TableHead>
-                                    <TableHead className="min-w-[140px]">구매처(업체명)</TableHead>
-                                    <TableHead className="min-w-[200px]">품목명</TableHead>
-                                    <TableHead className="w-20 text-center">요청수량</TableHead>
-                                    <TableHead className="w-24">실제수량 <span className="text-red-500">*</span></TableHead>
-                                    <TableHead className="w-28">실제단가 <span className="text-red-500">*</span></TableHead>
+                                    <TableHead className="w-[100px]">1차 카테고리</TableHead>
+                                    <TableHead className="w-[100px]">2차 카테고리</TableHead>
+                                    <TableHead className="min-w-[130px]">구매처(업체명)</TableHead>
+                                    <TableHead className="min-w-[180px]">품목명</TableHead>
+                                    <TableHead className="w-16 text-center">요청수량</TableHead>
+                                    <TableHead className="w-20">실제수량 <span className="text-red-500">*</span></TableHead>
+                                    <TableHead className="w-24">실제단가 <span className="text-red-500">*</span></TableHead>
                                     <TableHead className="text-right w-24">합계액</TableHead>
                                     <TableHead className="w-20 text-center">제외</TableHead>
                                 </TableRow>
@@ -263,30 +309,45 @@ export function DeliveryConfirmDialog({ request, isOpen, onClose, onSuccess }: D
                             <TableBody>
                                 {items.map((item, index) => (
                                     <TableRow key={index} className={cn("hover:bg-transparent", item.isUnavailable && "opacity-50 bg-muted/50")}>
-                                        <TableCell className={cn("text-muted-foreground", item.isUnavailable && "line-through")}>{item.category}</TableCell>
+                                        <TableCell>
+                                            <Input
+                                                list="main-category-list"
+                                                placeholder="대분류"
+                                                value={item.category}
+                                                onChange={(e) => handleCategoryChange(index, e.target.value)}
+                                                className="h-8 text-xs w-[90px]"
+                                                disabled={item.isUnavailable}
+                                            />
+                                        </TableCell>
+                                        <TableCell>
+                                            <Input
+                                                list="mid-category-list"
+                                                placeholder="중분류"
+                                                value={item.midCategory}
+                                                onChange={(e) => handleMidCategoryChange(index, e.target.value)}
+                                                className="h-8 text-xs w-[90px]"
+                                                disabled={item.isUnavailable}
+                                            />
+                                        </TableCell>
                                         <TableCell>
                                             <Input
                                                 list="suppliers-list"
                                                 placeholder="업체명"
                                                 value={item.supplier}
-                                                onChange={(e) => handleItemChange(index, 'supplier', e.target.value)}
+                                                onChange={(e) => handleSupplierChange(index, e.target.value)}
                                                 className="h-8 text-sm"
                                                 disabled={item.isUnavailable}
                                             />
                                         </TableCell>
                                         <TableCell className="font-medium">
-                                            {item.isExtra ? (
-                                                <Input
-                                                    list="materials-list"
-                                                    placeholder="자재 검색/입력"
-                                                    value={item.materialName}
-                                                    onChange={(e) => handleMaterialChange(index, e.target.value)}
-                                                    className="h-8 text-sm min-w-[180px]"
-                                                    disabled={item.isUnavailable}
-                                                />
-                                            ) : (
-                                                <span className={cn("whitespace-nowrap", item.isUnavailable && "text-muted-foreground")}>{item.materialName}</span>
-                                            )}
+                                            <Input
+                                                list="materials-list"
+                                                placeholder="자재 검색/입력"
+                                                value={item.materialName}
+                                                onChange={(e) => handleMaterialChange(index, e.target.value)}
+                                                className="h-8 text-sm min-w-[160px]"
+                                                disabled={item.isUnavailable}
+                                            />
                                         </TableCell>
                                         <TableCell className="text-center text-muted-foreground">{item.requestedQuantity}</TableCell>
                                         <TableCell>
