@@ -143,7 +143,7 @@ function MaterialCombobox({ value, materials, branchName, onSelect }: {
   value: string;
   materials: any[];
   branchName?: string;
-  onSelect: (name: string, price?: number) => void;
+  onSelect: (name: string, price?: number, subCategory?: string) => void;
 }) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState('');
@@ -179,8 +179,23 @@ function MaterialCombobox({ value, materials, branchName, onSelect }: {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open]);
 
-  const handleItemClick = (name: string, price?: number) => {
-    onSelect(name, price);
+  const handleItemClick = (m: any) => {
+    let subCat: string | undefined = undefined;
+    if (m.main_category === '생화') subCat = 'fresh_flower';
+    else if (m.main_category === '조화') subCat = 'artificial_flower';
+    else if (m.main_category === '프리저브드') subCat = 'preserved';
+    else if (m.main_category === '식물') subCat = 'plant';
+    else if (m.main_category === '바구니 / 화기' || m.main_category === '바구니/화기') subCat = 'container';
+    else if (m.main_category === '소모품 및 부자재' || m.main_category === '기타자재') subCat = 'supply';
+    else if (m.main_category === '외부발주') subCat = 'outsource';
+
+    onSelect(m.name, m.price, subCat);
+    setOpen(false);
+    setSearch('');
+  };
+
+  const handleNewItemClick = (name: string) => {
+    onSelect(name, undefined, undefined);
     setOpen(false);
     setSearch('');
   };
@@ -225,7 +240,7 @@ function MaterialCombobox({ value, materials, branchName, onSelect }: {
                   <button
                     type="button"
                     className="text-sm text-primary hover:underline flex items-center justify-center gap-1 mx-auto"
-                    onClick={() => handleItemClick(search, undefined)}
+                    onClick={() => handleNewItemClick(search)}
                   >
                     <Plus className="h-3 w-3" />
                     &quot;{search}&quot; 새로운 자재로 입력
@@ -245,7 +260,7 @@ function MaterialCombobox({ value, materials, branchName, onSelect }: {
                       "w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-primary/5 cursor-pointer transition-colors",
                       value === m.name && "bg-primary/10"
                     )}
-                    onClick={() => handleItemClick(m.name, m.price)}
+                    onClick={() => handleItemClick(m)}
                   >
                     <div className="flex items-center gap-2 truncate">
                       <Check className={cn("h-3 w-3 text-primary", value === m.name ? "opacity-100" : "opacity-0")} />
@@ -976,6 +991,15 @@ export function ExpenseInputForm({
   const onSubmit = useCallback(async (values: ExpenseFormValues) => {
     if (!isMountedRef.current) return;
 
+    if (values.category === SimpleExpenseCategory.MATERIAL && !values.subCategory) {
+      toast({
+        title: "필수 정보 누락",
+        description: "자재의 세부분류(2차 카테고리)를 반드시 선택해주세요. 자재관리에 올바르게 등록하기 위해 필요합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       safeSetState(setIsSubmitting, true);
 
@@ -1451,12 +1475,19 @@ export function ExpenseInputForm({
                                   value={field.value}
                                   materials={materials}
                                   branchName={selectedBranchName}
-                                  onSelect={(name, price) => {
+                                  onSelect={(name, price, subCat) => {
                                     field.onChange(name);
                                     if (price !== undefined) {
                                       form.setValue(`items.${index}.unitPrice`, price);
                                       const qty = form.getValues(`items.${index}.quantity`) || 1;
                                       form.setValue(`items.${index}.amount`, price * qty);
+                                    }
+                                    if (subCat) {
+                                      form.setValue('category', SimpleExpenseCategory.MATERIAL);
+                                      form.setValue('subCategory', subCat);
+                                    } else {
+                                      form.setValue('category', SimpleExpenseCategory.MATERIAL);
+                                      form.setValue('subCategory', ''); // 강제로 비워서 사용자가 선택하게 유도
                                     }
                                   }}
                                 />
