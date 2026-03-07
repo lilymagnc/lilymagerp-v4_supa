@@ -92,12 +92,13 @@ import {
 import * as XLSX from 'xlsx';
 
 // 폼 스키마 정의
-// 품목 스키마 수정 - 단가 필드 추가
 const expenseItemSchema = z.object({
   description: z.string().min(1, '품목명을 입력해주세요'),
   quantity: z.number().min(1, '수량을 입력해주세요'),
   unitPrice: z.number().min(0, '단가를 입력해주세요'), // 단가 필드 추가
-  amount: z.number().min(1, '금액을 입력해주세요')
+  amount: z.number().min(1, '금액을 입력해주세요'),
+  subCategory: z.string().optional(), // 개별 품목용 1차 카테고리
+  midCategory: z.string().optional() // 2차 카테고리
 });
 
 // 재고 업데이트 아이템 스키마
@@ -138,12 +139,22 @@ interface ExpenseInputFormProps {
   selectedBranchName?: string;
 }
 
+// 2차 카테고리 옵션 맵
+export const MID_CATEGORY_OPTIONS: Record<string, string[]> = {
+  'fresh_flower': ['장미류', '거베라류', '폼플라워', '필러플라워', '라인플라워', '소재(그린)', '국화류', '카네이션류', '리시안서스류', '매스플라워', '기타'],
+  'artificial_flower': ['장미류', '카네이션류', '리시안서스류', '국화류', '거베라류', '폼플라워', '라인플라워', '필러플라워', '소재(그린)', '트리류', '매스플라워'],
+  'preserved': ['플라워', '잎소재', '열매', '폼플라워', '기타'],
+  'plant': ['관엽소형', '관엽중형', '관엽대형', '서양란', '동양란', '다육선인장소형', '다육선인장중형', '다육선인장대형', '기타식물'],
+  'container': ['바구니', '도자기', '유리', '테라조', '테라코타(토분)', '플라스틱', '기타'],
+  'supply': ['원예자재', '데코자재', '포장재', '리본/텍', '제작도구', '기타'],
+};
+
 // 자재 검색 드롭다운 컴포넌트 (마우스 클릭 100% 지원)
 function MaterialCombobox({ value, materials, branchName, onSelect }: {
   value: string;
   materials: any[];
   branchName?: string;
-  onSelect: (name: string, price?: number, subCategory?: string) => void;
+  onSelect: (name: string, price?: number, subCategory?: string, midCategory?: string) => void;
 }) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState('');
@@ -151,20 +162,16 @@ function MaterialCombobox({ value, materials, branchName, onSelect }: {
 
   // 해당 지점 자재만 필터 + 검색어로 필터
   const filtered = React.useMemo(() => {
-    const branchMaterials = branchName
-      ? materials.filter(m =>
-        !m.branch ||
-        m.branch === '전체' ||
-        m.branch === 'all' ||
-        m.branch === branchName ||
-        branchName.includes(m.branch) ||
-        m.branch.includes(branchName)
-      )
-      : materials;
+    const branchMaterials = materials.filter(m => {
+      if (!branchName || branchName === '전체' || branchName === 'all') return true;
+      if (!m.branch || m.branch === '전체' || m.branch === 'all') return true;
+      return m.branch.includes(branchName) || branchName.includes(m.branch);
+    });
+
     if (!search) return branchMaterials.slice(0, 50);
     const term = search.toLowerCase();
     return branchMaterials
-      .filter(m => m.name.toLowerCase().includes(term))
+      .filter(m => m.name && m.name.toLowerCase().includes(term))
       .slice(0, 50);
   }, [materials, branchName, search]);
 
@@ -180,22 +187,26 @@ function MaterialCombobox({ value, materials, branchName, onSelect }: {
   }, [open]);
 
   const handleItemClick = (m: any) => {
-    let subCat: string | undefined = undefined;
-    if (m.main_category === '생화') subCat = 'fresh_flower';
-    else if (m.main_category === '조화') subCat = 'artificial_flower';
-    else if (m.main_category === '프리저브드') subCat = 'preserved';
-    else if (m.main_category === '식물') subCat = 'plant';
-    else if (m.main_category === '바구니 / 화기' || m.main_category === '바구니/화기') subCat = 'container';
-    else if (m.main_category === '소모품 및 부자재' || m.main_category === '기타자재') subCat = 'supply';
-    else if (m.main_category === '외부발주') subCat = 'outsource';
+    // DB의 문자열 뒤에 공백이 있을 수 있으므로 방어적 코드 작성 (.trim())
+    const mainCat = (m.mainCategory || m.main_category || '').trim();
+    const midCat = (m.midCategory || m.mid_category || '').trim();
 
-    onSelect(m.name, m.price, subCat);
+    let subCat: string | undefined = undefined;
+    if (mainCat === '생화') subCat = 'fresh_flower';
+    else if (mainCat === '조화') subCat = 'artificial_flower';
+    else if (mainCat === '프리저브드') subCat = 'preserved';
+    else if (mainCat === '식물') subCat = 'plant';
+    else if (mainCat === '바구니 / 화기' || mainCat === '바구니/화기') subCat = 'container';
+    else if (mainCat === '소모품 및 부자재' || mainCat === '기타자재') subCat = 'supply';
+    else if (mainCat === '외부발주') subCat = 'outsource';
+
+    onSelect(m.name, m.price, subCat, midCat);
     setOpen(false);
     setSearch('');
   };
 
   const handleNewItemClick = (name: string) => {
-    onSelect(name, undefined, undefined);
+    onSelect(name, undefined, undefined, undefined);
     setOpen(false);
     setSearch('');
   };
@@ -265,6 +276,11 @@ function MaterialCombobox({ value, materials, branchName, onSelect }: {
                     <div className="flex items-center gap-2 truncate">
                       <Check className={cn("h-3 w-3 text-primary", value === m.name ? "opacity-100" : "opacity-0")} />
                       <span className="truncate">{m.name}</span>
+                      {(m.mainCategory || m.main_category || m.midCategory || m.mid_category) && (
+                        <Badge variant="outline" className="text-[10px] bg-white whitespace-nowrap px-1.5 font-normal text-gray-500">
+                          {m.mainCategory || m.main_category}{(m.midCategory || m.mid_category) && (m.midCategory || m.mid_category) !== '기타' ? ` > ${m.midCategory || m.mid_category}` : ''}
+                        </Badge>
+                      )}
                       {m.color && (
                         <Badge variant="outline" className="text-[10px] px-1 py-0">{m.color}</Badge>
                       )}
@@ -991,13 +1007,25 @@ export function ExpenseInputForm({
   const onSubmit = useCallback(async (values: ExpenseFormValues) => {
     if (!isMountedRef.current) return;
 
-    if (values.category === SimpleExpenseCategory.MATERIAL && !values.subCategory) {
-      toast({
-        title: "필수 정보 누락",
-        description: "자재의 세부분류(2차 카테고리)를 반드시 선택해주세요. 자재관리에 올바르게 등록하기 위해 필요합니다.",
-        variant: "destructive",
-      });
-      return;
+    if (values.category === SimpleExpenseCategory.MATERIAL) {
+      const missingSubCategory = values.items.some(item => !item.subCategory && !values.subCategory);
+      if (missingSubCategory) {
+        toast({
+          title: "필수 정보 누락",
+          description: "자재의 세부분류(1차 또는 2차 카테고리)를 반드시 선택해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
+      if (!values.subCategory && getSubCategoryOptions(values.category).length > 0) {
+        toast({
+          title: "필수 정보 누락",
+          description: "세부분류를 선택해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
     try {
@@ -1036,7 +1064,7 @@ export function ExpenseInputForm({
           date: new Date(values.date).toISOString(),
           supplier: finalSupplierName, // 확인된 구매처명 사용
           category: values.category,
-          subCategory: values.subCategory,
+          subCategory: item.subCategory || values.subCategory, // 개별 카테고리 우선 적용
           paymentMethod: values.paymentMethod,
           description: finalDescription, // 확인된 품목명 사용
           quantity: item.quantity,
@@ -1045,9 +1073,10 @@ export function ExpenseInputForm({
           receiptFile: selectedFile,
           branchId: selectedBranchId || '',
           branchName: selectedBranchName || '',
+          materialMidCategory: item.midCategory,
         };
 
-        await addExpense(expenseData, selectedBranchId || '', selectedBranchName || '');
+        await addExpense(expenseData as any, selectedBranchId || '', selectedBranchName || '');
       }
 
       if (isMountedRef.current) {
@@ -1137,7 +1166,7 @@ export function ExpenseInputForm({
   }, [partners, supplierSearchValue]);
 
   return (
-    <Card className="w-full max-w-2xl mx-auto">
+    <Card className="w-full max-w-5xl mx-auto">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Plus className="h-5 w-5" />
@@ -1462,45 +1491,120 @@ export function ExpenseInputForm({
                     <div
                       key={field.id}
                       className="group relative grid grid-cols-12 gap-2 pr-8 animate-in fade-in slide-in-from-right-2 duration-200"
+                      style={{ zIndex: 50 - index }}
                     >
-                      {/* 품목명 */}
+                      {/* 품목명 및 2차 카테고리(자재 시) */}
                       <div className="col-span-12 md:col-span-5">
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.description`}
-                          render={({ field }) => (
-                            <div className="relative">
-                              {selectedCategory === SimpleExpenseCategory.MATERIAL ? (
-                                <MaterialCombobox
-                                  value={field.value}
-                                  materials={materials}
-                                  branchName={selectedBranchName}
-                                  onSelect={(name, price, subCat) => {
-                                    field.onChange(name);
-                                    if (price !== undefined) {
-                                      form.setValue(`items.${index}.unitPrice`, price);
-                                      const qty = form.getValues(`items.${index}.quantity`) || 1;
-                                      form.setValue(`items.${index}.amount`, price * qty);
-                                    }
-                                    if (subCat) {
-                                      form.setValue('category', SimpleExpenseCategory.MATERIAL);
-                                      form.setValue('subCategory', subCat);
-                                    } else {
-                                      form.setValue('category', SimpleExpenseCategory.MATERIAL);
-                                      form.setValue('subCategory', ''); // 강제로 비워서 사용자가 선택하게 유도
-                                    }
+                        <div className="flex gap-1">
+                          {selectedCategory === SimpleExpenseCategory.MATERIAL && (
+                            <>
+                              <FormField
+                                control={form.control}
+                                name={`items.${index}.subCategory`}
+                                render={({ field }) => (
+                                  <Select onValueChange={(val) => {
+                                    field.onChange(val);
+                                    form.setValue(`items.${index}.midCategory`, ''); // Reset 2차 카테고리
                                   }}
-                                />
-                              ) : (
-                                <Input
-                                  placeholder="품목명"
-                                  {...field}
-                                  className="h-9 text-sm border-gray-100 group-hover:border-gray-300 focus:border-primary bg-white/50 focus:bg-white transition-all"
-                                />
-                              )}
-                            </div>
+                                    value={field.value || undefined}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger className="w-[80px] shrink-0 h-9 text-[11px] bg-white/50 border-gray-100 px-2" title={field.value ? (MATERIAL_SUB_CATEGORY_LABELS as Record<string, string>)[field.value] || field.value : "1차 카테고리"}>
+                                        <SelectValue placeholder="1차" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      {Object.entries(MATERIAL_SUB_CATEGORY_LABELS).map(([key, label]) => (
+                                        <SelectItem key={key} value={key} className="text-xs">
+                                          {label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                              />
+
+                              <FormField
+                                control={form.control}
+                                name={`items.${index}.midCategory`}
+                                render={({ field }) => {
+                                  const itemSubCat = form.watch(`items.${index}.subCategory`) || form.watch('subCategory');
+                                  let options: string[] = [];
+                                  if (itemSubCat && MID_CATEGORY_OPTIONS[itemSubCat]) {
+                                    options = MID_CATEGORY_OPTIONS[itemSubCat];
+                                  } else {
+                                    options = ['기타'];
+                                  }
+
+                                  return (
+                                    <Select onValueChange={field.onChange} value={field.value || undefined}>
+                                      <FormControl>
+                                        <SelectTrigger className="w-[85px] shrink-0 h-9 text-[11px] bg-white/50 border-gray-100 px-2" title={field.value || "2차 카테고리"}>
+                                          <SelectValue placeholder="2차" />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        {options.map((opt) => (
+                                          <SelectItem key={opt} value={opt} className="text-xs">
+                                            {opt}
+                                          </SelectItem>
+                                        ))}
+                                        {!options.includes('기타') && (
+                                          <SelectItem value="기타" className="text-xs">기타</SelectItem>
+                                        )}
+                                        {field.value && !options.includes(field.value) && field.value !== '기타' && (
+                                          <SelectItem value={field.value} className="text-xs">{field.value}</SelectItem>
+                                        )}
+                                      </SelectContent>
+                                    </Select>
+                                  );
+                                }}
+                              />
+                            </>
                           )}
-                        />
+
+                          <FormField
+                            control={form.control}
+                            name={`items.${index}.description`}
+                            render={({ field }) => (
+                              <div className="relative flex-1 min-w-0">
+                                {selectedCategory === SimpleExpenseCategory.MATERIAL ? (
+                                  <MaterialCombobox
+                                    value={field.value}
+                                    materials={materials}
+                                    branchName={selectedBranchName}
+                                    onSelect={(name, price, subCat, midCat) => {
+                                      field.onChange(name);
+                                      if (price !== undefined) {
+                                        form.setValue(`items.${index}.unitPrice`, price);
+                                        const qty = form.getValues(`items.${index}.quantity`) || 1;
+                                        form.setValue(`items.${index}.amount`, price * qty);
+                                      }
+                                      if (subCat) {
+                                        form.setValue(`items.${index}.subCategory`, subCat);
+                                        // 폼-레벨 subCategory도 함께 업데이트 (UI편의성)
+                                        form.setValue('category', SimpleExpenseCategory.MATERIAL);
+                                        form.setValue('subCategory', subCat);
+                                      }
+                                      if (midCat) {
+                                        // Radix UI Select의 SelectItem이 렌더링될 시간을 벌어줌
+                                        setTimeout(() => {
+                                          form.setValue(`items.${index}.midCategory`, midCat);
+                                        }, 50);
+                                      }
+                                    }}
+                                  />
+                                ) : (
+                                  <Input
+                                    placeholder="품목명"
+                                    {...field}
+                                    className="h-9 text-sm border-gray-100 group-hover:border-gray-300 focus:border-primary bg-white/50 focus:bg-white transition-all w-full"
+                                  />
+                                )}
+                              </div>
+                            )}
+                          />
+                        </div>
                       </div>
 
                       {/* 단가 */}

@@ -167,7 +167,13 @@ export function useSimpleExpenses({ enableRealtime = false }: { enableRealtime?:
       let materialUpdatedId = null;
       if (data.category === SimpleExpenseCategory.MATERIAL && data.description) {
         const { data: mat } = await supabase.from('materials').select('*').eq('name', data.description).eq('branch', branchName).maybeSingle();
-        const mainCategory = (data.subCategory === 'fresh_flower' || data.subCategory === '생화') ? '생화' : '기타자재';
+        let mainCategory = '기타자재';
+        if (data.subCategory === 'fresh_flower' || data.subCategory === '생화') mainCategory = '생화';
+        else if (data.subCategory === 'artificial_flower' || data.subCategory === '조화') mainCategory = '조화';
+        else if (data.subCategory === 'preserved' || data.subCategory === '프리저브드') mainCategory = '프리저브드';
+        else if (data.subCategory === 'plant' || data.subCategory === '식물') mainCategory = '식물';
+        else if (data.subCategory === 'container' || data.subCategory === '바구니 / 화기') mainCategory = '바구니 / 화기';
+        else if (data.subCategory === 'supply' || data.subCategory === '소모품 및 부자재') mainCategory = '소모품 및 부자재';
 
         if (!mat) {
           const newId = `MAT${Date.now()}`;
@@ -176,7 +182,7 @@ export function useSimpleExpenses({ enableRealtime = false }: { enableRealtime?:
             id: newId,
             name: data.description,
             main_category: mainCategory,
-            mid_category: '기타',
+            mid_category: data.materialMidCategory || '기타',
             price: data.unitPrice || 0,
             supplier: data.supplier || '미지정',
             stock: 0,

@@ -157,6 +157,7 @@ export interface CreateSimpleExpenseData {
   inventoryUpdates?: InventoryUpdateItem[];
   relatedRequestId?: string;
   relatedOrderId?: string;
+  materialMidCategory?: string;
 }
 // 구매처 자동완성 데이터
 export interface SupplierSuggestion {
