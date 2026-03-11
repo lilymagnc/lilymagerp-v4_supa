@@ -520,6 +520,7 @@ export function useMaterials() {
         deleteMaterial,
         bulkAddMaterials,
         rebuildCategories,
-        resetFreshFlowerStock
+        resetFreshFlowerStock,
+        generateNewId
     };
 }

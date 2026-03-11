@@ -420,7 +420,7 @@ export function ExpenseInputForm({
     }
   }, [selectedBranchId]);
 
-  const { fields, append, remove } = useFieldArray({
+  const { fields, prepend, remove } = useFieldArray({
     control: form.control,
     name: "items"
   });
@@ -536,14 +536,14 @@ export function ExpenseInputForm({
   // 품목 추가
   const addItem = useCallback(() => {
     if (isMountedRef.current) {
-      append({
+      prepend({
         description: '',
         quantity: 1,
         unitPrice: 0,
         amount: 0
       });
     }
-  }, [append]);
+  }, [prepend]);
 
   // 총 금액 계산
   const totalAmount = form.watch('items').reduce((sum, item) => sum + (item.amount || 0), 0);
@@ -867,36 +867,8 @@ export function ExpenseInputForm({
           // 자재 자동 업데이트를 위한 inventoryUpdates 생성
           const inventoryUpdates = [];
 
-          // 자재비 카테고리인 경우 자재 관리에 자동 업데이트
-          if (item.category === 'material') {
-            // 해당 지점의 기존 자재 검색
-            const existingMaterial = materials.find(m =>
-              m.name === item['품목명'] && m.branch === finalBranchName
-            );
-
-            if (existingMaterial) {
-              // 해당 지점에 같은 이름의 자재가 있으면 해당 ID 사용
-              inventoryUpdates.push({
-                type: 'material',
-                id: existingMaterial.id,
-                name: item['품목명'],
-                quantity: item.quantity,
-                unitPrice: item.unitPrice
-              });
-
-            } else {
-              // 해당 지점에 같은 이름의 자재가 없으면 새로 생성
-              const materialId = `M${String(Date.now()).slice(-5)}`;
-              inventoryUpdates.push({
-                type: 'material',
-                id: materialId,
-                name: item['품목명'],
-                quantity: item.quantity,
-                unitPrice: item.unitPrice
-              });
-
-            }
-          }
+          // 자재비 카테고리인 경우, addExpense 내부에서 자동으로 자재 연동/생성을 처리하므로 별도 inventoryUpdates 삽입 불필요.
+          // (제품인 경우에만 기존 로직 유지)
 
           // 제품 카테고리인 경우 제품 관리에 자동 업데이트
           if (item.category === 'product') {
@@ -1074,6 +1046,7 @@ export function ExpenseInputForm({
           branchId: selectedBranchId || '',
           branchName: selectedBranchName || '',
           materialMidCategory: item.midCategory,
+          inventoryUpdates: values.inventoryUpdates || [], // 명시적 재고 연동 정보 추가
         };
 
         await addExpense(expenseData as any, selectedBranchId || '', selectedBranchName || '');

@@ -22,7 +22,7 @@ export function useSimpleExpenses({ enableRealtime = false }: { enableRealtime?:
   const [supplierSuggestions, setSupplierSuggestions] = useState<SupplierSuggestion[]>([]);
   const { user } = useAuth();
   const { toast } = useToast();
-  const { updateStock: updateMaterialStock } = useMaterials();
+  const { updateStock: updateMaterialStock, generateNewId } = useMaterials();
   const { updateStock: updateProductStock } = useProducts();
 
   const mapRowToExpense = useCallback((row: any): SimpleExpense => ({
@@ -176,7 +176,7 @@ export function useSimpleExpenses({ enableRealtime = false }: { enableRealtime?:
         else if (data.subCategory === 'supply' || data.subCategory === '소모품 및 부자재') mainCategory = '소모품 및 부자재';
 
         if (!mat) {
-          const newId = `MAT${Date.now()}`;
+          const newId = await generateNewId(mainCategory, data.materialMidCategory || '기타', branchName);
           materialUpdatedId = newId;
           await supabase.from('materials').insert([{
             id: newId,
