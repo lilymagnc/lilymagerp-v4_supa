@@ -126,18 +126,22 @@ export default function MaterialRequestPage() {
       if (newQty <= 0) {
         setCartItems(cartItems.filter(item => item.materialId !== materialKey));
       } else {
-        const newItems = [...cartItems];
-        newItems[existingIndex].requestedQuantity = newQty;
+        const newItems = cartItems.map((item, idx) => 
+          idx === existingIndex 
+            ? { ...item, requestedQuantity: newQty, updatedAt: Date.now() } 
+            : item
+        );
         setCartItems(newItems);
       }
     } else if (change > 0) {
-      const newItem: RequestItem = {
+      const newItem: RequestItem & { updatedAt?: number } = {
         materialId: materialKey,
         materialName: material.name,
         requestedQuantity: change,
         estimatedPrice: material.price,
         urgency: 'normal',
-        memo: ''
+        memo: '',
+        updatedAt: Date.now()
       };
       setCartItems([...cartItems, newItem]);
     }
@@ -159,7 +163,7 @@ export default function MaterialRequestPage() {
       return;
     }
     setCartItems(cartItems.map(item =>
-      item.materialId === materialId ? { ...item, requestedQuantity: newQuantity } : item
+      item.materialId === materialId ? { ...item, requestedQuantity: newQuantity, updatedAt: Date.now() } : item
     ));
   };
 
@@ -320,8 +324,8 @@ export default function MaterialRequestPage() {
                             <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 text-muted-foreground">{material.midCategory || material.mainCategory || '기타'}</Badge>
                             {material.stock > 0 && <span className="text-[9px] text-muted-foreground">재고:{material.stock}</span>}
                           </div>
-                          <h3 className="font-semibold text-xs leading-tight line-clamp-1">{material.name}</h3>
-                          <p className="text-[10px] text-muted-foreground line-clamp-1">{material.size}{material.color ? ` / ${material.color}` : ''}</p>
+                          <h3 className="font-semibold text-xs leading-tight line-clamp-3">{material.name}</h3>
+                          <p className="text-[10px] text-muted-foreground line-clamp-2">{material.size}{material.color ? ` / ${material.color}` : ''}</p>
                           <p className="font-bold text-primary text-xs mt-0.5">{material.price > 0 ? `${material.price.toLocaleString()}원` : '시세변동'}</p>
                         </div>
                         <div className="px-2 py-1.5 bg-muted/30 border-t mt-auto rounded-b-lg">
@@ -461,7 +465,7 @@ export default function MaterialRequestPage() {
                             {material.midCategory || material.mainCategory || '기타'}
                           </Badge>
                         </div>
-                        <h3 className="font-semibold text-[11px] leading-tight line-clamp-2">{material.name}</h3>
+                        <h3 className="font-semibold text-[11px] leading-tight line-clamp-3">{material.name}</h3>
                         <p className="font-bold text-primary text-[11px] mt-0.5">
                           {material.price > 0 ? `${material.price.toLocaleString()}원` : '시세변동'}
                         </p>
@@ -535,7 +539,7 @@ export default function MaterialRequestPage() {
                   {cartItems.map((item) => (
                     <div key={item.materialId} className="flex items-center justify-between gap-2 bg-muted/30 rounded-md px-2.5 py-1.5">
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium truncate">{item.materialName}</p>
+                        <p className="text-xs font-medium line-clamp-2 leading-tight">{item.materialName}</p>
                         <p className="text-[10px] text-muted-foreground">
                           {item.estimatedPrice.toLocaleString()}원 × {item.requestedQuantity}
                           = <span className="font-semibold text-foreground">{(item.estimatedPrice * item.requestedQuantity).toLocaleString()}원</span>

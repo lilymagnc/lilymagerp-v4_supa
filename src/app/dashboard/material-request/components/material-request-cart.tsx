@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Plus, Minus, Trash2, Send, ShoppingCart, Edit3, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { RequestItem, UrgencyLevel } from '@/types/material-request';
+
 interface MaterialRequestCartProps {
   items: RequestItem[];
   onUpdateQuantity: (materialId: string, quantity: number) => void;
@@ -22,6 +23,7 @@ interface MaterialRequestCartProps {
   totalEstimatedCost: number;
   loading?: boolean;
 }
+
 export function MaterialRequestCart({
   items,
   onUpdateQuantity,
@@ -39,16 +41,22 @@ export function MaterialRequestCart({
     urgency: 'normal' as UrgencyLevel,
     memo: ''
   });
-  const [sortBy, setSortBy] = useState<'name' | 'urgency' | 'cost'>('name');
+  const [sortBy, setSortBy] = useState<'name' | 'urgency' | 'cost' | 'click'>('click');
   const [showUrgentOnly, setShowUrgentOnly] = useState(false);
   const { toast } = useToast();
+
   // 아이템 정렬 및 필터링
   const sortedAndFilteredItems = React.useMemo(() => {
     let filteredItems = showUrgentOnly 
       ? items.filter(item => item.urgency === 'urgent')
       : items;
-    return filteredItems.sort((a, b) => {
+
+    return [...filteredItems].sort((a, b) => {
       switch (sortBy) {
+        case 'click':
+          const aTime = (a as any).updatedAt || 0;
+          const bTime = (b as any).updatedAt || 0;
+          return bTime - aTime;
         case 'name':
           return a.materialName.localeCompare(b.materialName);
         case 'urgency':
@@ -64,6 +72,7 @@ export function MaterialRequestCart({
       }
     });
   }, [items, sortBy, showUrgentOnly]);
+
   // 아이템 편집 시작
   const handleStartEdit = (item: RequestItem) => {
     setEditingItem(item);
@@ -73,6 +82,7 @@ export function MaterialRequestCart({
       memo: item.memo || ''
     });
   };
+
   // 아이템 편집 저장
   const handleSaveEdit = () => {
     if (!editingItem) return;
@@ -83,6 +93,7 @@ export function MaterialRequestCart({
     });
     setEditingItem(null);
   };
+
   // 아이템 편집 취소
   const handleCancelEdit = () => {
     setEditingItem(null);
@@ -92,6 +103,7 @@ export function MaterialRequestCart({
       memo: ''
     });
   };
+
   if (items.length === 0) {
     return (
       <Card>
@@ -113,6 +125,7 @@ export function MaterialRequestCart({
       </Card>
     );
   }
+
   return (
     <Card>
       <CardHeader>
@@ -129,11 +142,12 @@ export function MaterialRequestCart({
         <div className="flex items-center justify-between gap-2 p-2 bg-muted/50 rounded-lg">
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">정렬:</span>
-            <Select value={sortBy} onValueChange={(value: 'name' | 'urgency' | 'cost') => setSortBy(value)}>
+            <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
               <SelectTrigger className="w-24 h-8">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="click">클릭순</SelectItem>
                 <SelectItem value="name">이름순</SelectItem>
                 <SelectItem value="urgency">긴급도순</SelectItem>
                 <SelectItem value="cost">비용순</SelectItem>
@@ -151,6 +165,7 @@ export function MaterialRequestCart({
             </Button>
           </div>
         </div>
+
         {/* 장바구니 아이템 목록 */}
         <div className="space-y-3">
           {sortedAndFilteredItems.length === 0 && items.length > 0 ? (
@@ -355,7 +370,9 @@ export function MaterialRequestCart({
             ))
           )}
         </div>
+
         <Separator />
+
         {/* 총 비용 */}
         <div className="space-y-2">
           <div className="flex justify-between items-center">
@@ -375,7 +392,9 @@ export function MaterialRequestCart({
             </span>
           </div>
         </div>
+
         <Separator />
+
         {/* 일괄 작업 버튼들 */}
         <div className="grid grid-cols-2 gap-2">
           <Button
@@ -402,6 +421,7 @@ export function MaterialRequestCart({
             모두 일반으로
           </Button>
         </div>
+
         {/* 장바구니 저장/불러오기 */}
         {(onSaveCart || onLoadCart) && (
           <div className="flex gap-2">
@@ -427,6 +447,7 @@ export function MaterialRequestCart({
             )}
           </div>
         )}
+
         {/* 긴급 요청 알림 */}
         {items.some(item => item.urgency === 'urgent') && (
           <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
@@ -439,6 +460,7 @@ export function MaterialRequestCart({
             </p>
           </div>
         )}
+
         {/* 제출 버튼 */}
         <Button 
           onClick={onSubmitRequest} 
@@ -458,6 +480,7 @@ export function MaterialRequestCart({
             </>
           )}
         </Button>
+
         {/* 안내 메시지 */}
         <div className="text-xs text-muted-foreground text-center">
           <p>요청 제출 후 본사에서 검토하여 구매를 진행합니다.</p>
