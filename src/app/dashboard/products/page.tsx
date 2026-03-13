@@ -184,6 +184,22 @@ export default function ProductsPage() {
             <ScanLine className="mr-2 h-4 w-4" />
             바코드 스캔
           </Button>
+          <Button
+            variant="outline"
+            onClick={handleExportToExcel}
+            disabled={filteredProducts.length === 0}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            엑셀 내보내기
+          </Button>
+          {selectedProducts.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => setIsMultiPrintDialogOpen(true)}
+            >
+              선택 상품 라벨 출력 ({selectedProducts.length}개)
+            </Button>
+          )}
           {isAdmin && (
             <>
               <Button onClick={() => setIsFormOpen(true)}>
@@ -195,22 +211,6 @@ export default function ProductsPage() {
                 fileName="products_template.xlsx"
                 resourceName="상품"
               />
-              <Button
-                variant="outline"
-                onClick={handleExportToExcel}
-                disabled={filteredProducts.length === 0}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                엑셀 내보내기
-              </Button>
-              {selectedProducts.length > 0 && (
-                <Button
-                  variant="outline"
-                  onClick={() => setIsMultiPrintDialogOpen(true)}
-                >
-                  선택 상품 라벨 출력 ({selectedProducts.length}개)
-                </Button>
-              )}
             </>
           )}
         </div>

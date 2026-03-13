@@ -225,38 +225,63 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       // 1. Supabase Session 확인
-      const { data: { session } } = await supabase.auth.getSession();
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
 
-      if (mounted) {
-        if (session) {
-          // 세션이 있으면 검증 및 업데이트 수행
-          await handleSession(session);
-        } else {
-          // 세션이 없으면 로그아웃 처리
-          setUser(null);
-          clearUserFromStorage();
+        if (mounted) {
+          if (session) {
+            // 세션이 있으면 검증 및 업데이트 수행
+            await handleSession(session);
+          } else {
+            // 세션이 없으면 로그아웃 처리
+            setUser(null);
+            clearUserFromStorage();
+            setLoading(false);
+          }
+        }
+      } catch (err) {
+        console.error('[Auth Init] getSession Error:', err);
+        if (mounted) {
           setLoading(false);
         }
       }
 
       // 2. Auth 변경 리스너
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_OUT') {
-          setUser(null);
-          clearUserFromStorage();
-          setLoading(false);
-          if (typeof window !== 'undefined' && window.location.pathname.startsWith('/dashboard')) {
-            window.location.href = '/login';
+      let subscription: any = null;
+      try {
+        const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+          if (!mounted) return;
+
+          console.log('[Auth] State Change Event:', event);
+
+          if (event === 'SIGNED_OUT') {
+            setUser(null);
+            clearUserFromStorage();
+            setLoading(false);
+            if (typeof window !== 'undefined' && window.location.pathname.startsWith('/dashboard')) {
+              window.location.href = '/login';
+            }
+          } else if (session) {
+            await handleSession(session);
+          } else {
+            setLoading(false);
           }
-        } else if (session) {
-          await handleSession(session);
+        });
+        subscription = data.subscription;
+      } catch (err) {
+        console.error('[Auth Init] onAuthStateChange Error:', err);
+        if (mounted) {
+          setLoading(false);
         }
-      });
+      }
 
       return () => {
         mounted = false;
-        subscription.unsubscribe();
+        if (subscription) {
+          subscription.unsubscribe();
+        }
       };
+
     };
 
     initializeAuth();

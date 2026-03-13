@@ -10,11 +10,25 @@ export async function POST(req: NextRequest) {
 
     const SPREADSHEET_ID = process.env.NEXT_PUBLIC_GOOGLE_SHEET_ID || '1lVXJlWSFgkmcXTzBLnTzLX-gFXv_3dVxjd_foy-Rsx0';
     const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const GOOGLE_PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    const GOOGLE_PRIVATE_KEY_RAW = process.env.GOOGLE_PRIVATE_KEY;
+    const GOOGLE_PRIVATE_KEY = GOOGLE_PRIVATE_KEY_RAW?.replace(/\\n/g, '\n');
+
+    console.log('Export API Check:', {
+      hasEmail: !!GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      emailLength: GOOGLE_SERVICE_ACCOUNT_EMAIL?.length,
+      hasKey: !!GOOGLE_PRIVATE_KEY_RAW,
+      keyLength: GOOGLE_PRIVATE_KEY_RAW?.length,
+    });
 
     if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
       return NextResponse.json(
-        { error: 'Google Service Account credentials are not configured on the server.' },
+        { 
+          error: 'Google Service Account credentials are not configured on the server.',
+          debug: {
+            emailFound: !!GOOGLE_SERVICE_ACCOUNT_EMAIL,
+            keyFound: !!GOOGLE_PRIVATE_KEY_RAW
+          }
+        },
         { status: 500 }
       );
     }
