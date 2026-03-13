@@ -8,9 +8,9 @@ export async function POST(req: NextRequest) {
   try {
     const { data, title } = await req.json();
 
-    const SPREADSHEET_ID = process.env.NEXT_PUBLIC_GOOGLE_SHEET_ID || '1lVXJlWSFgkmcXTzBLnTzLX-gFXv_3dVxjd_foy-Rsx0';
-    const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const GOOGLE_PRIVATE_KEY_RAW = process.env.GOOGLE_PRIVATE_KEY;
+    const SPREADSHEET_ID = (process.env.NEXT_PUBLIC_GOOGLE_SHEET_ID || '1lVXJlWSFgkmcXTzBLnTzLX-gFXv_3dVxjd_foy-Rsx0').trim().replace(/\"/g, '');
+    const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim().replace(/\"/g, '');
+    const GOOGLE_PRIVATE_KEY_RAW = process.env.GOOGLE_PRIVATE_KEY?.trim().replace(/\"/g, '');
     const GOOGLE_PRIVATE_KEY = GOOGLE_PRIVATE_KEY_RAW?.replace(/\\n/g, '\n');
 
     console.log('Export API Check:', {
