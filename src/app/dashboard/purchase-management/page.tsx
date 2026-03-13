@@ -16,6 +16,7 @@ import { useSimpleExpenses } from '@/hooks/use-simple-expenses';
 import type { MaterialRequest, RequestStatus, UrgencyLevel } from '@/types/material-request';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
+import { exportToGoogleSheet } from '@/lib/google-sheets';
 
 import { Trash2, Eye } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -367,27 +368,67 @@ export default function PurchaseManagementPage() {
           <PurchaseRequestDashboard
             requests={filteredRequests}
             onRefresh={loadRequests}
+            onPurchaseComplete={async (requestIds) => {
+              try {
+                for (const id of requestIds) {
+                  await updateRequestStatus(id, 'purchased');
+                }
+                toast({
+                  title: "구매 완료 처리",
+                  description: `${requestIds.length}건의 요청이 구매 완료 상태로 변경되었습니다. (배송 관리 탭에서 확인 가능)`,
+                });
+                await loadRequests();
+              } catch (error) {
+                console.error('구매 완료 처리 오류:', error);
+                toast({
+                  variant: 'destructive',
+                  title: "오류",
+                  description: "구매 완료 처리 중 오류가 발생했습니다.",
+                });
+              }
+            }}
           />
         </TabsContent>
         <TabsContent value="pivot">
           <MaterialPivotTable
             requests={filteredRequests}
-            onPurchaseStart={async (requestIds) => {
+            onExportToGoogleSheet={async (data) => {
+              try {
+                const result = await exportToGoogleSheet(data, '자재취합');
+                toast({
+                  title: "구글 시트 전송 완료",
+                  description: `구글 시트에 '${result.sheetName}' 탭이 생성/업데이트 되었습니다.`,
+                  action: (
+                    <Button variant="outline" size="sm" onClick={() => window.open(result.url, '_blank')}>
+                      시트 열기
+                    </Button>
+                  ),
+                });
+              } catch (error: any) {
+                console.error('구글 시트 전송 오류:', error);
+                toast({
+                  variant: 'destructive',
+                  title: "전송 오류",
+                  description: error.message || "구글 시트 전송 중 오류가 발생했습니다.",
+                });
+              }
+            }}
+            onPurchaseComplete={async (requestIds) => {
               try {
                 for (const id of requestIds) {
-                  await updateRequestStatus(id, 'purchasing');
+                  await updateRequestStatus(id, 'purchased');
                 }
                 toast({
-                  title: "구매 진행",
-                  description: `${requestIds.length}건의 요청이 구매 진행 상태로 변경되었습니다.`,
+                  title: "구매 완료 처리",
+                  description: `${requestIds.length}건의 요청이 구매 완료 상태로 변경되었습니다. (배송 관리 탭에서 확인 가능)`,
                 });
                 await loadRequests();
               } catch (error) {
-                console.error('구매 진행 처리 오류:', error);
+                console.error('구매 완료 처리 오류:', error);
                 toast({
                   variant: 'destructive',
                   title: "오류",
-                  description: "구매 진행 처리 중 오류가 발생했습니다.",
+                  description: "구매 완료 처리 중 오류가 발생했습니다.",
                 });
               }
             }}

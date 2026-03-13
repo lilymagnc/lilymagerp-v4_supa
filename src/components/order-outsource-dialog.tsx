@@ -184,7 +184,7 @@ export function OrderOutsourceDialog({
                 amount: partnerPrice,
                 category: SimpleExpenseCategory.MATERIAL,
                 subCategory: 'outsource',
-                description: isEditMode ? `외부발주(수정): ${itemsDescription}` : `외부발주: ${itemsDescription}`,
+                description: isEditMode ? `외부발주(수정): ${itemsDescription} ${order.orderer.name}` : `외부발주: ${itemsDescription} ${order.orderer.name}`,
                 supplier: selectedPartner?.name || "미지정 파트너",
                 quantity: totalQuantity,
                 unitPrice: partnerPrice / (totalQuantity || 1),

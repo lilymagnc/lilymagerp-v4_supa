@@ -36,6 +36,7 @@ export default function ProductsPage() {
     deleteProduct,
     bulkAddProducts,
     fetchProducts,
+    fetchAllProducts,
   } = useProducts();
   const { branches } = useBranches();
   const { user } = useAuth();
@@ -146,7 +147,20 @@ export default function ProductsPage() {
     try {
       const branchText = !isAdmin ? userBranch : (selectedBranch === "all" ? "전체지점" : selectedBranch);
       const filename = `상품목록_${branchText}`;
-      await exportProductsToExcel(filteredProducts, filename);
+      
+      // 현재 필터링된 조건으로 전체 데이터를 가져오기
+      const allProducts = await fetchAllProducts({
+        branch: isAdmin ? selectedBranch : userBranch,
+        mainCategory: selectedCategory,
+        searchTerm: searchTerm
+      });
+      
+      if (!allProducts || allProducts.length === 0) {
+        alert('내보낼 데이터가 없습니다.');
+        return;
+      }
+
+      await exportProductsToExcel(allProducts, filename);
     } catch (error) {
       console.error('엑셀 내보내기 오류:', error);
       alert('엑셀 파일 생성에 실패했습니다.');

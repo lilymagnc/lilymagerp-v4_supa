@@ -19,10 +19,11 @@ import { Priority } from '@/types/material-request';
 interface PurchaseRequestDashboardProps {
   requests: MaterialRequest[];
   onRefresh: () => void;
+  onPurchaseComplete?: (requestIds: string[]) => void;
 }
-export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseRequestDashboardProps) {
+export function PurchaseRequestDashboard({ requests, onRefresh, onPurchaseComplete }: PurchaseRequestDashboardProps) {
   const [selectedRequests, setSelectedRequests] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<'quantity' | 'urgency' | 'cost'>('quantity');
+  const [sortBy, setSortBy] = useState<'quantity' | 'urgency' | 'cost' | 'name' | 'supplier' | 'unitPrice'>('name');
   const [groupBy, setGroupBy] = useState<'material' | 'branch'>('material');
   const [showActualPurchaseForm, setShowActualPurchaseForm] = useState(false);
   const [currentBatch, setCurrentBatch] = useState<PurchaseBatch | null>(null);
@@ -99,6 +100,20 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
         });
       case 'cost':
         return items.sort((a, b) => b.estimatedTotalCost - a.estimatedTotalCost);
+      case 'name':
+        return items.sort((a, b) => a.materialName.localeCompare(b.materialName, 'ko'));
+      case 'supplier':
+        return items.sort((a, b) => {
+          const aSupplier = a.supplier || '';
+          const bSupplier = b.supplier || '';
+          return aSupplier.localeCompare(bSupplier, 'ko');
+        });
+      case 'unitPrice':
+        return items.sort((a, b) => {
+          const aUnitPrice = a.totalQuantity > 0 ? a.estimatedTotalCost / a.totalQuantity : 0;
+          const bUnitPrice = b.totalQuantity > 0 ? b.estimatedTotalCost / b.totalQuantity : 0;
+          return bUnitPrice - aUnitPrice;
+        });
       default:
         return items;
     }
@@ -279,13 +294,16 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
             <CardTitle>구매 요청 취합 대시보드</CardTitle>
             <div className="flex gap-2">
               <Select value={sortBy} onValueChange={(value) => setSortBy(value as any)}>
-                <SelectTrigger className="w-32">
+                <SelectTrigger className="w-36">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="quantity">수량순</SelectItem>
                   <SelectItem value="urgency">긴급도순</SelectItem>
                   <SelectItem value="cost">비용순</SelectItem>
+                  <SelectItem value="name">품목명순</SelectItem>
+                  <SelectItem value="supplier">구매처순</SelectItem>
+                  <SelectItem value="unitPrice">단가순</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={groupBy} onValueChange={(value) => setGroupBy(value as any)}>
@@ -388,6 +406,15 @@ export function PurchaseRequestDashboard({ requests, onRefresh }: PurchaseReques
                 <ShoppingCart className="h-4 w-4" />
                 구매 배치 생성
               </Button>
+              {onPurchaseComplete && (
+                <Button
+                  onClick={() => onPurchaseComplete(selectedRequests)}
+                  className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
+                >
+                  <Package className="h-4 w-4" />
+                  즉시 구매 완료 (배송 단계로)
+                </Button>
+              )}
             </div>
           )}
         </TabsContent>

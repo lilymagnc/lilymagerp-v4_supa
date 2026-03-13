@@ -225,6 +225,10 @@ export default function DashboardLayout({
                                     <SidebarMenuItem>
                                         <SidebarMenuButton onClick={() => router.push('/dashboard/simple-expenses')}><Receipt />간편 지출관리</SidebarMenuButton>
                                     </SidebarMenuItem>
+                                    {/* 상품 관리 (지점 사용자 추가) */}
+                                    <SidebarMenuItem>
+                                        <SidebarMenuButton onClick={() => router.push('/dashboard/products')}><Boxes />상품 관리</SidebarMenuButton>
+                                    </SidebarMenuItem>
                                 </>
                             )}
                         </SidebarMenu>

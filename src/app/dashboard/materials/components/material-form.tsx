@@ -27,6 +27,10 @@ import { useBranches } from "@/hooks/use-branches"
 import { useCategories } from "@/hooks/use-categories"
 import { usePartners } from "@/hooks/use-partners"
 import { useEffect, useMemo } from "react"
+const optionalString = z.preprocess(
+  (val) => (val === null || val === undefined ? '' : val),
+  z.string().default('')
+);
 const materialSchema = z.object({
   name: z.string().min(1, "자재명을 입력해주세요."),
   mainCategory: z.string().min(1, "대분류를 선택해주세요."),
@@ -37,9 +41,9 @@ const materialSchema = z.object({
   color: z.string().min(1, "색상을 입력해주세요."),
   branch: z.string().min(1, "지점을 선택해주세요."),
   stock: z.coerce.number().min(0, "재고는 0 이상이어야 합니다.").default(0),
-  unit: z.string().optional().default(''),
-  spec: z.string().optional().default(''),
-  memo: z.string().optional().default(''),
+  unit: optionalString,
+  spec: optionalString,
+  memo: optionalString,
 })
 export type MaterialFormValues = z.infer<typeof materialSchema>
 interface MaterialFormProps {
@@ -152,9 +156,14 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
           updated.midCategory = '거베라류';
         }
 
-        // Apply defaults for empty missing size/color
+        // Apply defaults for empty/null fields
         if (!updated.size) updated.size = "1단";
         if (!updated.color) updated.color = "기타";
+        // null → '' 변환 (Zod string 유효성 통과를 위해)
+        updated.unit = updated.unit || '';
+        updated.spec = updated.spec || '';
+        updated.memo = updated.memo || '';
+        updated.supplier = updated.supplier || '';
 
         form.reset(updated);
       } else {
@@ -162,8 +171,11 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
       }
     }
   }, [isOpen, material, form]);
-  const handleFormSubmit = (data: MaterialFormValues) => {
-    onSubmit(data);
+  const handleFormSubmit = async (data: MaterialFormValues) => {
+    await onSubmit(data);
+  }
+  const onInvalid = (errors: any) => {
+    console.error('[MaterialForm] 유효성 검사 실패:', errors);
   }
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -173,7 +185,7 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
           <DialogDescription>자재의 상세 정보를 입력해주세요.</DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 py-4">
+          <form onSubmit={form.handleSubmit(handleFormSubmit, onInvalid)} className="space-y-4 py-4">
             <FormField
               control={form.control}
               name="name"
@@ -329,7 +341,7 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
                   <FormItem>
                     <FormLabel>재고</FormLabel>
                     <FormControl>
-                      <Input type="number" {...field} disabled />
+                      <Input type="number" {...field} readOnly className="bg-muted cursor-not-allowed opacity-70" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

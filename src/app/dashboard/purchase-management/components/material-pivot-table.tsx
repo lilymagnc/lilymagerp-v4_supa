@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Printer, FileDown, Edit2, ShoppingCart, Check, ChevronsUpDown, Search } from 'lucide-react';
+import { Printer, FileDown, Edit2, ShoppingCart, Check, ChevronsUpDown, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { MaterialRequest } from '@/types/material-request';
 import { useMaterials } from '@/hooks/use-materials';
@@ -18,7 +18,8 @@ import { cn } from "@/lib/utils";
 
 interface MaterialPivotTableProps {
   requests: MaterialRequest[];
-  onPurchaseStart?: (requestIds: string[]) => void;
+  onPurchaseComplete?: (requestIds: string[]) => void;
+  onExportToGoogleSheet?: (data: any[]) => Promise<void>;
 }
 
 interface PivotData {
@@ -31,7 +32,7 @@ interface PivotData {
   };
 }
 
-export function MaterialPivotTable({ requests, onPurchaseStart }: MaterialPivotTableProps) {
+export function MaterialPivotTable({ requests, onPurchaseComplete, onExportToGoogleSheet }: MaterialPivotTableProps) {
   const { materials, fetchMaterials } = useMaterials();
   const { partners } = usePartners();
 
@@ -47,6 +48,24 @@ export function MaterialPivotTable({ requests, onPurchaseStart }: MaterialPivotT
   const [editingSupplier, setEditingSupplier] = useState<string | null>(null);
   const [editingPrice, setEditingPrice] = useState<string | null>(null);
   const [supplierSearch, setSupplierSearch] = useState("");
+  const [sortColumn, setSortColumn] = useState<'name' | 'supplier' | 'price' | 'total'>('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (column: 'name' | 'supplier' | 'price' | 'total') => {
+    if (sortColumn === column) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection(column === 'name' || column === 'supplier' ? 'asc' : 'desc');
+    }
+  };
+
+  const SortIcon = ({ column }: { column: string }) => {
+    if (sortColumn !== column) return <ArrowUpDown className="h-3 w-3 ml-1 inline-block opacity-40" />;
+    return sortDirection === 'asc'
+      ? <ArrowUp className="h-3 w-3 ml-1 inline-block text-primary" />
+      : <ArrowDown className="h-3 w-3 ml-1 inline-block text-primary" />;
+  };
 
   const filteredPartners = useMemo(() => {
     if (!supplierSearch) return partners;
@@ -147,6 +166,28 @@ export function MaterialPivotTable({ requests, onPurchaseStart }: MaterialPivotT
     XLSX.writeFile(workbook, `릴리맥_매장별구매요청_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  const handleExportGoogleSheet = async () => {
+    if (!onExportToGoogleSheet) return;
+
+    // 구글 시트 전송용 데이터 포맷팅
+    const sheetData = Object.entries(pivotData).map(([id, data]) => {
+      const row: any = {
+        '상태': checkedItems[id] ? '구매완료' : '대기중',
+        '품목': data.materialName,
+        '구매처': supplierOverrides[id] || data.supplier,
+      };
+      
+      uniqueColumns.forEach(col => {
+        row[col.replace('\n', ' ')] = data.values[col] || 0;
+      });
+      
+      row['총계'] = data.total;
+      return row;
+    });
+
+    await onExportToGoogleSheet(sheetData);
+  };
+
   return (
     <Card>
       <CardHeader className="no-print">
@@ -175,7 +216,21 @@ export function MaterialPivotTable({ requests, onPurchaseStart }: MaterialPivotT
             >
               {Object.keys(pivotData).length > 0 && Object.keys(pivotData).every(id => checkedItems[id]) ? '전체 해제' : '전체 선택'}
             </Button>
-            <Button onClick={handleExportXLSX} variant="outline" size="sm"><FileDown className="h-4 w-4 mr-2" />XLSX</Button>
+            <Button onClick={handleExportXLSX} variant="outline" size="sm">
+              <FileDown className="h-4 w-4 mr-2" />
+              엑셀 다운로드
+            </Button>
+            {onExportToGoogleSheet && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportGoogleSheet}
+                className="flex items-center gap-2 border-green-200 hover:bg-green-50 text-green-700"
+              >
+                <div className="w-4 h-4 bg-green-600 rounded-sm flex items-center justify-center text-[10px] text-white font-bold">G</div>
+                구글 시트로 전송
+              </Button>
+            )}
             <Button onClick={handlePrint} variant="outline" size="sm"><Printer className="h-4 w-4 mr-2" />인쇄</Button>
           </div>
         </div>
@@ -189,8 +244,31 @@ export function MaterialPivotTable({ requests, onPurchaseStart }: MaterialPivotT
           <TableHeader>
             <TableRow>
               <TableHead className="w-[50px] no-print"></TableHead>
-              <TableHead className="sticky left-0 bg-background z-10 min-w-[200px]">품목 (구매처)</TableHead>
-              <TableHead className="w-[120px]">단가</TableHead>
+              <TableHead
+                className="sticky left-0 bg-background z-10 min-w-[200px] select-none"
+              >
+                <div className="flex items-center gap-2">
+                  <span 
+                    className="cursor-pointer hover:text-primary transition-colors flex items-center"
+                    onClick={() => handleSort('name')}
+                  >
+                    품목 <SortIcon column="name" />
+                  </span>
+                  <span className="text-muted-foreground mr-1">|</span>
+                  <span 
+                    className="cursor-pointer hover:text-primary transition-colors flex items-center text-xs font-normal"
+                    onClick={() => handleSort('supplier')}
+                  >
+                    구매처 <SortIcon column="supplier" />
+                  </span>
+                </div>
+              </TableHead>
+              <TableHead
+                className="w-[120px] cursor-pointer hover:bg-muted/50 select-none"
+                onClick={() => handleSort('price')}
+              >
+                단가 <SortIcon column="price" />
+              </TableHead>
               {uniqueColumns.map(col => {
                 const [branchName, reqNum] = col.split('\n');
                 return (
@@ -200,11 +278,35 @@ export function MaterialPivotTable({ requests, onPurchaseStart }: MaterialPivotT
                   </TableHead>
                 );
               })}
-              <TableHead className="text-right font-bold">총계</TableHead>
+              <TableHead
+                className="text-right font-bold cursor-pointer hover:bg-muted/50 select-none"
+                onClick={() => handleSort('total')}
+              >
+                총계 <SortIcon column="total" />
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {Object.entries(pivotData).map(([id, data]) => (
+            {Object.entries(pivotData)
+              .sort(([idA, a], [idB, b]) => {
+                let comparison = 0;
+                switch (sortColumn) {
+                  case 'name':
+                    comparison = a.materialName.localeCompare(b.materialName, 'ko');
+                    break;
+                  case 'supplier':
+                    comparison = (supplierOverrides[idA] || a.supplier).localeCompare(supplierOverrides[idB] || b.supplier, 'ko');
+                    break;
+                  case 'price':
+                    comparison = (priceOverrides[idA] || a.price) - (priceOverrides[idB] || b.price);
+                    break;
+                  case 'total':
+                    comparison = a.total - b.total;
+                    break;
+                }
+                return sortDirection === 'asc' ? comparison : -comparison;
+              })
+              .map(([id, data]) => (
               <TableRow key={id} data-state={checkedItems[id] ? 'checked' : 'unchecked'} className="data-[state=checked]:bg-muted/50">
                 <TableCell className="no-print">
                   <Checkbox checked={!!checkedItems[id]} onCheckedChange={() => handleToggleCheck(id)} />
@@ -355,7 +457,7 @@ export function MaterialPivotTable({ requests, onPurchaseStart }: MaterialPivotT
             >
               선택 해제
             </Button>
-            {onPurchaseStart && (
+            {onPurchaseComplete && (
               <Button
                 size="sm"
                 onClick={() => {
@@ -375,13 +477,13 @@ export function MaterialPivotTable({ requests, onPurchaseStart }: MaterialPivotT
                   });
 
                   if (relatedRequestIds.size > 0) {
-                    onPurchaseStart(Array.from(relatedRequestIds));
+                    onPurchaseComplete(Array.from(relatedRequestIds));
                   }
                 }}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
               >
-                <ShoppingCart className="h-4 w-4" />
-                구매 진행 ({Object.values(checkedItems).filter(v => v).length}개 품목)
+                <Check className="h-4 w-4" />
+                즉시 구매 완료 ({Object.values(checkedItems).filter(v => v).length}개 품목)
               </Button>
             )}
           </div>

@@ -88,7 +88,7 @@ export function useProducts() {
         totalStock
       });
     } catch (error) {
-      coole.error("Error fetching stats:", error);
+      console.error("Error fetching stats:", error);
     }
   }, []);
 
@@ -156,6 +156,36 @@ export function useProducts() {
       console.error("Error loading more products:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAllProducts = async (filters?: {
+    branch?: string;
+    searchTerm?: string;
+    mainCategory?: string;
+  }) => {
+    try {
+      let query = supabase.from('products').select('*');
+      if (filters?.branch && filters.branch !== 'all') query = query.eq('branch', filters.branch);
+      if (filters?.mainCategory && filters.mainCategory !== 'all') query = query.eq('main_category', filters.mainCategory);
+      
+      if (filters?.searchTerm) {
+        query = query.or(`name.ilike.%${filters.searchTerm}%,code.ilike.%${filters.searchTerm}%`);
+      }
+
+      const { data, error } = await query.order('id', { ascending: true });
+
+      if (error) throw error;
+
+      return (data || []).map(mapRowToProduct);
+    } catch (error) {
+      console.error("Error fetching all products for export: ", error);
+      toast({
+        variant: 'destructive',
+        title: '오류',
+        description: '전체 상품 데이터를 불러오는 중 오류가 발생했습니다.',
+      });
+      return [];
     }
   };
 
@@ -329,7 +359,7 @@ export function useProducts() {
         quantity: newStock - currentStock,
         from_stock: currentStock,
         to_stock: newStock,
-resulting_stock: newStock,
+        resulting_stock: newStock,
         branch: branch,
         operator: userEmail,
         occurred_at: new Date().toISOString()
@@ -387,6 +417,7 @@ resulting_stock: newStock,
     manualUpdateStock,
     updateStock,
     fetchProducts,
-    loadMore
+    loadMore,
+    fetchAllProducts
   };
 }
